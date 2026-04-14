@@ -1,0 +1,5 @@
+[[rule]]
+include = ["**/Cargo.toml"]
+
+[rule.schema]
+enabled = false
