@@ -20,6 +20,7 @@ list/
 agents/
 .remember/
 .vscode/settings.json
+.scratchpad/
 
 # Nix
 result/
