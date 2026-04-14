@@ -7,7 +7,7 @@ description: Use this skill when the user asks to "commit all", "commit everythi
 
 ## Goal
 
-Commit every outstanding change in the working tree — but group unrelated changes into separate, informative commits so the git history stays useful.
+Commit every outstanding change in the working tree -- but group unrelated changes into separate, informative commits so the git history stays useful.
 
 ## Workflow
 
@@ -30,7 +30,7 @@ Commit every outstanding change in the working tree — but group unrelated chan
 ## Hard Rules
 
 - Never combine unrelated changes in one commit.
-- Never skip or discard changes — everything gets committed.
+- Never skip or discard changes -- everything gets committed.
 - Never use `git add -A` or `git add .`.
 - Do not push. Only commit locally.
 - Do not commit files that look like they contain secrets (`.env`, credentials, tokens). Warn the user about those instead.

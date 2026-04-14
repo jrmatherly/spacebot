@@ -17,7 +17,7 @@ desktop/src-tauri/binaries/
 
 .idea
 list/
-agents/
+/agents/
 .remember/
 .vscode/settings.json
 .scratchpad/
@@ -26,9 +26,11 @@ agents/
 result/
 .direnv/
 
-# Claude Code - Fichiers propriétaires (auto-généré)
-.claude/
-CLAUDE.md
+# Claude Code - local/personal files
+.claude/settings.local.json
+.claude/agent-memory*/
+
+# Claude Code - legacy auto-generated (safe to ignore)
 .claude-context
 .claude-memory
 .claude-decisions

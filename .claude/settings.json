@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.rs\"'; then cargo fmt --all 2>/dev/null; fi",
+            "statusMessage": "Formatting Rust files"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'migrations/'; then echo '{\"decision\": \"block\", \"reason\": \"Migration files are immutable. Create a new timestamped migration instead.\"}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

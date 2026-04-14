@@ -1,6 +1,8 @@
 ---
-name: async-state-safety
-description: This skill should be used when the user asks to change "worker lifecycle", "cancellation", "retrigger behavior", "state machine", "delivery receipts", "timeouts", or "race conditions". Enforces explicit async/state invariants and targeted race-safe verification.
+paths:
+  - "src/agent/**/*.rs"
+  - "src/messaging/**/*.rs"
+  - "src/tasks/**/*.rs"
 ---
 
 # Async State Safety

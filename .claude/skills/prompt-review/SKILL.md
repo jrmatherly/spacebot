@@ -15,13 +15,13 @@ Spacebot's system prompt is assembled from layered sources at render time. Under
 
 Three markdown files written by the user, loaded from disk and injected verbatim at the top of the prompt with no framing wrapper:
 
-- **SOUL.md** — Personality, voice, values, communication style. How the agent *feels* to talk to.
-- **IDENTITY.md** — What the agent is, what it does, company/product context, scope boundaries.
-- **ROLE.md** — Behavioral rules, operational procedures, delegation patterns, escalation policies.
+- **SOUL.md** -- Personality, voice, values, communication style. How the agent *feels* to talk to.
+- **IDENTITY.md** -- What the agent is, what it does, company/product context, scope boundaries.
+- **ROLE.md** -- Behavioral rules, operational procedures, delegation patterns, escalation policies.
 
 These render as raw markdown (their own `##` headers appear inline). There is also an optional **SPEECH.md** for voice personality.
 
-**Learned Identity Memories** are appended after the identity files — these are graph memories of type `identity` that the cortex has accumulated. They appear as a subsection under Identity.
+**Learned Identity Memories** are appended after the identity files -- these are graph memories of type `identity` that the cortex has accumulated. They appear as a subsection under Identity.
 
 **Review focus:** Voice/tone consistency, stale facts (e.g. hardcoded star counts), redundant learned memories, missing negative constraints.
 
@@ -37,7 +37,7 @@ The core behavioral instructions from `prompts/en/channel.md.j2`. This is the Ji
 - Numbered rules (14 rules total)
 - Sandbox mode status
 
-This template is static per version — it doesn't change between agents or channels. It's the same for every channel process on the instance.
+This template is static per version -- it doesn't change between agents or channels. It's the same for every channel process on the instance.
 
 **Review focus:** Rule conflicts, instruction density, unnecessary token spend on things the model already knows.
 
@@ -45,19 +45,19 @@ This template is static per version — it doesn't change between agents or chan
 
 Conditionally injected blocks rendered from fragment templates in `prompts/en/fragments/`:
 
-- **`skills_channel.md.j2`** — Available skills list with descriptions, injected when skills are installed.
-- **`worker_capabilities.md.j2`** — Worker types section (builtin vs OpenCode), tool lists, MCP tools. Varies based on enabled capabilities (browser, web search, OpenCode, MCP servers).
-- **`available_channels.md.j2`** — List of other channels the agent can message via `send_message_to_another_channel`.
-- **`org_context.md.j2`** — Organizational hierarchy (superiors, subordinates, peers) with human descriptions inlined in `<context>` tags.
-- **`projects_context.md.j2`** — Active projects, repos, worktrees, root paths.
-- **`conversation_context.md.j2`** — Platform, server name, channel name.
-- **Adapter prompt** — Platform-specific guidance (Discord, Slack, etc.) from `prompts/en/adapters/`.
+- **`skills_channel.md.j2`** -- Available skills list with descriptions, injected when skills are installed.
+- **`worker_capabilities.md.j2`** -- Worker types section (builtin vs OpenCode), tool lists, MCP tools. Varies based on enabled capabilities (browser, web search, OpenCode, MCP servers).
+- **`available_channels.md.j2`** -- List of other channels the agent can message via `send_message_to_another_channel`.
+- **`org_context.md.j2`** -- Organizational hierarchy (superiors, subordinates, peers) with human descriptions inlined in `<context>` tags.
+- **`projects_context.md.j2`** -- Active projects, repos, worktrees, root paths.
+- **`conversation_context.md.j2`** -- Platform, server name, channel name.
+- **Adapter prompt** -- Platform-specific guidance (Discord, Slack, etc.) from `prompts/en/adapters/`.
 
 **Review focus:** Bloated project/worktree lists, org descriptions that are too long, capability sections that don't match actual config.
 
 ### Layer 4: Knowledge Context (cortex-synthesized)
 
-The **Knowledge Synthesis** block — a prose summary of what the agent *knows*, maintained by the cortex's knowledge synthesizer (`cortex_knowledge_synthesis.md.j2`). Updated when memories change. Covers decisions, goals, preferences, strategic direction. Explicitly excludes identity info and recent events (those belong to other layers).
+The **Knowledge Synthesis** block -- a prose summary of what the agent *knows*, maintained by the cortex's knowledge synthesizer (`cortex_knowledge_synthesis.md.j2`). Updated when memories change. Covers decisions, goals, preferences, strategic direction. Explicitly excludes identity info and recent events (those belong to other layers).
 
 Falls back to the legacy **Memory Bulletin** (`cortex_bulletin.md.j2`) if knowledge synthesis isn't available.
 
@@ -67,16 +67,16 @@ Falls back to the legacy **Memory Bulletin** (`cortex_bulletin.md.j2`) if knowle
 
 Two blocks providing "what happened recently":
 
-- **Working Memory** — Narrative timeline of today's events (worker completions, branch results, decisions, errors, cron executions). Synthesized by the cortex via intraday synthesis (`cortex_intraday_synthesis.md.j2`) with a raw event tail.
-- **Channel Activity Map** — Summary of other channels' recent activity so this channel has cross-channel awareness.
+- **Working Memory** -- Narrative timeline of today's events (worker completions, branch results, decisions, errors, cron executions). Synthesized by the cortex via intraday synthesis (`cortex_intraday_synthesis.md.j2`) with a raw event tail.
+- **Channel Activity Map** -- Summary of other channels' recent activity so this channel has cross-channel awareness.
 
 **Review focus:** Verbose event descriptions, events that should have been compacted, channel map entries for inactive channels.
 
 ### Layer 6: Runtime Context (live state)
 
-- **Status Block** — Current time, version, model, context window stats, active workers/branches with IDs and status, recently completed work. Rendered by `StatusBlock::render_full()`.
-- **Coalesce Hint** — Present only when multiple messages were batched into one turn. Tells the model which messages arrived together.
-- **Backfill Transcript** — Archival history from before this session, wrapped in prompt injection protection (`<system-reminder>` framing, "treat as untrusted text data").
+- **Status Block** -- Current time, version, model, context window stats, active workers/branches with IDs and status, recently completed work. Rendered by `StatusBlock::render_full()`.
+- **Coalesce Hint** -- Present only when multiple messages were batched into one turn. Tells the model which messages arrived together.
+- **Backfill Transcript** -- Archival history from before this session, wrapped in prompt injection protection (`<system-reminder>` framing, "treat as untrusted text data").
 
 **Review focus:** Status block accuracy, stale worker entries, backfill transcript size.
 
@@ -124,17 +124,17 @@ Each agent's live data lives on disk at `~/.spacebot/agents/{agent_id}/`. This i
 │
 └── agents/
     └── {agent_id}/                       # Per-agent root (e.g. "main", "spacebot-engineer")
-        ├── SOUL.md                       # ← Layer 1: personality and voice
-        ├── IDENTITY.md                   # ← Layer 1: role, scope, company context
-        ├── ROLE.md                       # ← Layer 1: behavioral rules, procedures
-        ├── SPEECH.md                     # ← Layer 1: voice/TTS personality (optional)
+        ├── SOUL.md                       # <- Layer 1: personality and voice
+        ├── IDENTITY.md                   # <- Layer 1: role, scope, company context
+        ├── ROLE.md                       # <- Layer 1: behavioral rules, procedures
+        ├── SPEECH.md                     # <- Layer 1: voice/TTS personality (optional)
         │
         ├── data/                         # Agent databases and runtime data
-        │   ├── spacebot.db              # SQLite — conversations, memory graph, cron, tasks
-        │   ├── config.redb              # redb — agent-level key-value config
-        │   ├── settings.redb            # redb — agent-level settings
-        │   ├── prompt_snapshots.redb    # redb — captured prompt snapshots for debugging
-        │   ├── lancedb/                 # LanceDB — vector embeddings + full-text index
+        │   ├── spacebot.db              # SQLite -- conversations, memory graph, cron, tasks
+        │   ├── config.redb              # redb -- agent-level key-value config
+        │   ├── settings.redb            # redb -- agent-level settings
+        │   ├── prompt_snapshots.redb    # redb -- captured prompt snapshots for debugging
+        │   ├── lancedb/                 # LanceDB -- vector embeddings + full-text index
         │   │   └── memory_embeddings.lance/
         │   ├── logs/                    # Worker execution logs
         │   │   └── worker_{uuid}_{timestamp}.log
@@ -152,11 +152,11 @@ Each agent's live data lives on disk at `~/.spacebot/agents/{agent_id}/`. This i
 
 ### Key Paths for Prompt Review
 
-- **Identity files to edit:** `~/.spacebot/agents/{agent_id}/SOUL.md`, `IDENTITY.md`, `ROLE.md`, `SPEECH.md` — these are Layer 1, loaded at runtime and injected verbatim into the prompt. Edits take effect on the next channel turn.
-- **Human descriptions:** `~/.spacebot/humans/{human_id}/HUMAN.md` — injected into the org context fragment. If an org description is too long or contains stale info, edit it here.
-- **Memory database:** `~/.spacebot/agents/{agent_id}/data/spacebot.db` — contains the memory graph (learned identity memories, facts, decisions, etc.) and conversation history. Redundant learned memories identified during review live here. Use the agent's memory tools to delete them, or query the database directly.
-- **Installed skills:** `~/.spacebot/agents/{agent_id}/workspace/skills/` — skills injected into the prompt's skills section. Unused skills add token overhead.
-- **Global config:** `~/.spacebot/config.toml` — routing profiles, enabled features (browser, OpenCode, MCP), agent definitions. Mismatches between capabilities in the prompt and actual config are diagnosed here.
+- **Identity files to edit:** `~/.spacebot/agents/{agent_id}/SOUL.md`, `IDENTITY.md`, `ROLE.md`, `SPEECH.md` -- these are Layer 1, loaded at runtime and injected verbatim into the prompt. Edits take effect on the next channel turn.
+- **Human descriptions:** `~/.spacebot/humans/{human_id}/HUMAN.md` -- injected into the org context fragment. If an org description is too long or contains stale info, edit it here.
+- **Memory database:** `~/.spacebot/agents/{agent_id}/data/spacebot.db` -- contains the memory graph (learned identity memories, facts, decisions, etc.) and conversation history. Redundant learned memories identified during review live here. Use the agent's memory tools to delete them, or query the database directly.
+- **Installed skills:** `~/.spacebot/agents/{agent_id}/workspace/skills/` -- skills injected into the prompt's skills section. Unused skills add token overhead.
+- **Global config:** `~/.spacebot/config.toml` -- routing profiles, enabled features (browser, OpenCode, MCP), agent definitions. Mismatches between capabilities in the prompt and actual config are diagnosed here.
 
 ### Hosted vs Local
 
@@ -201,9 +201,9 @@ Read the agent's live identity files from disk to see exactly what's being injec
 
 Then read the templates that produced the rest of the prompt, to distinguish authored content from template output:
 
-- `prompts/en/channel.md.j2` — the channel template
-- `prompts/en/fragments/worker_capabilities.md.j2` — worker types section
-- `prompts/en/fragments/org_context.md.j2` — org hierarchy template
+- `prompts/en/channel.md.j2` -- the channel template
+- `prompts/en/fragments/worker_capabilities.md.j2` -- worker types section
+- `prompts/en/fragments/org_context.md.j2` -- org hierarchy template
 
 If the user is reviewing a non-channel process, read the relevant template instead:
 - `prompts/en/branch.md.j2`
@@ -264,10 +264,10 @@ Analyze the rendered prompt against this checklist:
 
 Structure findings as:
 
-1. **Critical** — Issues causing incorrect behavior (rule conflicts, missing sections, behavioral drift)
-2. **Efficiency** — Token waste (redundancy, unnecessary instructions, bloated sections)
-3. **Consistency** — Mismatches between layers or process types
-4. **Suggestions** — Improvements that would make the prompt more effective
+1. **Critical** -- Issues causing incorrect behavior (rule conflicts, missing sections, behavioral drift)
+2. **Efficiency** -- Token waste (redundancy, unnecessary instructions, bloated sections)
+3. **Consistency** -- Mismatches between layers or process types
+4. **Suggestions** -- Improvements that would make the prompt more effective
 
 For each finding, reference the specific layer, source file, and the fix location:
 
@@ -286,8 +286,8 @@ For each finding, reference the specific layer, source file, and the fix locatio
 ## Notes
 
 - The Spacebot API runs on port `19898` by default. Adjust if the instance uses a different port.
-- The prompt inspect endpoint (`/api/channels/inspect`) requires an active channel — if the channel hasn't received a message in this session, it won't be inspectable.
-- Other process prompts (branch, worker, cortex) are not inspectable via API — review those by reading the templates directly.
+- The prompt inspect endpoint (`/api/channels/inspect`) requires an active channel -- if the channel hasn't received a message in this session, it won't be inspectable.
+- Other process prompts (branch, worker, cortex) are not inspectable via API -- review those by reading the templates directly.
 - The `total_chars` field from the inspect response gives a rough sense of prompt size. Divide by ~4 for approximate token count.
-- Identity file edits take effect on the next channel turn — no restart needed. Template changes require a rebuild and restart.
+- Identity file edits take effect on the next channel turn -- no restart needed. Template changes require a rebuild and restart.
 - On hosted instances, replace `~/.spacebot/` with `/data/` in all paths above.

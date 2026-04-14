@@ -1,6 +1,8 @@
 ---
-name: provider-integration-checklist
-description: This skill should be used when the user asks to add or modify an "LLM provider", "model routing", "OAuth flow", "auth token handling", "provider config", or "fallback chain". Enforces provider integration completeness across config, routing, docs, and verification.
+paths:
+  - "src/llm/**/*.rs"
+  - "src/config/providers.rs"
+  - "src/config/toml_schema.rs"
 ---
 
 # Provider Integration Checklist

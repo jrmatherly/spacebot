@@ -1,15 +1,10 @@
----
-name: writing-guide
-description: Use when writing or editing any Spacebot copy — README sections, docs, release notes, marketing text, design doc summaries. Covers voice, tone, patterns to avoid, and what good Spacebot writing sounds like.
----
-
 # Writing Guide
 
 Spacebot copy should sound like a confident engineer wrote it, not a language model. The test: would a developer reading the README think "someone knows what they're talking about" or "this was AI-generated"? These rules exist because the second outcome is common and costs credibility.
 
 ## Voice
 
-Direct. Technical. No hedging. Short sentences with real content. Lead with the fact, not the framing. State what something is — not what it isn't.
+Direct. Technical. No hedging. Short sentences with real content. Lead with the fact, not the framing. State what something is -- not what it isn't.
 
 The tagline sets the tone: "The agent harness that runs teams, communities, and companies." That's a claim. It doesn't explain itself. Good Spacebot copy makes claims and lets the detail below earn them.
 
@@ -66,7 +61,7 @@ Good: "After a conversation goes idle, a background branch reviews the history a
 
 ## What Spacebot Is Opinionated About
 
-When describing Spacebot's opinions, name them specifically: the process model, memory schema, and task lifecycle. Don't say its opinions are about "one thing" — they cover multiple things. The unifying idea is that state belongs in structured storage, not markdown files the LLM manages.
+When describing Spacebot's opinions, name them specifically: the process model, memory schema, and task lifecycle. Don't say its opinions are about "one thing" -- they cover multiple things. The unifying idea is that state belongs in structured storage, not markdown files the LLM manages.
 
 ## What Is and Isn't a Differentiator
 
@@ -82,7 +77,7 @@ When describing Spacebot's opinions, name them specifically: the process model, 
 - "Self-improving" as a generic claim
 - Internal implementation details the user doesn't see
 
-Don't advertise internal improvements as external features. If Spacebot previously sent cold context to workers and now sends full context, that's an internal fix. The user-visible claim is "the autonomy channel wakes with full context" — not "unlike the old approach."
+Don't advertise internal improvements as external features. If Spacebot previously sent cold context to workers and now sends full context, that's an internal fix. The user-visible claim is "the autonomy channel wakes with full context" -- not "unlike the old approach."
 
 ## The Spacedrive Story
 

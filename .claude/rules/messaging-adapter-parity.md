@@ -1,6 +1,6 @@
 ---
-name: messaging-adapter-parity
-description: This skill should be used when the user asks to change "Slack adapter", "Telegram adapter", "Discord adapter", "Webhook adapter", "status delivery", "message routing", or "delivery receipts". Enforces cross-adapter parity and explicit delivery semantics.
+paths:
+  - "src/messaging/**/*.rs"
 ---
 
 # Messaging Adapter Parity
