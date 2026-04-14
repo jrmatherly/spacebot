@@ -19,6 +19,7 @@ desktop/src-tauri/binaries/
 list/
 agents/
 .remember/
+.vscode/settings.json
 
 # Nix
 result/
