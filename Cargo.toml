@@ -141,7 +141,7 @@ chromiumoxide = { version = "0.8", features = ["tokio-runtime", "_fetcher-rustls
 chromiumoxide_cdp = "0.8"
 
 # Templating for prompts
-minijinja = "2.8"
+minijinja = "2.19"
 
 # Docker API client (for self-update via Docker socket)
 bollard = "0.18"
