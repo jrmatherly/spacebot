@@ -29,7 +29,6 @@ project_name: "spacebot"
 languages:
 - rust
 - typescript
-- vue
 - bash
 - nix
 - swift
