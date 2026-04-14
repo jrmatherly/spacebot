@@ -1,0 +1,13 @@
+# Workflow files require owner review
+.github/workflows/ @jrmatherly
+
+# Core Rust code
+src/ @jrmatherly
+Cargo.toml @jrmatherly
+Cargo.lock @jrmatherly
+
+# Frontend
+interface/ @jrmatherly
+
+# Migrations are immutable — extra scrutiny on new ones
+migrations/ @jrmatherly

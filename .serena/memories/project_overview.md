@@ -26,20 +26,7 @@
 - **Desktop App:** Tauri (`desktop/`)
 
 ## Deployment
-- Docker → Fly.io (region: iad, port 19898)
+- Docker images published to GHCR (ghcr.io/jrmatherly/spacebot)
 - Single binary, no server dependencies
 - All data in embedded databases in a local data directory
-
-## Architecture
-Five process types, each a Rig `Agent<SpacebotModel, SpacebotHook>`:
-1. **Channel** — User-facing conversation process. Delegates everything. Never blocked.
-2. **Branch** — Fork of channel context for independent thinking. Short-lived.
-3. **Worker** — Background task executor. Has shell, file, and memory tools.
-4. **Compactor** — Context management and summarization.
-5. **Cortex** — System-level intelligence.
-
-## Key Identifiers
-- `AgentId = Arc<str>`
-- `ChannelId = Arc<str>`
-- `WorkerId = uuid::Uuid`
-- `BranchId = uuid::Uuid`
+- Release builds for Linux (x86_64, aarch64), macOS (x86_64, aarch64), Windows (x86_64, aarch64)

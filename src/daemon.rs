@@ -74,6 +74,7 @@ pub fn is_running(paths: &DaemonPaths) -> Option<u32> {
     }
 
     // Double-check by trying to connect to the socket
+    #[cfg(unix)]
     if paths.socket.exists() {
         if let Ok(stream) = std::os::unix::net::UnixStream::connect(&paths.socket) {
             drop(stream);
