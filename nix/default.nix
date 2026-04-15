@@ -150,7 +150,7 @@
       runHook preInstall
 
       mkdir -p $out
-      cp -r interface/dist/* $out/
+      cp -r dist/* $out/
 
       runHook postInstall
     '';
