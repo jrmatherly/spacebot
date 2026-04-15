@@ -49,5 +49,5 @@
 
 ## 7. Arrow monitoring (no action — blocked upstream)
 
-- [ ] 7.1 Confirm `Cargo.toml` still has `arrow-array = "57"` and `arrow-schema = "57"`
-- [ ] 7.2 Document upstream tracking: watch lance-format/lance#6496 for arrow 58 merge
+- [x] 7.1 Confirmed: `Cargo.toml` has `arrow-array = "57"` and `arrow-schema = "57"` (unchanged)
+- [x] 7.2 Upstream tracking documented in proposal.md and design.md: watch lance-format/lance#6496
