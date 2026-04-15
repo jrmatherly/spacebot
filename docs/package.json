@@ -12,7 +12,7 @@
     "format": "biome format --write"
   },
   "dependencies": {
-    "fumadocs-core": "16.7.15",
+    "fumadocs-core": "16.7.16",
     "fumadocs-mdx": "14.2.14",
     "fumadocs-ui": "16.7.15",
     "lucide-react": "^1.8.0",
@@ -28,7 +28,7 @@
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "postcss": "^8.5.9",
+    "postcss": "^8.5.10",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2"
   }
