@@ -20,6 +20,9 @@
 | `just desktop-build` | Full desktop app build |
 | `just update-frontend-hash` | Update Nix hash after frontend dep changes |
 | `just update-flake` | Update all Nix flake inputs |
+| `just spaceui-build` | Build SpaceUI packages |
+| `just spaceui-link` | Link SpaceUI packages for development |
+| `just spaceui-unlink` | Unlink SpaceUI, restore npm versions |
 
 ## Delivery Gates (Mandatory before push/PR)
 1. `just preflight` — validate git/remote/auth state
