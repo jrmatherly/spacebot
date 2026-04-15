@@ -1,6 +1,6 @@
 ---
 name: spacebot-dev
-description: Specialized Spacebot development skill with deep architectural knowledge. Use when working on any Spacebot feature, bug fix, refactor, or investigation. Covers the five-process agent model (Channel, Branch, Worker, Compactor, Cortex), memory system (SQLite + LanceDB + redb), task lifecycle, 50+ tool definitions, Rig framework integration, prompt templates, identity system, messaging adapters, config hot-reload, security/sandbox, and API server. Activate for any Rust code changes in src/, prompt template edits in prompts/, migration work, tool additions, or architectural questions.
+description: Specialized Spacebot development skill with deep architectural knowledge. Use when working on any Spacebot feature, bug fix, refactor, or investigation. Covers the five-process agent model (Channel, Branch, Worker, Compactor, Cortex), memory system (SQLite + LanceDB + redb), task lifecycle, 60+ tool definitions, Rig framework integration, prompt templates, identity system, messaging adapters, config hot-reload, security/sandbox, and API server. Activate for any Rust code changes in src/, prompt template edits in prompts/, migration work, tool additions, or architectural questions.
 ---
 
 # Spacebot Development Guide
@@ -19,7 +19,8 @@ Each process type has a distinct role, tool set, and isolation boundary. Never m
 
 ### Channel (`src/agent/channel.rs`)
 - User-facing conversation. Delegates everything. Never blocks.
-- Tools: `reply`, `branch`, `spawn_worker`, `route`, `cancel`, `skip`, `react`, `cron`, `send_file`, `send_message`
+- Tools: `reply`, `branch`, `spawn_worker`, `route`, `cancel`, `skip`, `react`, `cron`, `send_file`, `send_message`, `project_manage`
+- Conditional tools: `attachment_recall` (when save_attachments), `send_agent_message` (when links configured), `set_outcome` (cron executions)
 - NO memory tools (delegated to branches)
 - Max turns: 5. Model default: claude-sonnet
 - Sub-modules: `channel_attachments.rs`, `channel_dispatch.rs`, `channel_history.rs`, `channel_prompt.rs`
@@ -234,7 +235,7 @@ Doc comments on tool input structs serve dual purpose: Rust documentation AND LL
 ### Tool Categories
 - **Delegation:** reply, branch, spawn_worker, route, cancel, skip, react
 - **Memory:** memory_save, memory_recall, memory_delete, memory_persistence_complete
-- **Execution:** shell, file_read, file_write, file_edit, file_list, exec, project_manage
+- **Execution:** shell, file_read, file_write, file_edit, file_list, project_manage
 - **Browser:** browser_launch, browser_navigate, browser_snapshot, browser_click, browser_type, browser_press_key, browser_screenshot, browser_evaluate, browser_tab_open, browser_tab_list, browser_tab_close, browser_close
 - **Knowledge:** channel_recall, attachment_recall, wiki_*, skills_*, spacebot_docs
 - **Tasks:** task_create, task_list, task_update
@@ -299,6 +300,7 @@ Needs restart: LLM API keys, messaging tokens, agent topology, database paths
 - `[agents.sandbox]` — mode ("enabled"), writable_paths, passthrough_env
 
 ### Sub-modules
+- `types.rs` — Config, RuntimeConfig, AgentConfig, DefaultsConfig structs
 - `load.rs` — Parse config.toml + env vars + secrets
 - `toml_schema.rs` — TOML structure definitions
 - `runtime.rs` — In-memory state (hot-reloadable via ArcSwap)
@@ -411,7 +413,7 @@ Five dimensions: file_read/file_write ("deny"|"workspace"|"allow"|globs), shell,
 
 Axum-based REST API on port 19898. Embedded frontend via rust-embed. OpenAPI docs via utoipa.
 
-26 route modules: agents, channels, workers, memories, tasks, wiki, skills, config, secrets, messaging, attachments, projects, cron, notifications, links, factory, cortex, mcp, models, providers, activity, usage, ingest, system, portal, ssh
+30 route modules: agents, channels, workers, memories, tasks, wiki, skills, config, secrets, messaging, attachments, projects, cron, notifications, links, factory, cortex, mcp, models, providers, activity, usage, ingest, system, portal, ssh, bindings, opencode_proxy, settings, tools
 
 Special endpoints: `events_sse()` (real-time SSE), `health()`, `backup_export()`/`backup_restore()`
 
