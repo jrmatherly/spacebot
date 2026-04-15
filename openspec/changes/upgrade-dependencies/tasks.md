@@ -1,9 +1,9 @@
 ## 1. @lobehub/icons 4.12.0 → 5.4.0
 
-- [ ] 1.1 Bump `@lobehub/icons` version from `^4.12.0` to `^5.4.0` in `interface/package.json`
-- [ ] 1.2 Run `bun install` in `interface/`
-- [ ] 1.3 Run `bun run build` in `interface/` and verify production build succeeds
-- [ ] 1.4 Verify no `antd` or `@lobehub/ui` was added to `package.json`
+- [x] 1.1 Bump `@lobehub/icons` version from `^4.12.0` to `^5.4.0` in `interface/package.json`
+- [x] 1.2 Run `bun install` in `interface/`
+- [x] 1.3 Run `bun run build` in `interface/` — fixed SpaceUI symlink, build passes (exit 0)
+- [x] 1.4 Verify no `antd` or `@lobehub/ui` was added to `package.json`
 
 ## 2. rig-core 0.33 → 0.35: Worktree setup (per using-git-worktrees skill)
 

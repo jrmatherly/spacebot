@@ -7,9 +7,9 @@
 ## Tech Stack
 - **Runtime:** Tokio async
 - **HTTP Framework:** Axum 0.8
-- **Database:** SQLite via sqlx 0.8 (41 agent + 6 global migrations)
+- **Database:** SQLite via sqlx 0.8 (42 agent + 6 global migrations)
 - **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
-- **Key-Value Store:** redb (embedded)
+- **Key-Value Store:** redb 4.0 (embedded)
 - **LLM Framework:** Rig v0.33 (agentic loop framework)
 - **CLI:** clap 4.5
 - **Serialization:** serde/serde_json 1.0
@@ -23,6 +23,7 @@
 - **Web UI:** Vite + React + TypeScript (`interface/`)
 - **JS Package Manager:** bun (NEVER npm/pnpm/yarn)
 - **Documentation Site:** Next.js + Fumadocs (`docs/`)
+- **SpaceUI:** Design system (5 packages: tokens, primitives, forms, ai, explorer) (`spaceui/`)
 - **Desktop App:** Tauri (`desktop/`)
 
 ## Deployment
