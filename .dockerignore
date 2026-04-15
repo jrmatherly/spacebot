@@ -8,12 +8,16 @@ target/
 interface/node_modules/
 interface/dist/
 
-# Not needed for the build
+# Not needed for the server build
 tests/
 scripts/
 !scripts/build-opencode-embed.sh
+desktop/
+examples/
+packages/
 
 # Exclude docs except what's needed for self_awareness.rs embeds
+# (embeds: docs/README.md, docs/docker.md, docs/metrics.md)
 docs/node_modules/
 docs/.next/
 docs/out/
@@ -29,6 +33,42 @@ docs/*.yaml
 docs/*.lock
 docs/.gitignore
 docs/.node-version
+
+# Root files not needed for build
+# (only AGENTS.md, README.md, CHANGELOG.md are embedded via self_awareness.rs)
 fly.toml
+fly.staging.toml
+CONTRIBUTING.md
+METRICS.md
 RUST_STYLE_GUIDE.md
+SPACEUI_MIGRATION.md
+CLAUDE.md
+PROJECT_INDEX.md
+TODO
 LICENSE
+
+# Dev tooling
+.cargo/
+.githooks/
+.envrc
+.taplo.toml
+rust-toolchain.toml
+justfile
+
+# Nix
+flake.nix
+flake.lock
+nix/
+
+# AI/editor tools
+.claude/
+.code-review-graph/
+.codex/
+.full-review/
+.remember/
+.serena/
+.scratchpad/
+.vscode/
+.windsurf/
+.worktrees/
+openspec/
