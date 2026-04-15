@@ -56,7 +56,7 @@ struct TokenExchangeResponse {
 pub fn hash_pat(pat: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(pat.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Exchange a GitHub PAT for a Copilot API token.

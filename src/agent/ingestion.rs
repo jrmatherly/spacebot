@@ -156,7 +156,7 @@ fn is_supported_ingest_file(path: &Path) -> bool {
 pub fn content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Process a single file: read, chunk, process each chunk, then delete.

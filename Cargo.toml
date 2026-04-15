@@ -59,9 +59,9 @@ arc-swap = "1"
 notify = "8"
 
 # Cryptography (for secrets)
-aes-gcm = "0.10"
-sha2 = "0.10"
-argon2 = "0.5"
+aes-gcm = "0.11.0-rc.3"
+sha2 = "0.11"
+argon2 = "0.6.0-rc.8"
 rand = "0.10"
 
 # UUID generation
