@@ -986,10 +986,10 @@ fn derive_cipher(master_key: &[u8], salt: &[u8; 16]) -> Result<Aes256Gcm, Secret
 fn encrypt_bytes(cipher: &Aes256Gcm, plaintext: &[u8]) -> Result<Vec<u8>, SecretsError> {
     let mut nonce_bytes = [0u8; 12];
     rand::rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|error| SecretsError::EncryptionFailed(error.to_string()))?;
 
     let mut stored = Vec::with_capacity(12 + ciphertext.len());
@@ -1005,10 +1005,11 @@ fn decrypt_bytes(cipher: &Aes256Gcm, stored: &[u8]) -> Result<Vec<u8>, SecretsEr
             "stored value too short for nonce".to_string(),
         ));
     }
-    let nonce = Nonce::from_slice(&stored[..12]);
+    let nonce = Nonce::try_from(&stored[..12])
+        .map_err(|error| SecretsError::DecryptionFailed(format!("invalid nonce: {error}")))?;
     let ciphertext = &stored[12..];
     cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|error| SecretsError::DecryptionFailed(error.to_string()))
 }
 

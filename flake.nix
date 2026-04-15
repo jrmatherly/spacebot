@@ -70,6 +70,21 @@
             ./interface/tailwind.config.ts
             ./interface/public
             ./interface/src
+            ./spaceui/packages/tokens/src
+            ./spaceui/packages/tokens/package.json
+            ./spaceui/packages/tokens/raw-colors.cjs
+            ./spaceui/packages/tokens/raw-colors.d.ts
+            ./spaceui/packages/primitives/src
+            ./spaceui/packages/primitives/package.json
+            ./spaceui/packages/ai/src
+            ./spaceui/packages/ai/package.json
+            ./spaceui/packages/forms/src
+            ./spaceui/packages/forms/package.json
+            ./spaceui/packages/explorer/src
+            ./spaceui/packages/explorer/package.json
+            ./spaceui/package.json
+            ./spaceui/turbo.json
+            ./spaceui/tsconfig.base.json
           ];
         };
 

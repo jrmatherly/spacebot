@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "interface/**"
+      - "spaceui/packages/**"
       - ".github/workflows/interface-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "interface/**"
+      - "spaceui/packages/**"
       - ".github/workflows/interface-ci.yml"
 
 permissions:

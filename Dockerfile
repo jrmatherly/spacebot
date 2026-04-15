@@ -1,6 +1,6 @@
 # ---- Builder stage ----
 # Compiles the React frontend and the Rust binary with the frontend embedded.
-FROM rust:bookworm AS builder
+FROM rust:trixie AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -46,6 +46,20 @@ COPY scripts/build-opencode-embed.sh scripts/
 COPY interface/opencode-embed-src/ interface/opencode-embed-src/
 RUN ./scripts/build-opencode-embed.sh
 
+# 3.5 Copy SpaceUI source (resolved by Vite aliases during frontend build).
+COPY spaceui/packages/tokens/ spaceui/packages/tokens/
+COPY spaceui/packages/primitives/ spaceui/packages/primitives/
+COPY spaceui/packages/ai/ spaceui/packages/ai/
+COPY spaceui/packages/forms/ spaceui/packages/forms/
+COPY spaceui/packages/explorer/ spaceui/packages/explorer/
+COPY spaceui/package.json spaceui/
+COPY spaceui/turbo.json spaceui/
+COPY spaceui/tsconfig.base.json spaceui/
+# Symlink so SpaceUI imports resolve from interface's node_modules.
+# Vite walks up from spaceui/ looking for node_modules; without this,
+# deps like @radix-ui/react-slider are not found in the Docker context.
+RUN ln -s /build/interface/node_modules /build/spaceui/node_modules
+
 # 4. Build the frontend (includes OpenCode embed assets from step 3).
 COPY interface/ interface/
 # hadolint ignore=DL3003
@@ -76,7 +90,7 @@ RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --features metrics \
 # ---- Runtime stage ----
 # Minimal runtime with Chrome runtime libraries for fetcher-downloaded Chromium.
 # Chrome itself is downloaded on first browser tool use and cached on the volume.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \

@@ -1,0 +1,53 @@
+{
+  "name": "@spacedrive/monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*",
+    ".storybook"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "bun run typecheck",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "publish": "turbo run build && changeset publish",
+    "link": "./scripts/link-packages.sh",
+    "unlink": "./scripts/unlink-packages.sh",
+    "watch": "./scripts/build-watch.sh",
+    "storybook": "cd .storybook && bun run dev",
+    "storybook:build": "cd .storybook && bun run build",
+    "storybook:typecheck": "cd .storybook && bun run typecheck",
+    "showcase": "cd examples/showcase && bun run dev",
+    "showcase:build": "cd examples/showcase && bun run build"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "@chromatic-com/storybook": "^5.1.2",
+    "@storybook/addon-essentials": "8.6.18",
+    "@storybook/addon-interactions": "8.6.18",
+    "@storybook/addon-onboarding": "8.6.18",
+    "@storybook/addon-themes": "8.6.18",
+    "@storybook/blocks": "8.6.18",
+    "@storybook/react": "8.6.18",
+    "@storybook/react-vite": "8.6.18",
+    "@storybook/test": "8.6.18",
+    "@storybook/theming": "8.6.18",
+    "storybook": "8.6.18",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "bun@1.1.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "overrides": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3"
+  }
+}

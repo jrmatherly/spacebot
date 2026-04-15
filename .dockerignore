@@ -8,6 +8,15 @@ target/
 interface/node_modules/
 interface/dist/
 
+# SpaceUI build artifacts (source copied explicitly in Dockerfile)
+spaceui/node_modules/
+spaceui/packages/*/dist/
+spaceui/packages/*/node_modules/
+spaceui/examples/
+spaceui/.storybook/
+spaceui/.changeset/
+spaceui/scripts/
+
 # Not needed for the server build
 tests/
 scripts/

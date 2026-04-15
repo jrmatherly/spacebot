@@ -124,7 +124,7 @@
   frontend = stdenv.mkDerivation {
     pname = "spacebot-frontend";
     inherit version;
-    src = "${frontendSrc}/interface";
+    src = frontendSrc;
 
     nativeBuildInputs = with pkgs; [
       bun
@@ -136,6 +136,7 @@
     buildPhase = ''
       runHook preBuild
 
+      cd interface
       cp -r ${frontendNodeModulesDefault}/node_modules .
       chmod -R u+w node_modules
       patchShebangs --build node_modules

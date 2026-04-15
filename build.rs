@@ -10,6 +10,8 @@ fn main() {
     println!("cargo:rerun-if-changed=interface/package.json");
     println!("cargo:rerun-if-changed=interface/vite.config.ts");
     println!("cargo:rerun-if-changed=interface/tailwind.config.ts");
+    // Re-run if SpaceUI source files change (resolved by Vite aliases)
+    println!("cargo:rerun-if-changed=spaceui/packages/");
 
     let interface_dir = std::path::Path::new("interface");
 

@@ -1,4 +1,5 @@
 /target
+rust_out
 .DS_Store
 .fastembed_cache
 .build/
@@ -16,6 +17,15 @@ interface/node_modules/
 interface/dist/
 interface/public/opencode-embed/
 .opencode-build-cache/
+
+# SpaceUI
+spaceui/node_modules/
+spaceui/packages/*/dist/
+spaceui/packages/*/node_modules/
+spaceui/examples/*/node_modules/
+spaceui/examples/*/dist/
+spaceui/.storybook/node_modules/
+spaceui/.storybook/storybook-static/
 
 # Desktop sidecar binaries (built by scripts/bundle-sidecar.sh)
 desktop/src-tauri/binaries/

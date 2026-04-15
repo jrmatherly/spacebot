@@ -177,7 +177,7 @@ impl McpConnection {
                         {
                             crate::telemetry::Metrics::global()
                                 .mcp_connection_attempts_total
-                                .with_label_values(&[&self.name, "failure"])
+                                .with_label_values(&[self.name.as_str(), "failure"])
                                 .inc();
                             set_mcp_connection_state(&self.name, 0, 0, 0, 1, 0);
                         }
@@ -208,11 +208,11 @@ impl McpConnection {
                     let elapsed = connect_start.elapsed().as_secs_f64();
                     metrics
                         .mcp_connection_attempts_total
-                        .with_label_values(&[&self.name, "success"])
+                        .with_label_values(&[self.name.as_str(), "success"])
                         .inc();
                     metrics
                         .mcp_connection_duration_seconds
-                        .with_label_values(&[&self.name])
+                        .with_label_values(&[self.name.as_str()])
                         .observe(elapsed);
                     set_mcp_connection_state(&self.name, 1, 0, 0, 0, tool_count);
                 }
@@ -236,7 +236,7 @@ impl McpConnection {
                 {
                     crate::telemetry::Metrics::global()
                         .mcp_connection_attempts_total
-                        .with_label_values(&[&self.name, "failure"])
+                        .with_label_values(&[self.name.as_str(), "failure"])
                         .inc();
                     set_mcp_connection_state(&self.name, 0, 0, 0, 1, 0);
                 }
@@ -265,7 +265,7 @@ impl McpConnection {
                         let metrics = crate::telemetry::Metrics::global();
                         metrics
                             .mcp_reconnects_total
-                            .with_label_values(&[&self.name])
+                            .with_label_values(&[self.name.as_str()])
                             .inc();
                     }
                     return true;
@@ -367,11 +367,11 @@ impl McpConnection {
             let elapsed = call_start.elapsed().as_secs_f64();
             metrics
                 .mcp_tool_calls_total
-                .with_label_values(&[&self.name, tool_name])
+                .with_label_values(&[self.name.as_str(), tool_name])
                 .inc();
             metrics
                 .mcp_tool_call_duration_seconds
-                .with_label_values(&[&self.name, tool_name])
+                .with_label_values(&[self.name.as_str(), tool_name])
                 .observe(elapsed);
         }
 
