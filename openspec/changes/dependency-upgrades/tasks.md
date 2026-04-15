@@ -1,24 +1,24 @@
 ## 0. Pre-flight
 
-- [ ] 0.1 Run `cargo audit`, `bun audit` (interface + docs) and record baseline counts
-- [ ] 0.2 Run `cargo check --all-targets`, `cargo clippy --all-targets`, `cargo test --lib` to confirm clean state
-- [ ] 0.3 Verify Rust toolchain >= 1.85 (`rustc --version`)
+- [x] 0.1 Run `cargo audit`, `bun audit` (interface + docs) and record baseline counts
+- [x] 0.2 Run `cargo check --all-targets`, `cargo clippy --all-targets`, `cargo test --lib` to confirm clean state
+- [x] 0.3 Verify Rust toolchain >= 1.85 (`rustc --version`)
 
 ## 1. Security-Critical + Zero-Risk Upgrades (Phase 1)
 
-- [ ] 1.1 Bump prometheus version in Cargo.toml from `"0.13"` to `"0.14"` (fixes RUSTSEC-2024-0437)
-- [ ] 1.2 Verify prometheus label value API compiles (grep `with_label_values` in `src/telemetry/`)
-- [ ] 1.3 Bump tokio-tungstenite in Cargo.toml from `"0.28"` to `"0.29"`
-- [ ] 1.4 Bump dialoguer in Cargo.toml from `"0.11"` to `"0.12"`
-- [ ] 1.5 Bump cron in Cargo.toml from `"0.12"` to `"0.16"`
-- [ ] 1.6 Bump notify in Cargo.toml from `"7"` to `"8"` (fixes RUSTSEC-2024-0384)
-- [ ] 1.7 Check notify feature flags — rename `crossbeam` to `crossbeam-channel` if present
-- [ ] 1.8 Run `cargo update` to resolve transitive deps
-- [ ] 1.9 Run `cargo check --all-targets` + `cargo clippy --all-targets`
-- [ ] 1.10 Run `cargo test --lib` (expect 819 passing)
-- [ ] 1.11 Run `cargo test --lib -- cron` to verify cron parsing
-- [ ] 1.12 Run `cargo audit` — verify RUSTSEC-2024-0437 and RUSTSEC-2024-0384 are gone
-- [ ] 1.13 Commit: `deps: upgrade prometheus (fixes CVE), tokio-tungstenite, dialoguer, cron, notify`
+- [x] 1.1 Bump prometheus version in Cargo.toml from `"0.13"` to `"0.14"` (fixes RUSTSEC-2024-0437)
+- [x] 1.2 Verify prometheus label value API compiles (grep `with_label_values` in `src/telemetry/`)
+- [x] 1.3 Bump tokio-tungstenite in Cargo.toml from `"0.28"` to `"0.29"`
+- [x] 1.4 Bump dialoguer in Cargo.toml from `"0.11"` to `"0.12"`
+- [x] 1.5 Bump cron in Cargo.toml from `"0.12"` to `"0.16"`
+- [x] 1.6 Bump notify in Cargo.toml from `"7"` to `"8"` (fixes RUSTSEC-2024-0384)
+- [x] 1.7 Check notify feature flags — rename `crossbeam` to `crossbeam-channel` if present
+- [x] 1.8 Run `cargo update` to resolve transitive deps
+- [x] 1.9 Run `cargo check --all-targets` + `cargo clippy --all-targets`
+- [x] 1.10 Run `cargo test --lib` (expect 819 passing)
+- [x] 1.11 Run `cargo test --lib -- cron` to verify cron parsing
+- [x] 1.12 Run `cargo audit` — verify RUSTSEC-2024-0437 and RUSTSEC-2024-0384 are gone
+- [x] 1.13 Commit: `deps: upgrade prometheus (fixes CVE), tokio-tungstenite, dialoguer, cron, notify`
 
 ## 2. Minor Code Changes (Phase 2)
 
