@@ -24,8 +24,8 @@ reqwest = { version = "0.13", features = ["json", "stream", "form", "query", "gz
 
 # Databases
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
-lancedb = "0.26"
-lance-index = "2.0"
+lancedb = "0.27"
+lance-index = "4.0"
 redb = "2.4"
 
 # Vector / embedding operations
@@ -133,8 +133,8 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # Indoc for test fixtures
 indoc = "2"
-arrow-array = "57.3.0"
-arrow-schema = "57.3.0"
+arrow-array = "57"
+arrow-schema = "57"
 
 # Browser automation
 chromiumoxide = { version = "0.9", features = ["fetcher", "rustls", "zip8"], default-features = false }

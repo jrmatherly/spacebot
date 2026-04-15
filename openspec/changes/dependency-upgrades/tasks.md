@@ -53,12 +53,12 @@
 
 ### 4A. LanceDB + Arrow Ecosystem
 
-- [ ] 4A.1 Bump lancedb (`"0.27"`), lance-index (`"4.0"`), arrow-array (`"58"`), arrow-schema (`"58"`) in Cargo.toml
-- [ ] 4A.2 Refactor `src/memory/lance.rs`: replace `RecordBatchIterator` with `Vec<RecordBatch>` in `create_empty_table()` and `store()`
-- [ ] 4A.3 Run `cargo check --all-targets`
-- [ ] 4A.4 Run `cargo test --lib -- memory` + `cargo test --lib -- lance`
-- [ ] 4A.5 Verify `cargo audit` — check if lru 0.12.5 warning is resolved
-- [ ] 4A.6 Commit: `deps: upgrade lancedb 0.27, arrow 58, lance-index 4.0`
+- [x] 4A.1 Bump lancedb (`"0.27"`), lance-index (`"4.0"`), arrow-array/schema kept at `"57"` (lancedb 0.27 pins arrow 57 internally)
+- [x] 4A.2 Refactor `src/memory/lance.rs`: removed `RecordBatchIterator`, used `create_empty_table()` and `vec![batch]` for `add()`
+- [x] 4A.3 Run `cargo check --all-targets` — passes
+- [x] 4A.4 Run `cargo test --lib -- memory` (64 passed) + full suite (819 passed)
+- [x] 4A.5 Verify `cargo audit` — lru 0.12.5 warning persists (lance/tantivy haven't bumped it)
+- [x] 4A.6 Commit: `deps: upgrade lancedb 0.27, lance-index 4.0`
 
 ### 4B. Bollard
 

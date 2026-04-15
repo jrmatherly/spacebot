@@ -1,9 +1,9 @@
 //! LanceDB table management and embedding storage with HNSW vector index and FTS.
 
 use crate::error::{DbError, Result};
+use arrow_array::Array;
 use arrow_array::cast::AsArray;
 use arrow_array::types::Float32Type;
-use arrow_array::{Array, RecordBatchIterator};
 use futures::TryStreamExt;
 use std::sync::Arc;
 
@@ -64,10 +64,9 @@ impl EmbeddingTable {
     /// Create an empty embeddings table.
     async fn create_empty_table(connection: &lancedb::Connection) -> Result<lancedb::Table> {
         let schema = Self::schema();
-        let batches = RecordBatchIterator::new(vec![].into_iter().map(Ok), Arc::new(schema));
 
         connection
-            .create_table(TABLE_NAME, Box::new(batches))
+            .create_empty_table(TABLE_NAME, Arc::new(schema))
             .execute()
             .await
             .map_err(|e| DbError::LanceDb(e.to_string()).into())
@@ -110,11 +109,8 @@ impl EmbeddingTable {
         )
         .map_err(|e| DbError::LanceDb(e.to_string()))?;
 
-        // Create iterator for IntoArrow trait
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], Arc::new(Self::schema()));
-
         self.table
-            .add(Box::new(batches))
+            .add(vec![batch])
             .execute()
             .await
             .map_err(|e| DbError::LanceDb(e.to_string()))?;
