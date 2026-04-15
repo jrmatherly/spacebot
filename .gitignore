@@ -6,6 +6,11 @@
 *.db-shm
 *.db-wal
 
+# Package manager lockfiles (bun only — never npm/pnpm/yarn)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
 # Interface
 interface/node_modules/
 interface/dist/
