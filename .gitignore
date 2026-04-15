@@ -1,4 +1,5 @@
 /target
+rust_out
 .DS_Store
 .fastembed_cache
 .build/
