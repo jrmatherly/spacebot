@@ -7,8 +7,8 @@
 ## Tech Stack
 - **Runtime:** Tokio async
 - **HTTP Framework:** Axum 0.8
-- **Database:** SQLite via sqlx 0.8 (42 migrations)
-- **Vector DB:** LanceDB 0.26 (embedded vector + FTS for memory)
+- **Database:** SQLite via sqlx 0.8 (41 agent + 6 global migrations)
+- **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb (embedded)
 - **LLM Framework:** Rig v0.33 (agentic loop framework)
 - **CLI:** clap 4.5

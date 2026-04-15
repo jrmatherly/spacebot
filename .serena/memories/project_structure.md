@@ -25,14 +25,14 @@ spacebot/
 │   ├── skills/           # Skill installation & registry
 │   ├── tasks/            # Task CRUD & migration
 │   ├── telemetry/        # Prometheus metrics (feature-gated)
-│   ├── tools/            # 48 LLM-callable tools (one file per tool)
+│   ├── tools/            # 48 LLM-callable tool files (63 tool implementations)
 │   └── wiki/             # Wiki pages CRUD & search
 ├── interface/            # Web UI (Vite + React + TypeScript)
 │   ├── src/              # React app, components, routes, hooks
 │   └── opencode-embed-src/  # Embeddable widget variant
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
-├── migrations/           # 42 SQLite migrations (2026-02 → 2026-04)
+├── migrations/           # 47 SQLite migrations: 41 agent + 6 global (2026-02 → 2026-04)
 ├── presets/              # 9 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 ├── scripts/              # Build & release scripts
 ├── tests/                # 11 integration test files
