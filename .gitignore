@@ -21,6 +21,7 @@ list/
 .remember/
 .vscode/settings.json
 .scratchpad/
+.full-review/
 
 # Nix
 result/
