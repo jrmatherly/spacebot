@@ -986,8 +986,7 @@ fn derive_cipher(master_key: &[u8], salt: &[u8; 16]) -> Result<Aes256Gcm, Secret
 fn encrypt_bytes(cipher: &Aes256Gcm, plaintext: &[u8]) -> Result<Vec<u8>, SecretsError> {
     let mut nonce_bytes = [0u8; 12];
     rand::rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::try_from(nonce_bytes.as_slice())
-        .map_err(|error| SecretsError::EncryptionFailed(format!("invalid nonce: {error}")))?;
+    let nonce = Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)

@@ -212,7 +212,7 @@ impl McpConnection {
                         .inc();
                     metrics
                         .mcp_connection_duration_seconds
-                        .with_label_values(&[&self.name])
+                        .with_label_values(&[self.name.as_str()])
                         .observe(elapsed);
                     set_mcp_connection_state(&self.name, 1, 0, 0, 0, tool_count);
                 }
@@ -265,7 +265,7 @@ impl McpConnection {
                         let metrics = crate::telemetry::Metrics::global();
                         metrics
                             .mcp_reconnects_total
-                            .with_label_values(&[&self.name])
+                            .with_label_values(&[self.name.as_str()])
                             .inc();
                     }
                     return true;
