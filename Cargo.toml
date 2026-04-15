@@ -133,7 +133,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # Indoc for test fixtures
 indoc = "2"
-arrow-array = "57"
+arrow-array = "58"
 arrow-schema = "57"
 
 # Browser automation
