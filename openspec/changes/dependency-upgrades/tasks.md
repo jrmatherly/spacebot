@@ -90,10 +90,10 @@
 
 ## 5. Final Verification
 
-- [ ] 5.1 Run full gate: `cargo check`, `cargo clippy`, `cargo test --lib`, `cargo fmt --check`
-- [ ] 5.2 Run `cargo audit` and record final vulnerability/warning counts
-- [ ] 5.3 Run `cd interface && bunx tsc --noEmit`
-- [ ] 5.4 Run `cd docs && bun run build`
-- [ ] 5.5 Run `bun audit` in interface/ and docs/
-- [ ] 5.6 Compare final audit counts against Phase 0 baseline
-- [ ] 5.7 Update `.scratchpad/dependency-upgrade-analysis.md` with final results
+- [x] 5.1 Run full gate: `cargo check`, `cargo clippy`, `cargo test --lib`, `cargo fmt --check`
+- [x] 5.2 Run `cargo audit` and record final vulnerability/warning counts
+- [x] 5.3 Run `cd interface && bunx tsc --noEmit`
+- [x] 5.4 Run `cd docs && bun run build`
+- [x] 5.5 Run `bun audit` in interface/ and docs/
+- [x] 5.6 Compare final audit counts against Phase 0 baseline
+- [x] 5.7 Update `.scratchpad/dependency-upgrade-analysis.md` with final results
