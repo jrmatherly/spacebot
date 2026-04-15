@@ -62,31 +62,31 @@
 
 ### 4B. Bollard
 
-- [ ] 4B.1 Bump bollard in Cargo.toml from `"0.18"` to `"0.20"`
-- [ ] 4B.2 Read `src/update.rs` and map every bollard API call to 0.20 equivalents
-- [ ] 4B.3 Replace removed option structs with new query parameter types
-- [ ] 4B.4 Check if `IdResponse` is used in `src/update.rs` — if present, rename `.ID` → `.Id`; if not, skip
-- [ ] 4B.5 Run `cargo check --all-targets`
-- [ ] 4B.6 Commit: `deps: upgrade bollard 0.20 with API migration`
+- [x] 4B.1 Bump bollard in Cargo.toml from `"0.18"` to `"0.20"`
+- [x] 4B.2 Read `src/update.rs` and map every bollard API call to 0.20 equivalents
+- [x] 4B.3 Replace removed option structs with new query parameter types
+- [x] 4B.4 Check if `IdResponse` is used in `src/update.rs` — if present, rename `.ID` → `.Id`; if not, skip
+- [x] 4B.5 Run `cargo check --all-targets`
+- [x] 4B.6 Commit: `deps: upgrade bollard 0.20 with API migration`
 
 ### 4C. Twitch-irc (requires Phase 1 prometheus upgrade)
 
-- [ ] 4C.1 Bump twitch-irc in Cargo.toml from `"5.0"` to `"6.0"`
-- [ ] 4C.2 Update `IRCTags` handling: remove `Option` unwrapping from tag values
-- [ ] 4C.3 Remove calls to deprecated `ban()`/`unban()`/`timeout()`/`untimeout()` if present
-- [ ] 4C.4 Rename `follwers_only` → `followers_only`
-- [ ] 4C.5 Run `cargo check --all-targets`
-- [ ] 4C.6 Verify Cargo.lock no longer contains `rustls 0.21` or `reqwest 0.11`
-- [ ] 4C.7 Commit: `deps: upgrade twitch-irc 6.0, eliminate old rustls/reqwest`
+- [x] 4C.1 Bump twitch-irc in Cargo.toml from `"5.0"` to `"6.0"`
+- [x] 4C.2 Update `IRCTags` handling: remove `Option` unwrapping from tag values
+- [x] 4C.3 Remove calls to deprecated `ban()`/`unban()`/`timeout()`/`untimeout()` if present
+- [x] 4C.4 Rename `follwers_only` → `followers_only`
+- [x] 4C.5 Run `cargo check --all-targets`
+- [x] 4C.6 Verify Cargo.lock no longer contains `rustls 0.21` or `reqwest 0.11`
+- [x] 4C.7 Commit: `deps: upgrade twitch-irc 6.0, eliminate old rustls/reqwest`
 
 ### 4D. Zip
 
-- [ ] 4D.1 Bump zip in Cargo.toml from `"2"` to `"8"`
-- [ ] 4D.2 Update DateTime usage in `src/api/system.rs` and `src/skills/installer.rs`
-- [ ] 4D.3 Handle `last_modified_time` → `Option<DateTime>` change
-- [ ] 4D.4 Remove references to eliminated feature flags
-- [ ] 4D.5 Run `cargo check --all-targets`
-- [ ] 4D.6 Commit: `deps: upgrade zip 2 → 8 with DateTime API migration`
+- [x] 4D.1 Bump zip in Cargo.toml from `"2"` to `"8"`
+- [x] 4D.2 Update DateTime usage in `src/api/system.rs` and `src/skills/installer.rs`
+- [x] 4D.3 Handle `last_modified_time` → `Option<DateTime>` change
+- [x] 4D.4 Remove references to eliminated feature flags
+- [x] 4D.5 Run `cargo check --all-targets`
+- [x] 4D.6 Commit: `deps: upgrade zip 2 → 8 with DateTime API migration`
 
 ## 5. Final Verification
 

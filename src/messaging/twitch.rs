@@ -315,7 +315,6 @@ impl Messaging for TwitchAdapter {
                             .tags
                             .0
                             .get("reply-parent-user-login")
-                            .and_then(|value| value.as_ref())
                             .is_some_and(|login| login.eq_ignore_ascii_case(&bot_username));
                         metadata.insert(
                             "twitch_mentions_or_replies_to_bot".into(),

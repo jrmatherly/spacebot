@@ -368,11 +368,11 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     );
 
     // Pull the new image
-    use bollard::image::CreateImageOptions;
+    use bollard::query_parameters::CreateImageOptions;
     use futures::StreamExt as _;
 
     let pull_options = Some(CreateImageOptions {
-        from_image: target_image.as_str(),
+        from_image: Some(target_image.clone()),
         ..Default::default()
     });
 
@@ -423,20 +423,20 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     let host_config = container_info.host_config;
     let networking_config = container_info.network_settings.and_then(|ns| {
         let networks = ns.networks?;
-        Some(bollard::container::NetworkingConfig {
-            endpoints_config: networks,
+        Some(bollard::models::NetworkingConfig {
+            endpoints_config: Some(networks),
         })
     });
 
     // Use a temporary name so we can swap atomically
     let temp_name = format!("{}-update", container_name);
 
-    let create_options = bollard::container::CreateContainerOptions {
-        name: temp_name.as_str(),
+    let create_options = bollard::query_parameters::CreateContainerOptions {
+        name: Some(temp_name.clone()),
         ..Default::default()
     };
 
-    let create_config = bollard::container::Config {
+    let create_config = bollard::models::ContainerCreateBody {
         image: config.image,
         env: config.env,
         cmd: config.cmd,
@@ -467,7 +467,9 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     docker
         .rename_container(
             &container_id,
-            bollard::container::RenameContainerOptions { name: &old_name },
+            bollard::query_parameters::RenameContainerOptions {
+                name: old_name.clone(),
+            },
         )
         .await
         .map_err(|e| anyhow::anyhow!("failed to rename old container: {}", e))?;
@@ -476,8 +478,8 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     docker
         .rename_container(
             &new_container.id,
-            bollard::container::RenameContainerOptions {
-                name: &container_name,
+            bollard::query_parameters::RenameContainerOptions {
+                name: container_name.clone(),
             },
         )
         .await
@@ -485,7 +487,10 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
 
     // Start the new container
     docker
-        .start_container::<String>(&new_container.id, None)
+        .start_container(
+            &new_container.id,
+            None::<bollard::query_parameters::StartContainerOptions>,
+        )
         .await
         .map_err(|e| anyhow::anyhow!("failed to start new container: {}", e))?;
 
@@ -495,7 +500,10 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     docker
         .stop_container(
             &container_id,
-            Some(bollard::container::StopContainerOptions { t: 10 }),
+            Some(bollard::query_parameters::StopContainerOptions {
+                t: Some(10),
+                ..Default::default()
+            }),
         )
         .await
         .map_err(|e| anyhow::anyhow!("failed to stop old container: {}", e))?;
@@ -504,7 +512,7 @@ pub async fn apply_docker_update(status: &SharedUpdateStatus) -> anyhow::Result<
     docker
         .remove_container(
             &container_id,
-            Some(bollard::container::RemoveContainerOptions {
+            Some(bollard::query_parameters::RemoveContainerOptions {
                 force: true,
                 ..Default::default()
             }),

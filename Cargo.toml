@@ -108,7 +108,7 @@ tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
 teloxide = { version = "0.17", default-features = false, features = ["rustls"] }
 
 # Twitch
-twitch-irc = { version = "5.0", default-features = false, features = ["transport-tcp-rustls-webpki-roots", "refreshing-token-rustls-webpki-roots"] }
+twitch-irc = { version = "6.0", default-features = false, features = ["transport-tcp-rustls-webpki-roots", "refreshing-token-rustls-webpki-roots"] }
 
 # Email
 imap = "2.4"
@@ -144,13 +144,13 @@ chromiumoxide_cdp = "0.9"
 minijinja = "2.8"
 
 # Docker API client (for self-update via Docker socket)
-bollard = "0.18"
+bollard = "0.20"
 
 # Semver parsing (for update version comparison)
 semver = "1"
 
 # Skill installation
-zip = "2"
+zip = "8"
 tempfile = "3"
 
 # Prometheus metrics (optional, behind "metrics" feature)
