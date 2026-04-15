@@ -1,0 +1,20 @@
+# Spacebot - Archon Project Configuration
+
+# AI assistant for this project (overrides global default)
+# assistant: claude
+
+# Worktree settings
+worktree:
+  baseBranch: main
+  copyFiles:
+    - .envrc
+    - .claude/settings.local.json
+
+# Documentation directory (relative to repo root)
+docs:
+  path: docs/
+
+# Default commands/workflows
+# defaults:
+#   loadDefaultCommands: true
+#   loadDefaultWorkflows: true
