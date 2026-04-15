@@ -10,7 +10,7 @@
 - **Database:** SQLite via sqlx 0.8 (42 migrations)
 - **Vector DB:** LanceDB 0.26 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb (embedded)
-- **LLM Framework:** Rig v0.30.0 (agentic loop framework)
+- **LLM Framework:** Rig v0.33 (agentic loop framework)
 - **CLI:** clap 4.5
 - **Serialization:** serde/serde_json 1.0
 - **Logging:** tracing 0.1
