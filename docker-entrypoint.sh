@@ -34,6 +34,23 @@ EOF
         fi
     fi
 
+    # Slack adapter (Socket Mode — requires bot_token + app_token)
+    if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_APP_TOKEN" ]; then
+        cat >> "$SPACEBOT_DIR/config.toml" <<EOF
+
+[messaging.slack]
+enabled = true
+bot_token = "env:SLACK_BOT_TOKEN"
+app_token = "env:SLACK_APP_TOKEN"
+EOF
+        if [ -n "$SLACK_DM_ALLOWED_USERS" ]; then
+            DM_ARRAY=$(echo "$SLACK_DM_ALLOWED_USERS" | sed 's/[[:space:]]//g' | sed 's/,/", "/g')
+            cat >> "$SPACEBOT_DIR/config.toml" <<EOF
+dm_allowed_users = ["$DM_ARRAY"]
+EOF
+        fi
+    fi
+
     # Telegram adapter
     if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
         cat >> "$SPACEBOT_DIR/config.toml" <<EOF
@@ -81,6 +98,27 @@ EOF
             DM_ARRAY=$(echo "$DISCORD_DM_ALLOWED_USERS" | sed 's/[[:space:]]//g' | sed 's/,/", "/g')
             cat >> "$SPACEBOT_DIR/config.toml" <<EOF
 dm_allowed_users = ["$DM_ARRAY"]
+EOF
+        fi
+    fi
+
+    # Slack binding
+    if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_APP_TOKEN" ]; then
+        cat >> "$SPACEBOT_DIR/config.toml" <<EOF
+
+[[bindings]]
+agent_id = "main"
+channel = "slack"
+EOF
+        if [ -n "$SLACK_WORKSPACE_ID" ]; then
+            cat >> "$SPACEBOT_DIR/config.toml" <<EOF
+workspace_id = "$SLACK_WORKSPACE_ID"
+EOF
+        fi
+        if [ -n "$SLACK_CHANNEL_IDS" ]; then
+            CH_ARRAY=$(echo "$SLACK_CHANNEL_IDS" | sed 's/[[:space:]]//g' | sed 's/,/", "/g')
+            cat >> "$SPACEBOT_DIR/config.toml" <<EOF
+channel_ids = ["$CH_ARRAY"]
 EOF
         fi
     fi
