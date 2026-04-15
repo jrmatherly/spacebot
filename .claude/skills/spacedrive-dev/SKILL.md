@@ -31,7 +31,7 @@ A headless Rust daemon manages the VDFS core, library database, background jobs,
 ```rust
 pub enum SdPath {
     Physical { device_slug: String, path: PathBuf },
-    Cloud { service: String, identifier: String, path: String },
+    Cloud { service: CloudServiceType, identifier: String, path: String },
     Content { content_id: Uuid },
     Sidecar { content_id: Uuid, kind: String, variant: String, format: String },
 }
@@ -245,9 +245,9 @@ Same BLAKE3 sampling for content identification. Ranged reads for cloud indexing
 ## Spacebot-Spacedrive Integration
 
 ### Connection Modes
-1. **Managed Local** — Spacedrive launches/supervises Spacebot child process (recommended)
-2. **External Local** — Connect to existing localhost Spacebot at `http://127.0.0.1:19898`
-3. **Remote** — HTTPS + bearer auth to remote instance
+1. **Managed Local** (`ManagedLocal`) — Spacedrive launches/supervises Spacebot child process (recommended)
+2. **External Local** (`ExternalLocal`) — Connect to existing localhost Spacebot at `http://127.0.0.1:19898`
+3. **Library** (`Library`) — Routed via P2P library layer to remote Spacebot instance
 
 ### Architecture Boundary
 Integration is HTTP + SSE. Spacedrive is the device graph and permission layer. Spacebot is the agent runtime and scheduler.
@@ -263,9 +263,11 @@ SpacebotConfig {
     base_url: String,
     auth_token: Option<String>,
     binary_path: Option<PathBuf>,
+    config_path: Option<PathBuf>,
     instance_dir: Option<PathBuf>,
     auto_start: bool,
     default_agent_id: String,
+    default_sender_name: String,
 }
 ```
 
