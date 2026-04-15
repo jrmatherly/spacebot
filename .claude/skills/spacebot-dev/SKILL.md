@@ -514,6 +514,97 @@ Prometheus-compatible at `/metrics` on port 9090. All prefixed `spacebot_`.
 
 Key: `llm_requests_total`, `llm_request_duration_seconds`, `llm_tokens_total`, `llm_estimated_cost_dollars`, `tool_calls_total`, `tool_call_duration_seconds`, `active_workers`, `active_branches`, `memory_entry_count`, `process_errors_total`, `dispatch_while_cold_count`
 
+## Anti-Patterns (from AGENTS.md)
+
+These are validated constraints. Violating them produces architecturally broken code.
+
+- **Don't block the channel.** The channel never waits on branches, workers, or compaction. If the channel awaits a branch result before responding, the design is wrong.
+- **Don't dump raw search results into channel context.** Memory recall goes through a branch, which curates. The channel gets clean conclusions.
+- **Don't give workers channel context.** Workers get a fresh prompt and a task. If it needs conversation context, that's a branch.
+- **Don't make the compactor an LLM process.** The compactor is programmatic. The LLM work happens in the compaction worker it spawns.
+- **Don't use `#[async_trait]`.** Use native RPITIT. Only add a `Dyn` companion trait when you actually need `dyn Trait`.
+- **Don't create many small files.** Implement in existing files unless it's a new logical component.
+- **Don't add features without updating existing docs.** Update relevant docs in the same commit. Don't create new doc files for this.
+
+## Patterns to Implement (from AGENTS.md)
+
+These are validated patterns. Implement them when building the relevant module.
+
+- **Tool nudging / outcome gate:** Workers cannot exit with text-only response until they signal a terminal outcome via `set_status(kind: "outcome")`. Hook fires `Terminate` and retries with nudge prompt (up to 2 retries). See `docs/design-docs/tool-nudging.md`.
+- **Fire-and-forget DB writes:** `tokio::spawn` for history saves, memory writes, log persistence. User gets response immediately.
+- **Hybrid search with RRF:** `score = sum(1/(60 + rank))`. RRF works on ranks, not raw scores.
+- **Leak detection:** Regex patterns for API keys, tokens, PEM keys. Scan in `SpacebotHook.on_tool_result()` and before outbound HTTP.
+- **Workspace path guard:** File tools reject writes to identity/memory paths with error directing LLM to the correct tool.
+- **Circuit breaker:** Auto-disable recurring tasks after 3 consecutive failures. Apply to cron, maintenance, cortex routines.
+- **Error-as-result for tools:** Tool errors are structured results, not panics. The LLM sees errors and can recover.
+- **Worker state machine:** Validate transitions with `can_transition_to()` using `matches!`. Illegal transitions are runtime errors.
+
+## Build Order (6 phases from AGENTS.md)
+
+When implementing from scratch, follow this order:
+
+1. **Foundation** — `error.rs`, `config.rs`, `db/`, `llm/`, `main.rs`
+2. **Memory** — `memory/types.rs`, `store.rs`, `lance.rs`, `embedding.rs`, `search.rs`, `maintenance.rs`
+3. **Agent Core** — `hooks/spacebot.rs`, `agent/status.rs`, `tools/`, `agent/worker.rs`, `branch.rs`, `channel.rs`, `compactor.rs`
+4. **System** — `identity/`, `conversation/`, `prompts/`, `agent/cortex.rs`, `hooks/cortex.rs`, `cron/`
+5. **Messaging** — `messaging/traits.rs`, `manager.rs`, `webhook.rs`, `telegram.rs`, `discord.rs`
+6. **Hardening** — `secrets/`, `settings/`, leak detection, workspace path guards, circuit breakers
+
+## Frontend Architecture (from SPACEUI_MIGRATION.md)
+
+### Component Library
+Local UI primitives replaced by SpaceUI packages:
+- `@spacedrive/primitives` — base components
+- `@spacedrive/ai` — AI-specific components
+- `@spacedrive/forms` — form components
+- `@spacedrive/explorer` — file explorer components
+
+Tailwind v4 via `@tailwindcss/vite` with SpaceUI design token system.
+
+### Layout
+Persistent 220px sidebar with accordion agent sub-nav. Global workers popover in footer. Dashboard landing page with notifications, token usage, and activity cards.
+
+### Key UI Patterns
+- **Settings** — decomposed from 2900-line monolith into 12 section components
+- **AgentConfig** — decomposed from 1452 lines into ConfigSidebar + section editors
+- **TopologyGraph** — decomposed from 2074 lines into OrgGraph + ProfileNode + GroupNode + edge/config panels
+- **Tasks** — Linear-style task list (replaced kanban board), detail views, SSE-driven updates
+- **Portal** — modular PortalPanel/Timeline/Composer/Header, file attachments, multipart upload
+
+### Backend Features Supporting UI
+- `ConversationSettings` struct with memory mode, delegation, worker context, model selection
+- `ResponseMode` enum: `Active`, `Observe`, `MentionOnly` (replaces old `listen_only_mode`)
+- Per-channel persistence via `ChannelSettingsStore` with resolution chain: per-channel DB > binding defaults > agent defaults
+- Settings hot-reload via `ProcessEvent::SettingsUpdated`
+- "Direct mode" gives channels full worker-level tools
+- `UsageAccumulator` for per-process token tracking
+
+## Metrics Instrumentation (from METRICS.md)
+
+All telemetry behind `#[cfg(feature = "metrics")]`. Zero runtime cost without the feature. Docker always includes metrics.
+
+### Key Metrics (all prefixed `spacebot_`)
+- **LLM:** `llm_requests_total`, `llm_request_duration_seconds`, `llm_tokens_total{direction}`, `llm_estimated_cost_dollars`
+- **Tools:** `tool_calls_total{tool_name}`, `tool_call_duration_seconds`
+- **MCP:** `mcp_connections`, `mcp_tools_registered`, `mcp_tool_calls_total`, `mcp_tool_call_duration_seconds`
+- **Messaging:** `messages_received_total`, `messages_sent_total`, `message_handling_duration_seconds`, `channel_errors_total`
+- **Memory:** `memory_reads_total`, `memory_writes_total`, `memory_updates_total{operation}`, `memory_entry_count`, `memory_operation_duration_seconds`, `memory_search_results`, `memory_embedding_duration_seconds`
+- **Workers:** `active_workers`, `active_branches`, `branches_spawned_total`, `worker_duration_seconds`, `worker_cost_dollars`, `context_overflow_total`
+- **Cost:** `llm_estimated_cost_dollars`
+- **API:** `http_requests_total`, `http_request_duration_seconds`
+- **Cron:** `cron_executions_total`
+- **Warmup:** `dispatch_while_cold_count`, `warmup_recovery_latency_ms`
+
+Total cardinality: ~800-9200 series (safe for any Prometheus deployment).
+
+Uses private `prometheus::Registry` (not global) to avoid conflicts. Metrics server on `0.0.0.0:9090`, separate from API server on `127.0.0.1:19898`.
+
+### Adding New Metrics
+1. Add metric definition in `src/telemetry/registry.rs`
+2. Gate instrumentation with `#[cfg(feature = "metrics")]` at statement level
+3. Access registry via `crate::telemetry::Metrics::global()`
+4. Update `METRICS.md` with new metric documentation
+
 ## Development Workflow
 
 ### Before any push
