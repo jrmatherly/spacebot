@@ -10,30 +10,26 @@
 
 <p align="center">
   <a href="https://fsl.software/">
-    <img src="https://img.shields.io/static/v1?label=License&message=FSL-1.1-ALv2&color=000" />
+    <img src="https://img.shields.io/static/v1?label=License&message=FSL-1.1-ALv2&color=000" alt="License: FSL-1.1-ALv2" />
   </a>
-  <a href="https://github.com/spacedriveapp/spacebot">
-    <img src="https://img.shields.io/static/v1?label=Core&message=Rust&color=DEA584" />
+  <a href="https://github.com/jrmatherly/spacebot">
+    <img src="https://img.shields.io/static/v1?label=Core&message=Rust&color=DEA584" alt="Core: Rust" />
   </a>
-  <a href="https://discord.gg/gTaF2Z44f5">
-    <img src="https://img.shields.io/discord/949090953497567312?label=Discord&color=5865F2" />
-  </a>
-
-  <a href="https://deepwiki.com/spacedriveapp/spacebot">
-    <img src="https://img.shields.io/static/v1?label=Ask&message=DeepWiki&color=5B6EF7" />
+  <a href="https://deepwiki.com/jrmatherly/spacebot">
+    <img src="https://img.shields.io/static/v1?label=Ask&message=DeepWiki&color=5B6EF7" alt="Ask DeepWiki" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://spacebot.sh"><strong>spacebot.sh</strong></a> •
+  <a href="https://apollosai.dev"><strong>apollosai.dev</strong></a> •
   <a href="#how-it-works">How It Works</a> •
   <a href="#goals-and-tasks">Goals & Tasks</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#spacebot--spacedrive">Spacedrive</a> •
-  <a href="https://docs.spacebot.sh">Docs</a>
+  <a href="https://docs.apollosai.dev">Docs</a>
 </p>
 
-> **One-click deploy with [spacebot.sh](https://spacebot.sh)** — connect your Discord, Slack, Telegram, or Twitch, configure your agent, and go. No self-hosting required.
+> **One-click deploy with [apollosai.dev](https://apollosai.dev)** — connect your Discord, Slack, Telegram, or Twitch, configure your agent, and go. No self-hosting required.
 
 <p align="center">
   <img src=".github/spacebot-ui.webp" alt="Spacebot UI" />
@@ -103,7 +99,7 @@ Channel context hits 80%
     → Channel never interrupted
 ```
 
-For process capabilities, tool access by type, memory internals, cron, and multi-agent isolation, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For process capabilities, tool access by type, memory internals, cron, and multi-agent isolation, see the [Architecture](<docs/content/docs/(core)/architecture.mdx>) page.
 
 ---
 
@@ -257,7 +253,7 @@ No other agent harness is building this. It's a category.
 ### Build and Run
 
 ```bash
-git clone https://github.com/spacedriveapp/spacebot
+git clone https://github.com/jrmatherly/spacebot
 cd spacebot
 
 # Optional: build the OpenCode embedded UI (requires Node 22+ and bun)
@@ -300,7 +296,7 @@ OAuth tokens are stored in `anthropic_oauth.json` and auto-refresh before each A
 
 | Method                                 | What You Get                                                                                |
 | -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **[spacebot.sh](https://spacebot.sh)** | One-click hosted deploy. Connect your platforms, configure your agent, done.                |
+| **[apollosai.dev](https://apollosai.dev)** | One-click hosted deploy. Connect your platforms, configure your agent, done.                |
 | **Self-hosted**                        | Single Rust binary. No Docker, no server dependencies, no microservices. Clone, build, run. |
 | **Docker**                             | Container image with everything included. Mount a volume for persistent data.               |
 
@@ -312,7 +308,7 @@ OAuth tokens are stored in `anthropic_oauth.json` and auto-refresh before each A
 | --------------- | --------------------------------------------------------------------------------------------------------------- |
 | Language        | **Rust** (edition 2024) — single binary, no runtime dependencies, no GC pauses                                  |
 | Async runtime   | **Tokio**                                                                                                       |
-| LLM framework   | **[Rig](https://github.com/0xPlaygrounds/rig)** v0.31 — agentic loop, tool execution, hooks                     |
+| LLM framework   | **[Rig](https://github.com/0xPlaygrounds/rig)** v0.33 — agentic loop, tool execution, hooks                     |
 | Relational data | **SQLite** (sqlx) — conversations, memory graph, tasks, goals, cron jobs                                        |
 | Vector + FTS    | **[LanceDB](https://lancedb.github.io/lancedb/)** — embeddings (HNSW), full-text (Tantivy), hybrid search (RRF) |
 | Key-value       | **[redb](https://github.com/cberner/redb)** — settings, encrypted secrets                                       |
@@ -335,7 +331,7 @@ Single binary, no server dependencies. All data lives in embedded databases in a
 | ------------------------------------------------------------------- | --------------------------------------------------------- |
 | [Quick Start](<docs/content/docs/(getting-started)/quickstart.mdx>) | Setup, config, first run                                  |
 | [Config Reference](<docs/content/docs/(configuration)/config.mdx>)  | Full `config.toml` reference                              |
-| [Architecture](ARCHITECTURE.md)                                     | Process types, tool access, memory internals, multi-agent |
+| [Architecture](<docs/content/docs/(core)/architecture.mdx>)          | Process types, tool access, memory internals, multi-agent |
 | [Memory](<docs/content/docs/(core)/memory.mdx>)                     | Memory system design                                      |
 | [Tools](<docs/content/docs/(features)/tools.mdx>)                   | All available LLM tools                                   |
 | [Routing](<docs/content/docs/(core)/routing.mdx>)                   | Model routing and fallback chains                         |
@@ -367,6 +363,10 @@ The dashboard uses [`@spacedrive/*`](https://github.com/spacedriveapp/spaceui) p
 Formatting is still enforced in CI, but the hook catches it earlier by running `cargo fmt --all` before each commit. `just gate-pr` mirrors the CI gate and includes migration safety, compile checks, and test verification.
 
 ---
+
+## Attribution
+
+This project is a detached fork of [spacedriveapp/spacebot](https://github.com/spacedriveapp/spacebot), originally developed by [Spacedrive Technology Inc](https://spacedrive.com/). The original project documentation is available at [docs.spacebot.sh](https://docs.spacebot.sh).
 
 ## License
 

@@ -1,6 +1,6 @@
 # Metrics Reference
 
-Comprehensive reference for Spacebot's Prometheus metrics. For quick-start setup, see `docs/metrics.md`. For the published docs, see the metrics page on [docs.spacebot.sh](https://docs.spacebot.sh).
+Comprehensive reference for Spacebot's Prometheus metrics. For quick-start setup, see `docs/metrics.md`. For the published docs, see the metrics page on [docs.apollosai.dev](https://docs.apollosai.dev).
 
 ## Feature Gate
 
@@ -458,7 +458,7 @@ Every instrumentation call site uses `#[cfg(feature = "metrics")]` at the statem
 | `src/agent/ingestion.rs` | `#[cfg(feature = "metrics")]` (ingestion files) |
 | `src/mcp.rs` | `#[cfg(feature = "metrics")]` (MCP connections, tools) |
 | `src/api/server.rs` | `#[cfg(feature = "metrics")]` (HTTP middleware) |
-| `Cargo.toml` | `prometheus = { version = "0.13", optional = true }`, `metrics = ["dep:prometheus"]` |
+| `Cargo.toml` | `prometheus = { version = "0.14", optional = true }`, `metrics = ["dep:prometheus"]` |
 
 All consistent. No path references `crate::telemetry` without a `cfg` gate.
 

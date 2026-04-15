@@ -158,7 +158,7 @@ SQLite migrations are **immutable**. Never edit an existing migration file. Alwa
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design. The short version: five process types, each with one job.
+See the [Architecture](<docs/content/docs/(core)/architecture.mdx>) page for the full design. The short version: five process types, each with one job.
 
 - **Channels** — user-facing LLM, stays responsive, never blocks on work
 - **Branches** — fork channel context to think, return conclusion, get deleted

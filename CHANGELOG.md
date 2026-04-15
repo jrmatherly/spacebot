@@ -1,5 +1,7 @@
 # Changelog
 
+This project is a detached fork of [spacedriveapp/spacebot](https://github.com/spacedriveapp/spacebot). Entries through v0.4.1 reference the upstream repository's pull requests and contributors.
+
 Seeded from GitHub releases; maintained by the release bump workflow.
 
 ## v0.4.1
