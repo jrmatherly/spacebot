@@ -134,7 +134,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 # Indoc for test fixtures
 indoc = "2"
 arrow-array = "57"
-arrow-schema = "57"
+arrow-schema = "58"
 
 # Browser automation
 chromiumoxide = { version = "0.9", features = ["fetcher", "rustls", "zip8"], default-features = false }
