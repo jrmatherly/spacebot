@@ -5,7 +5,7 @@
 //! Uses a dedicated redb database (`prompt_snapshots.redb`) so it can be
 //! deleted independently without affecting settings or secrets.
 
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase as _, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
