@@ -5,7 +5,7 @@ use super::channel_dispatch::{
 };
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng};
 
 use std::collections::HashSet;
 use std::sync::Arc;

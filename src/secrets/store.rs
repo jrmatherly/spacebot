@@ -12,7 +12,7 @@
 
 use crate::error::SecretsError;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
-use rand::RngCore;
+use rand::Rng;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

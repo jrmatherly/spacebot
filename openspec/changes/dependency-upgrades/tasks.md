@@ -22,19 +22,19 @@
 
 ## 2. Minor Code Changes (Phase 2)
 
-- [ ] 2.1 Bump fastembed in Cargo.toml from `"4"` to `"5"`
-- [ ] 2.2 Refactor `src/memory/embedding.rs`: wrap `TextEmbedding` in `Arc<std::sync::Mutex<TextEmbedding>>`
-- [ ] 2.3 Update all `embed()` call sites to acquire the Mutex lock
-- [ ] 2.4 Bump chromiumoxide in Cargo.toml from `"0.8"` to `"0.9"`
-- [ ] 2.5 Bump chromiumoxide_cdp in Cargo.toml from `"0.8"` to `"0.9"`
-- [ ] 2.6 Verify `src/tools/browser.rs` compiles with new CDP types
-- [ ] 2.7 Bump rand in Cargo.toml from `"0.9"` to `"0.10"`
-- [ ] 2.8 In `src/agent/invariant_harness.rs`: check if `rand::Rng` methods used (e.g., `random_range()`) need `rand::RngExt` import instead
-- [ ] 2.9 In `src/secrets/store.rs` and `src/auth.rs`: verify `RngCore` (used for `fill_bytes()`) is unchanged — no rename needed for these files
-- [ ] 2.10 Check if `StdRng` is cloned anywhere (Clone removed in 0.10), check if `rand::rng()` function signature changed
-- [ ] 2.11 Run `cargo update` + `cargo check --all-targets` + `cargo clippy --all-targets`
-- [ ] 2.12 Run `cargo test --lib` (819 passing)
-- [ ] 2.13 Commit: `deps: upgrade fastembed, chromiumoxide, rand with code changes`
+- [x] 2.1 Bump fastembed in Cargo.toml from `"4"` to `"5"`
+- [x] 2.2 Refactor `src/memory/embedding.rs`: wrap `TextEmbedding` in `Arc<std::sync::Mutex<TextEmbedding>>`
+- [x] 2.3 Update all `embed()` call sites to acquire the Mutex lock
+- [x] 2.4 Bump chromiumoxide in Cargo.toml from `"0.8"` to `"0.9"`
+- [x] 2.5 Bump chromiumoxide_cdp in Cargo.toml from `"0.8"` to `"0.9"`
+- [x] 2.6 Verify `src/tools/browser.rs` compiles with new CDP types
+- [x] 2.7 Bump rand in Cargo.toml from `"0.9"` to `"0.10"`
+- [x] 2.8 In `src/agent/invariant_harness.rs`: `rand::Rng` → `rand::RngExt as _` for `random_range()` method
+- [x] 2.9 In `src/secrets/store.rs` and `src/auth.rs`: `rand::RngCore` → `rand::Rng` (RngCore was renamed in 0.10)
+- [x] 2.10 StdRng not cloned anywhere; `rand::rng()` returns new type but same API
+- [x] 2.11 Run `cargo update` + `cargo check --all-targets` + `cargo clippy --all-targets`
+- [x] 2.12 Run `cargo test --lib` (819 passing)
+- [x] 2.13 Commit: `deps: upgrade fastembed, chromiumoxide, rand with code changes`
 
 ## 3. Frontend Upgrades (Phase 3)
 
