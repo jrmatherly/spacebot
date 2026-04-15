@@ -39,6 +39,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 - `prompts/` — Jinja2 system prompt templates
 - `presets/` — Agent persona presets (IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 - `migrations/` — SQLite migrations (immutable, append-only)
+- `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app

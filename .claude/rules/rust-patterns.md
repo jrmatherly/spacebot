@@ -6,6 +6,10 @@ Patterns for specific subsystems. Reference when working on the relevant area. F
 
 Derive order: `Debug`, `Clone`, then serialization/comparison traits. Field order: identity, state/data, shared handles, config, internal state, channels. Use `#[non_exhaustive]` on public API boundary types.
 
+## Function Signatures
+
+Parameter order: `&self`/`&mut self`, primary data, shared resource handles, config/options, callbacks (last). Use `_` prefix for unused params. `impl Trait` in argument position, `where` clauses for multi-bound generics.
+
 ## Async Patterns
 
 - `tokio::spawn` for independent concurrent work
