@@ -1,6 +1,6 @@
 # ---- Builder stage ----
 # Compiles the React frontend and the Rust binary with the frontend embedded.
-FROM rust:bookworm AS builder
+FROM rust:trixie AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -90,7 +90,7 @@ RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --features metrics \
 # ---- Runtime stage ----
 # Minimal runtime with Chrome runtime libraries for fetcher-downloaded Chromium.
 # Chrome itself is downloaded on first browser tool use and cached on the volume.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
