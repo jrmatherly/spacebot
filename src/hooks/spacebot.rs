@@ -286,20 +286,25 @@ impl SpacebotHook {
                 .prompt(current_prompt.as_ref())
                 .with_history(&*history)
                 .with_hook(self.clone())
+                .extended_details()
                 .await;
 
-            match &result {
+            match result {
                 // Context injection: the hook detected pending injected
                 // messages and terminated the agent loop. Drain the buffer,
                 // append each message to history as a User message, and
                 // re-prompt with a continuation hint. This does NOT count
                 // against the nudge attempt budget.
-                Err(PromptError::PromptCancelled { reason, .. })
-                    if Self::is_context_injection_reason(reason) =>
-                {
+                Err(PromptError::PromptCancelled {
+                    reason,
+                    chat_history,
+                }) if Self::is_context_injection_reason(&reason) => {
+                    // Write back the full history from the cancelled turn
+                    // so subsequent iterations see all accumulated messages.
+                    *history = chat_history;
+
                     let injected = self.take_injected_messages();
                     if injected.is_empty() {
-                        // Shouldn't happen, but guard against it.
                         tracing::warn!(
                             process_id = %self.process_id,
                             "context injection termination but no buffered messages"
@@ -316,7 +321,6 @@ impl SpacebotHook {
                         )));
                     }
 
-                    // Re-prompt asking the worker to incorporate the new context.
                     current_prompt = std::borrow::Cow::Borrowed(
                         "New context has been provided above. Incorporate this \
                          information and continue working on your task. Do not \
@@ -325,21 +329,24 @@ impl SpacebotHook {
                     using_tool_nudge_prompt = false;
                     continue;
                 }
-                Err(PromptError::PromptCancelled { reason, .. })
-                    if Self::is_tool_nudge_reason(reason) =>
-                {
-                    // Read the current attempt count. on_tool_result resets
-                    // this to zero whenever a tool call completes, so this
-                    // tracks *consecutive* text-only responses rather than
-                    // total nudges across the worker's lifetime.
+                Err(PromptError::PromptCancelled {
+                    reason,
+                    chat_history,
+                }) if Self::is_tool_nudge_reason(&reason) => {
+                    // Write back the full history so prune logic sees
+                    // messages from this attempt.
+                    *history = chat_history;
+
                     let attempts = self
                         .nudge_attempts
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if attempts >= Self::TOOL_NUDGE_MAX_RETRIES {
-                        // Retries exhausted — propagate the cancellation.
                         self.set_tool_nudge_request_active(false);
                         self.set_completion_contract_request_active(false);
-                        return result;
+                        return Err(PromptError::PromptCancelled {
+                            chat_history: history.clone(),
+                            reason,
+                        });
                     }
                     Self::prune_tool_nudge_retry_history(
                         history,
@@ -356,17 +363,23 @@ impl SpacebotHook {
                     using_tool_nudge_prompt = true;
                     continue;
                 }
-                _ => {
-                    if result.is_ok() {
-                        Self::prune_successful_tool_nudge_prompt(
-                            history,
-                            history_len_before_attempt,
-                            using_tool_nudge_prompt,
-                        );
+                Ok(response) => {
+                    if let Some(new_messages) = response.messages {
+                        history.extend(new_messages);
                     }
+                    Self::prune_successful_tool_nudge_prompt(
+                        history,
+                        history_len_before_attempt,
+                        using_tool_nudge_prompt,
+                    );
                     self.set_tool_nudge_request_active(false);
                     self.set_completion_contract_request_active(false);
-                    return result;
+                    return Ok(response.output);
+                }
+                Err(error) => {
+                    self.set_tool_nudge_request_active(false);
+                    self.set_completion_contract_request_active(false);
+                    return Err(error);
                 }
             }
         }
@@ -435,11 +448,16 @@ impl SpacebotHook {
     {
         self.reset_tool_nudge_state();
         self.set_tool_nudge_request_active(false);
-        agent
+        let response = agent
             .prompt(prompt)
             .with_history(&*history)
             .with_hook(self.clone())
-            .await
+            .extended_details()
+            .await?;
+        if let Some(new_messages) = response.messages {
+            history.extend(new_messages);
+        }
+        Ok(response.output)
     }
 
     /// Prompt once using Rig's streaming path so text/tool deltas reach the hook.
@@ -474,7 +492,7 @@ impl SpacebotHook {
             if current_max_turns > max_turns + 1 {
                 return Err(PromptError::MaxTurnsError {
                     max_turns,
-                    chat_history: Box::new(chat_history.clone()),
+                    chat_history: Box::new(chat_history),
                     prompt: Box::new(prompt.to_string().into()),
                 });
             }

@@ -83,7 +83,7 @@ The channel is always responsive — never blocked by work, never frozen by comp
 
 **Tools:** reply, branch, spawn_worker, route, cancel, skip, react  
 **Context:** Conversation history + compaction summaries + status block  
-**History:** Persistent `Vec<Message>`, passed via `agent.prompt().with_history(&mut history)`
+**History:** Persistent `Vec<Message>`, passed via `agent.prompt().with_history(&history)`
 
 ### Branches
 
@@ -300,7 +300,7 @@ let agent = AgentBuilder::new(model.clone())
 **History is external**, passed on each call:
 ```rust
 let response = agent.prompt(&user_message)
-    .with_history(&mut history)
+    .with_history(&history)
     .max_turns(5)
     .await?;
 ```

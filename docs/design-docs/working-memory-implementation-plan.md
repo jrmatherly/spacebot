@@ -40,7 +40,7 @@ The channel system prompt is assembled from these sources:
 
 5. **Supplemental context** — Identity memories + high-importance memories loaded from `MemoryStore` in `build_channel_context()` (`src/conversation/context.rs`). Adapter-specific prompt fragments, skills prompt, worker capabilities, channel list, org context, project context.
 
-6. **Conversation history** — Persistent `Vec<Message>` passed via `agent.prompt().with_history(&mut history)`.
+6. **Conversation history** — Persistent `Vec<Message>` passed via `agent.prompt().with_history(&history)`.
 
 ### Key Components and Their Locations
 

@@ -41,7 +41,7 @@ Enums with data-carrying variants. `can_transition_to()` using `matches!` for va
 
 ## Rig Integration
 
-Agent construction: `AgentBuilder::new(model).preamble(&prompt).hook(hook).tool_server_handle(tools).build()`. History is external: `.with_history(&mut history)`. Branching is a clone of history. Always set `max_turns` explicitly. Handle `MaxTurnsError` and `PromptCancelled` for recovery.
+Agent construction: `AgentBuilder::new(model).preamble(&prompt).hook(hook).tool_server_handle(tools).build()`. History is external: `.with_history(&history)`. Branching is a clone of history. Always set `max_turns` explicitly. Handle `MaxTurnsError` and `PromptCancelled` for recovery.
 
 ## Strings
 
