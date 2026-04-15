@@ -45,5 +45,5 @@
 - [x] 6.2 Stage all changes: `git add spaceui/` then stage all 14 modified files individually
 - [x] 6.3 Review staged diff: `git diff --cached --stat` and spot-check key files
 - [x] 6.4 Commit with message: `feat: integrate SpaceUI design system into repository`
-- [ ] 6.5 Run full end-to-end verification: interface dev, interface build, Docker build, Nix build, `just gate-pr`
-- [ ] 6.6 Clean up worktree if desired: `git worktree remove .worktrees/integrate-spaceui` (after merging)
+- [x] 6.5 Run full end-to-end verification: interface dev, interface build, Docker build, Nix build, `just gate-pr`
+- [x] 6.6 Clean up worktree if desired: `git worktree remove .worktrees/integrate-spaceui` (after merging)

@@ -7,9 +7,9 @@
 
 ## 2. rig-core 0.33 → 0.35: Worktree setup (per using-git-worktrees skill)
 
-- [ ] 2.1 Verify `.worktrees/` exists and is gitignored: `git check-ignore -q .worktrees`
-- [ ] 2.2 Create git worktree: `git worktree add .worktrees/upgrade-rig -b feat/upgrade-rig`
-- [ ] 2.3 Run project setup in worktree: `cd .worktrees/upgrade-rig && cargo build`
+- [x] 2.1 Verify `.worktrees/` exists and is gitignored: `git check-ignore -q .worktrees`
+- [x] 2.2 Create git worktree: `git worktree add .worktrees/upgrade-rig -b feat/upgrade-rig`
+- [x] 2.3 Run project setup in worktree: `cd .worktrees/upgrade-rig && cargo build`
 - [ ] 2.4 Verify clean baseline: `cargo test --lib` must pass before any changes (if fails, STOP and investigate)
 - [ ] 2.5 Bump `rig-core` version from `0.33` to `0.35` in `Cargo.toml` line 20
 - [ ] 2.6 Run `cargo update -p rig-core` to update lockfile
