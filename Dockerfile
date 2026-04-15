@@ -2,11 +2,13 @@
 # Compiles the React frontend and the Rust binary with the frontend embedded.
 FROM rust:bookworm AS builder
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install build dependencies:
 #   protobuf-compiler — LanceDB protobuf codegen
 #   cmake — onig_sys (regex), lz4-sys
 #   libssl-dev — openssl-sys (reqwest TLS)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     libprotobuf-dev \
     cmake \
@@ -34,6 +36,7 @@ RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
 
 # 2. Install frontend dependencies.
 COPY interface/package.json interface/
+# hadolint ignore=DL3003
 RUN cd interface && bun install
 
 # 3. Build the OpenCode embed bundle (live coding UI in Workers tab).
@@ -45,6 +48,7 @@ RUN ./scripts/build-opencode-embed.sh
 
 # 4. Build the frontend (includes OpenCode embed assets from step 3).
 COPY interface/ interface/
+# hadolint ignore=DL3003
 RUN cd interface && bun run build
 
 # 5. Copy source and compile the real binary.
@@ -74,7 +78,7 @@ RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --features metrics \
 # Chrome itself is downloaded on first browser tool use and cached on the volume.
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
     libsqlite3-0 \
     curl \
