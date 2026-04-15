@@ -3216,6 +3216,9 @@ fn parse_anthropic_response(
     let cached = body["usage"]["cache_read_input_tokens"]
         .as_u64()
         .unwrap_or(0);
+    let cache_created = body["usage"]["cache_creation_input_tokens"]
+        .as_u64()
+        .unwrap_or(0);
 
     Ok(completion::CompletionResponse {
         choice,
@@ -3224,6 +3227,7 @@ fn parse_anthropic_response(
             output_tokens,
             total_tokens: input_tokens + output_tokens,
             cached_input_tokens: cached,
+            cache_creation_input_tokens: cache_created,
         },
         raw_response: RawResponse { body },
         message_id: None,
@@ -3325,6 +3329,7 @@ fn parse_openai_response(
             output_tokens,
             total_tokens: input_tokens + output_tokens,
             cached_input_tokens: cached,
+            cache_creation_input_tokens: 0,
         },
         raw_response: RawResponse { body },
         message_id: None,
@@ -3604,6 +3609,7 @@ fn parse_openai_responses_response(
             output_tokens,
             total_tokens: input_tokens + output_tokens,
             cached_input_tokens: cached,
+            cache_creation_input_tokens: 0,
         },
         raw_response: RawResponse { body },
         message_id: None,
@@ -3852,6 +3858,7 @@ mod tests {
                 output_tokens: 0,
                 total_tokens: 0,
                 cached_input_tokens: 0,
+                cache_creation_input_tokens: 0,
             },
             raw_response: RawResponse {
                 body: serde_json::json!({}),
@@ -4664,6 +4671,7 @@ mod tests {
             output_tokens: 3,
             total_tokens: 10,
             cached_input_tokens: 2,
+            cache_creation_input_tokens: 0,
         };
 
         let response = RawStreamingResponse {

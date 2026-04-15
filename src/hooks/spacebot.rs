@@ -271,7 +271,7 @@ impl SpacebotHook {
         prompt: &str,
     ) -> std::result::Result<String, PromptError>
     where
-        M: CompletionModel,
+        M: CompletionModel + 'static,
     {
         self.reset_tool_nudge_state();
         self.set_tool_nudge_request_active(true);
@@ -284,7 +284,7 @@ impl SpacebotHook {
             let history_len_before_attempt = history.len();
             let result = agent
                 .prompt(current_prompt.as_ref())
-                .with_history(history)
+                .with_history(&*history)
                 .with_hook(self.clone())
                 .await;
 
@@ -431,13 +431,13 @@ impl SpacebotHook {
         prompt: &str,
     ) -> std::result::Result<String, PromptError>
     where
-        M: CompletionModel,
+        M: CompletionModel + 'static,
     {
         self.reset_tool_nudge_state();
         self.set_tool_nudge_request_active(false);
         agent
             .prompt(prompt)
-            .with_history(history)
+            .with_history(&*history)
             .with_hook(self.clone())
             .await
     }
@@ -474,7 +474,7 @@ impl SpacebotHook {
             if current_max_turns > max_turns + 1 {
                 return Err(PromptError::MaxTurnsError {
                     max_turns,
-                    chat_history: Box::new(chat_history),
+                    chat_history: Box::new(chat_history.clone()),
                     prompt: Box::new(prompt.to_string().into()),
                 });
             }
@@ -490,7 +490,7 @@ impl SpacebotHook {
                 .await
             {
                 return Err(PromptError::PromptCancelled {
-                    chat_history: Box::new(chat_history),
+                    chat_history: chat_history.clone(),
                     reason,
                 });
             }
@@ -529,7 +529,7 @@ impl SpacebotHook {
                             .await
                         {
                             return Err(PromptError::PromptCancelled {
-                                chat_history: Box::new(chat_history),
+                                chat_history: chat_history.clone(),
                                 reason,
                             });
                         }
@@ -552,7 +552,7 @@ impl SpacebotHook {
                         {
                             ToolCallHookAction::Terminate { reason } => {
                                 return Err(PromptError::PromptCancelled {
-                                    chat_history: Box::new(chat_history),
+                                    chat_history: chat_history.clone(),
                                     reason,
                                 });
                             }
@@ -601,7 +601,7 @@ impl SpacebotHook {
                                         chat_history.push(Message::Assistant { id: None, content });
                                     }
                                     return Err(PromptError::PromptCancelled {
-                                        chat_history: Box::new(chat_history),
+                                        chat_history: chat_history.clone(),
                                         reason,
                                     });
                                 }
@@ -640,7 +640,7 @@ impl SpacebotHook {
                             .await
                         {
                             return Err(PromptError::PromptCancelled {
-                                chat_history: Box::new(chat_history),
+                                chat_history: chat_history.clone(),
                                 reason,
                             });
                         }
@@ -656,7 +656,7 @@ impl SpacebotHook {
 								.await
 							{
 								return Err(PromptError::PromptCancelled {
-									chat_history: Box::new(chat_history),
+									chat_history: chat_history.clone(),
 									reason,
 								});
 							}
