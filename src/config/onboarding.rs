@@ -21,7 +21,7 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
 
     let setup_method = Select::new()
         .with_prompt("How do you want to set up?")
-        .items(&["Set up here (CLI)", "Set up in the browser (localhost)"])
+        .items(["Set up here (CLI)", "Set up in the browser (localhost)"])
         .default(0)
         .interact()?;
 
@@ -77,7 +77,7 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
     let anthropic_oauth = if provider_idx == 0 {
         let auth_method = Select::new()
             .with_prompt("How do you want to authenticate with Anthropic?")
-            .items(&[
+            .items([
                 "Log in with Claude Pro/Max (OAuth)",
                 "Log in via API Console (OAuth)",
                 "Enter an API key manually",
@@ -174,7 +174,7 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
     // 4. Optional Discord setup
     let setup_discord = Select::new()
         .with_prompt("Set up Discord integration?")
-        .items(&["Not now", "Yes"])
+        .items(["Not now", "Yes"])
         .default(0)
         .interact()?;
 
