@@ -358,7 +358,7 @@ Contributions welcome. Read [RUST_STYLE_GUIDE.md](RUST_STYLE_GUIDE.md) before wr
 
 ### SpaceUI (Frontend Components)
 
-The dashboard uses [`@spacedrive/*`](https://github.com/spacedriveapp/spaceui) packages from npm. For local development with linked packages, see [CONTRIBUTING.md](CONTRIBUTING.md).
+The dashboard uses `@spacedrive/*` packages from the `spaceui/` directory included in this repository. See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow.
 
 Formatting is still enforced in CI, but the hook catches it earlier by running `cargo fmt --all` before each commit. `just gate-pr` mirrors the CI gate and includes migration safety, compile checks, and test verification.
 

@@ -24,24 +24,27 @@ test-lib:
 test-integration-compile:
     cargo test --tests --no-run
 
-# Link local SpaceUI packages for development.
-# Expects the spaceui repo cloned adjacent to this repo (../spaceui).
+# Build local SpaceUI packages.
+spaceui-build:
+    cd spaceui && bun install && bun run build
+
+# Link SpaceUI packages for development.
+# SpaceUI lives in spaceui/ at the project root.
 spaceui-link:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d ../spaceui/packages ]; then
-        echo "Error: ../spaceui not found. Clone it adjacent to this repo:"
-        echo "  git clone https://github.com/spacedriveapp/spaceui ../spaceui"
+    if [ ! -d spaceui/packages ]; then
+        echo "Error: spaceui/ directory not found at project root."
         exit 1
     fi
-    cd ../spaceui
-    bun install && bun run build --filter='@spacedrive/primitives' --filter='@spacedrive/ai' --filter='@spacedrive/forms' --filter='@spacedrive/explorer' --filter='@spacedrive/tokens'
+    cd spaceui
+    bun install && bun run build
     for pkg in primitives ai forms explorer tokens; do
         cd packages/$pkg && bun link && cd ../..
     done
     cd "{{justfile_directory()}}/interface"
     bun link @spacedrive/primitives @spacedrive/ai @spacedrive/forms @spacedrive/explorer @spacedrive/tokens
-    echo "SpaceUI packages linked successfully."
+    echo "SpaceUI packages linked."
 
 # Unlink SpaceUI packages and restore npm versions.
 spaceui-unlink:

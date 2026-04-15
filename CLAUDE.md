@@ -26,6 +26,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 
 - Rust: `cargo`
 - Frontend (`interface/`): `bun` (NEVER npm/pnpm/yarn)
+- SpaceUI (`spaceui/`): `bun` (independent workspace, own bun.lock)
 - Desktop (`desktop/`): `cargo tauri`
 
 ## Database Migrations
@@ -41,6 +42,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 - `migrations/` — SQLite migrations (immutable, append-only)
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
+- `spaceui/` — SpaceUI design system (5 packages: tokens, primitives, forms, ai, explorer)
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 

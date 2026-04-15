@@ -109,28 +109,25 @@ bun run build     # production build
 
 ### SpaceUI Packages
 
-The dashboard uses `@spacedrive/*` packages published to npm from the [spaceui](https://github.com/spacedriveapp/spaceui) monorepo:
+The dashboard uses `@spacedrive/*` packages from the `spaceui/` directory at the project root:
 
-- `@spacedrive/primitives` — base UI components
-- `@spacedrive/ai` — AI chat components
-- `@spacedrive/forms` — form components
-- `@spacedrive/explorer` — file explorer components
-- `@spacedrive/tokens` — design tokens
+- `@spacedrive/primitives` — base UI components (Radix, CVA, framer-motion)
+- `@spacedrive/ai` — AI chat components (ToolCall, ChatComposer, TaskBoard)
+- `@spacedrive/forms` — form field wrappers (react-hook-form)
+- `@spacedrive/explorer` — file explorer components (FileThumb, GridItem)
+- `@spacedrive/tokens` — CSS design tokens and 7 theme variants
 
-`package.json` points to npm versions (e.g. `"^0.2.0"`). CI pulls from the registry. For local development, `bun link` overrides them with your local copies.
-
-**Local SpaceUI development:**
-
-Clone the spaceui repo adjacent to this one, then run the link command:
+The interface resolves these from TypeScript source via Vite aliases (`interface/vite.config.ts`). No `bun link` is needed for development. Start both dev servers:
 
 ```bash
-git clone https://github.com/spacedriveapp/spaceui ../spaceui
-just spaceui-link
+# Terminal 1: SpaceUI watch mode (rebuilds on change)
+cd spaceui && bun install && bun run dev
+
+# Terminal 2: Interface dev server
+cd interface && bun run dev
 ```
 
-This builds SpaceUI, registers all packages as global links, and connects them to `interface/`. Use `bun run watch` in the SpaceUI repo for automatic rebuilds.
-
-To unlink and restore npm versions: `just spaceui-unlink`.
+Changes to SpaceUI source files trigger HMR in the interface automatically.
 
 ---
 

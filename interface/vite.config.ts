@@ -3,13 +3,20 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const spaceui = path.resolve(__dirname, "../../spaceui/packages");
+const spaceui = path.resolve(__dirname, "../spaceui/packages");
 
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
 
 	resolve: {
-		dedupe: ["react", "react-dom"],
+		dedupe: [
+			"react",
+			"react-dom",
+			"framer-motion",
+			"sonner",
+			"clsx",
+			"class-variance-authority",
+		],
 		alias: [
 			// Pin React to a single copy (prevents "Invalid hook call")
 			{
@@ -92,10 +99,7 @@ export default defineConfig({
 	server: {
 		port: 19840,
 		fs: {
-			allow: [
-				path.resolve(__dirname, ".."),
-				path.resolve(__dirname, "../../spaceui"),
-			],
+			allow: [path.resolve(__dirname, "..")],
 		},
 		proxy: {
 			"/api": {

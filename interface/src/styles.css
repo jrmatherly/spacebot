@@ -22,10 +22,10 @@
 @import "@spacedrive/tokens/src/css/themes/mocha.css";
 
 /* Tell Tailwind to scan SpaceUI component source for classes */
-@source "../../../spaceui/packages/primitives/src";
-@source "../../../spaceui/packages/ai/src";
-@source "../../../spaceui/packages/forms/src";
-@source "../../../spaceui/packages/explorer/src";
+@source "../../spaceui/packages/primitives/src";
+@source "../../spaceui/packages/ai/src";
+@source "../../spaceui/packages/forms/src";
+@source "../../spaceui/packages/explorer/src";
 
 /* Override default font to IBM Plex Sans */
 @theme {
