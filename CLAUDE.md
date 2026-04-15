@@ -1,7 +1,5 @@
 # Spacebot
 
-@RUST_STYLE_GUIDE.md
-
 ## Quick Start
 
 ```bash
@@ -22,15 +20,7 @@ cargo run -- start       # Start the daemon (port 19898)
 
 ## Architecture
 
-Five process types, each a Rig `Agent<SpacebotModel, SpacebotHook>`:
-
-1. **Channel** -- User-facing conversation. Delegates everything. Never blocked.
-2. **Branch** -- Fork of channel context for independent thinking. Short-lived.
-3. **Worker** -- Background task executor. Has shell, file, and memory tools.
-4. **Compactor** -- Context management and summarization.
-5. **Cortex** -- System-level intelligence.
-
-Single binary crate. No workspace, no sub-crates. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`).
+Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Five process types (Channel, Branch, Worker, Compactor, Cortex), each a Rig `Agent<SpacebotModel, SpacebotHook>`. Three databases: SQLite (relational), LanceDB (vectors), redb (key-value).
 
 ## Package Managers
 
@@ -44,38 +34,11 @@ Single binary crate. No workspace, no sub-crates. Module files use `src/module.r
 - Always create a new timestamped migration for schema changes
 - Treat migration files as immutable
 
-## Lints
-
-- `dbg_macro`, `todo`, `unimplemented` are `deny` in `[lints.clippy]`
-- Never discard errors with `let _ =`
-- Use `.ok()` only on channel sends where receiver may be dropped
-- Use `.context()` for adding context to errors
-
-## Imports
-
-Grouped into 3 tiers separated by blank lines, alphabetical within each:
-
-1. Crate-local (`use crate::...`)
-2. External crates (alphabetical by crate name)
-3. Standard library (`use std::...`)
-
-Suppress unused trait warnings: `use anyhow::Context as _;`
-
-## Comments
-
-- Explain WHY, never WHAT
-- Module-level `//!` doc comment at top of every file
-- `///` on public APIs and constants
-- `// TODO:` for tracked future work (never `todo!()` macro)
-- No organizational/section-divider comments
-- No alarmist language (`CRITICAL:`, `IMPORTANT FIX:`)
-
 ## Key Directories
 
-- `prompts/` — Jinja2 system prompt templates (channel, branch, worker, cortex)
+- `prompts/` — Jinja2 system prompt templates
 - `presets/` — Agent persona presets (IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
-- `migrations/` — 42 SQLite migrations (immutable, append-only)
-- `vendor/` — Vendored crates (imap-proto)
+- `migrations/` — SQLite migrations (immutable, append-only)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
@@ -92,3 +55,10 @@ Always use `bun`, never npm/pnpm/yarn:
 | `bun run test` | Run tests |
 
 If TypeScript types changed: `just check-typegen` to verify schema sync.
+
+## Reference Docs
+
+- `RUST_STYLE_GUIDE.md` — Full Rust coding conventions
+- `AGENTS.md` — Architecture implementation guide for coding agents
+- `METRICS.md` — Prometheus metrics reference
+- `SPACEUI_MIGRATION.md` — Frontend migration changelog
