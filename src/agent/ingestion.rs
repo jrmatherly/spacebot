@@ -272,7 +272,7 @@ async fn process_file(
         let result = if had_failure { "failure" } else { "success" };
         crate::telemetry::Metrics::global()
             .ingestion_files_processed_total
-            .with_label_values(&[&deps.agent_id, result])
+            .with_label_values(&[deps.agent_id.as_ref(), result])
             .inc();
     }
 

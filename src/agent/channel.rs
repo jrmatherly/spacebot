@@ -1071,7 +1071,7 @@ impl Channel {
                     let channel_type = self.current_adapter().unwrap_or("unknown");
                     crate::telemetry::Metrics::global()
                         .messages_sent_total
-                        .with_label_values(&[&self.deps.agent_id, channel_type])
+                        .with_label_values(&[self.deps.agent_id.as_ref(), channel_type])
                         .inc();
                 }
                 let tool_calls_json = self.drain_tool_calls_json().await;
@@ -1090,7 +1090,11 @@ impl Channel {
                     let channel_type = self.current_adapter().unwrap_or("unknown");
                     crate::telemetry::Metrics::global()
                         .channel_errors_total
-                        .with_label_values(&[&self.deps.agent_id, channel_type, "send_failed"])
+                        .with_label_values(&[
+                            self.deps.agent_id.as_ref(),
+                            channel_type,
+                            "send_failed",
+                        ])
                         .inc();
                 }
                 tracing::error!(%error, channel_id = %self.id, %log_label, "failed to send built-in reply");
@@ -1495,7 +1499,10 @@ impl Channel {
             if received_count > 0 {
                 crate::telemetry::Metrics::global()
                     .messages_received_total
-                    .with_label_values(&[&self.deps.agent_id, &metrics_channel_type])
+                    .with_label_values(&[
+                        self.deps.agent_id.as_ref(),
+                        metrics_channel_type.as_str(),
+                    ])
                     .inc_by(received_count);
             }
         }
@@ -1936,7 +1943,7 @@ impl Channel {
         if message.source != "system" {
             crate::telemetry::Metrics::global()
                 .messages_received_total
-                .with_label_values(&[&self.deps.agent_id, &message.source])
+                .with_label_values(&[self.deps.agent_id.as_ref(), message.source.as_str()])
                 .inc();
         }
 
@@ -2858,7 +2865,7 @@ impl Channel {
                     let channel_type = self.current_adapter().unwrap_or("unknown");
                     crate::telemetry::Metrics::global()
                         .messages_sent_total
-                        .with_label_values(&[&self.deps.agent_id, channel_type])
+                        .with_label_values(&[self.deps.agent_id.as_ref(), channel_type])
                         .inc();
                 }
             }
@@ -2868,7 +2875,11 @@ impl Channel {
                     let channel_type = self.current_adapter().unwrap_or("unknown");
                     crate::telemetry::Metrics::global()
                         .channel_errors_total
-                        .with_label_values(&[&self.deps.agent_id, channel_type, "send_failed"])
+                        .with_label_values(&[
+                            self.deps.agent_id.as_ref(),
+                            channel_type,
+                            "send_failed",
+                        ])
                         .inc();
                 }
                 tracing::error!(%error, channel_id = %self.id, "{error_context}");
