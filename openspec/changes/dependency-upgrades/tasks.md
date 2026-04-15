@@ -38,16 +38,16 @@
 
 ## 3. Frontend Upgrades (Phase 3)
 
-- [ ] 3.1 Run `bunx @andrewbranch/ts5to6` in both `interface/` and `docs/`
-- [ ] 3.2 Bump TypeScript to 6.0 in interface: `cd interface && bun add -D typescript@^6.0.2`
-- [ ] 3.3 Bump TypeScript to 6.0 in docs: `cd docs && bun add -D typescript@^6.0.2`
-- [ ] 3.4 Verify `"types": ["vite/client"]` is still present in `interface/tsconfig.json` after TS6 migration (already exists, but migration tool may modify it)
-- [ ] 3.5 Run `cd interface && bunx tsc --noEmit` — fix any new errors
-- [ ] 3.6 Run `cd docs && bun run build` — verify build passes
-- [ ] 3.7 Grep docs/ for removed lucide brand icons (Chromium, Github, Figma, etc.)
-- [ ] 3.8 Bump lucide-react in docs: `cd docs && bun add lucide-react@^1.8.0`
-- [ ] 3.9 Run `cd docs && bun run build` — verify build passes
-- [ ] 3.10 Commit: `deps(frontend): upgrade TypeScript 6.0, lucide-react 1.8`
+- [x] 3.1 Run `bunx @andrewbranch/ts5to6` in both `interface/` and `docs/` — no changes needed
+- [x] 3.2 Bump TypeScript to 6.0 in interface: `cd interface && bun add -D typescript@^6.0.2`
+- [x] 3.3 Bump TypeScript to 6.0 in docs: `cd docs && bun add -D typescript@^6.0.2`
+- [x] 3.4 Verify `"types": ["vite/client"]` is still present in `interface/tsconfig.json` — confirmed
+- [x] 3.5 Run `cd interface && bunx tsc --noEmit` — clean, no errors
+- [x] 3.6 Run `cd docs && bun run build` — passes
+- [x] 3.7 Grep docs/ for removed lucide brand icons — none found (only Check, ChevronDown, Copy, ExternalLinkIcon)
+- [x] 3.8 Bump lucide-react in docs: `cd docs && bun add lucide-react@^1.8.0`
+- [x] 3.9 Run `cd docs && bun run build` — passes
+- [x] 3.10 Commit: `deps(frontend): upgrade TypeScript 6.0, lucide-react 1.8`
 
 ## 4. Moderate Refactors (Phase 4 — one PR per task group)
 
