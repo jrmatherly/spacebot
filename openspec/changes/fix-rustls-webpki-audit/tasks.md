@@ -1,9 +1,9 @@
 ## 1. Pre-flight
 
-- [ ] 1.1 Verify current audit failures: `cargo audit 2>&1 | grep "RUSTSEC"` shows 4 advisories
-- [ ] 1.2 Confirm serenity is sole source: `cargo tree -i rustls-webpki@0.102.8` shows only serenity chain
-- [ ] 1.3 Confirm `next` branch has tungstenite 0.28: `curl -sL "https://raw.githubusercontent.com/serenity-rs/serenity/next/Cargo.toml" | grep "tokio-tungstenite"`
-- [ ] 1.4 Clean git state: `git status` is clean
+- [x] 1.1 Verify current audit failures: `cargo audit 2>&1 | grep "RUSTSEC"` shows 4 advisories
+- [x] 1.2 Confirm serenity is sole source: `cargo tree -i rustls-webpki@0.102.8` shows only serenity chain
+- [x] 1.3 Confirm `next` branch has tungstenite 0.28: `curl -sL "https://raw.githubusercontent.com/serenity-rs/serenity/next/Cargo.toml" | grep "tokio-tungstenite"`
+- [x] 1.4 Clean git state: `git status` is clean
 
 ## 2. Pin Serenity to `next` Branch
 
