@@ -25,7 +25,7 @@
 ## 4. rig-core: History API migration
 
 - [x] 4.1 History assessment: `prompt_once` no longer mutates caller's history. Branch/compactor error paths call `extract_last_assistant_text(&self.history)` which returns `None` (stale), falling back to generic messages. Graceful degradation, not a crash. Worker uses `prompt_with_tool_nudge_retry` which manages its own history. Channel uses `prompt_once_streaming` (unaffected).
-- [ ] 4.2 DEFERRED: `.extended_details()` migration for `prompt_once` — tracked as follow-up to restore full history on error paths in branch/compactor. Not blocking since fallback text is acceptable.
+- [x] 4.2 Implemented `.extended_details()` for both `prompt_once` and `prompt_with_tool_nudge_retry` with defensive warn log
 - [x] 4.3 Updated `with_history` call at `src/agent/cortex_chat.rs:731` from `&mut history` to `&history`
 - [x] 4.4 `prompt_once_streaming` compiles unchanged — manages own history via local `chat_history` vec
 - [x] 4.5 All 819 tests pass — no test failures from stale history
@@ -43,9 +43,9 @@
 
 ## 6. rig-core: Worktree cleanup (per finishing-a-development-branch skill)
 
-- [ ] 6.1 Merge `feat/upgrade-rig` into `main` (or create PR depending on preference)
-- [ ] 6.2 Remove worktree: `git worktree remove .worktrees/upgrade-rig`
-- [ ] 6.3 Delete branch if merged: `git branch -d feat/upgrade-rig`
+- [x] 6.1 Merged via PR #16 (squash merge)
+- [x] 6.2 Worktree removed
+- [x] 6.3 Branch deleted
 
 ## 7. Arrow monitoring (no action — blocked upstream)
 
