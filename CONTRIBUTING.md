@@ -131,6 +131,22 @@ Changes to SpaceUI source files trigger HMR in the interface automatically.
 
 ---
 
+## Spacedrive
+
+Spacedrive lives at `spacedrive/` as an independent Cargo workspace. Spacebot talks to it over HTTP on port 19898 at runtime. The two projects share zero Rust crates.
+
+**Always `cd spacedrive` before running cargo commands inside it.** The root `cargo` invocations only see Spacebot. Spacedrive declares its own `[workspace]` and Spacebot's `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to prevent auto-discovery.
+
+**Toolchain.** Spacedrive pins `channel = "stable"` in `spacedrive/rust-toolchain.toml`. Spacebot pins `1.94.1` at the root. Rustup resolves the right toolchain per directory, so no manual switching is needed as long as you `cd` first.
+
+**Bun workspaces.** Each TypeScript-bearing directory is its own Bun workspace with its own `bun.lock`: `interface/`, `spaceui/`, `docs/`, and `spacedrive/`. `cd` into the target directory before running `bun install`, `bun run dev`, etc.
+
+**Formatter.** Spacedrive's `.rustfmt.toml` sets `hard_tabs = true`. The root `cargo fmt --all` only touches Spacebot's source (different workspace). Run `cd spacedrive && cargo fmt --all` separately when editing Spacedrive Rust files.
+
+**Build artifacts.** `spacedrive/target/` and the various `node_modules/` and `.next/` directories are gitignored. The entire `spacedrive/` directory is in `.dockerignore` because Spacebot's Docker image does not need it.
+
+---
+
 ## Useful Commands
 
 ```bash

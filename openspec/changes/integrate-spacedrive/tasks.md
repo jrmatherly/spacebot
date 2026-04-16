@@ -22,21 +22,21 @@
 
 ## 4. Update .gitignore
 
-- [ ] 4.1 Add Spacedrive exclusions to `.gitignore` after the SpaceUI section: `spacedrive/target/`, `spacedrive/node_modules/`, `spacedrive/apps/*/node_modules/`, `spacedrive/packages/*/node_modules/`, `spacedrive/.next/`
+- [x] 4.1 Add Spacedrive exclusions to `.gitignore` after the SpaceUI section: `spacedrive/target/`, `spacedrive/node_modules/`, `spacedrive/apps/*/node_modules/`, `spacedrive/packages/*/node_modules/`, `spacedrive/.next/`
 
 ## 5. Update .dockerignore
 
-- [ ] 5.1 Add `spacedrive/` to `.dockerignore` (entire directory excluded — not needed for Spacebot Docker builds)
+- [x] 5.1 Add `spacedrive/` to `.dockerignore` (entire directory excluded — not needed for Spacebot Docker builds)
 
 ## 6. Update CODEOWNERS
 
-- [ ] 6.1 Add `spacedrive/ @jrmatherly` to `.github/CODEOWNERS` after the `spaceui/` entry and before the `migrations/` entry (preserves Frontend grouping)
+- [x] 6.1 Add `spacedrive/ @jrmatherly` to `.github/CODEOWNERS` after the `spaceui/` entry and before the `migrations/` entry (preserves Frontend grouping)
 
 ## 7. Update Documentation
 
-- [ ] 7.1 Update CLAUDE.md: add `spacedrive/` to Key Directories section after `spaceui/` or `desktop/`
-- [ ] 7.2 Update CONTRIBUTING.md: add Spacedrive section after the Frontend section (after line 134) explaining: (a) independent Cargo workspace — always `cd spacedrive` before running `cargo` commands, (b) separate Rust toolchain (`stable` vs root `1.94.1`) resolved per directory via `rust-toolchain.toml`, (c) separate Bun workspace — `cd` into the target subdir (`spaceui/`, `interface/`, `docs/`, or `spacedrive/`) before running `bun` commands, (d) formatter divergence (hard tabs inside `spacedrive/`), (e) HTTP API communication at runtime on port 19898
-- [ ] 7.3 Update README.md: add co-location note to existing "Spacebot + Spacedrive" section (around line 226) — preserve existing subsections
+- [x] 7.1 Update CLAUDE.md: add `spacedrive/` to Key Directories section after `spaceui/` or `desktop/`
+- [x] 7.2 Update CONTRIBUTING.md: add Spacedrive section after the Frontend section (after line 134) explaining: (a) independent Cargo workspace — always `cd spacedrive` before running `cargo` commands, (b) separate Rust toolchain (`stable` vs root `1.94.1`) resolved per directory via `rust-toolchain.toml`, (c) separate Bun workspace — `cd` into the target subdir (`spaceui/`, `interface/`, `docs/`, or `spacedrive/`) before running `bun` commands, (d) formatter divergence (hard tabs inside `spacedrive/`), (e) HTTP API communication at runtime on port 19898
+- [x] 7.3 Update README.md: add co-location note to existing "Spacebot + Spacedrive" section (around line 226) — preserve existing subsections
 
 ## 8. Commit and Verify
 

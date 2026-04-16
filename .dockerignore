@@ -24,6 +24,7 @@ scripts/
 desktop/
 examples/
 packages/
+spacedrive/
 
 # Exclude docs except what's needed for self_awareness.rs embeds
 # (embeds: docs/README.md, docs/docker.md, docs/metrics.md)

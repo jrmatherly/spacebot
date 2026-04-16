@@ -44,6 +44,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
+- `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Communicates with Spacebot via HTTP API on port 19898.
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 
