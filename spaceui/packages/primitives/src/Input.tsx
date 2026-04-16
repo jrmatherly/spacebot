@@ -72,6 +72,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 			iconPosition = "left",
 			className,
 			error,
+			inputElementClassName,
 			...props
 		},
 		ref,
@@ -117,7 +118,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 						(right || (icon && iconPosition === "right")) && "pr-0",
 						icon && iconPosition === "left" && "pl-0",
 						size === "xs" && "!py-0",
-						props.inputElementClassName,
+						inputElementClassName,
 					)}
 					onKeyDown={(e) => {
 						e.stopPropagation();
