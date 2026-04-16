@@ -32,7 +32,7 @@ spacebot/
 │   └── package.json               - React 19, Tailwind 4, React Router
 ├── docs/                           (40 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (47 SQL migrations)
+├── migrations/                     (42 SQL migrations, 2026-02 → 2026-04)
 ├── presets/                        (9 agent persona presets)
 ├── prompts/                        (86 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
@@ -193,14 +193,21 @@ Seven rule files that govern agent behavior across Rust edits, messaging parity,
 
 ---
 
-## Active OpenSpec Changes
+## OpenSpec Changes
 
 Under `openspec/changes/` — structured change proposals with specs + phased tasks.
 
-| Change | Purpose |
+No active changes at present. Recently archived:
+
+| Archived change | Summary |
 |---|---|
-| **security-remediation** | Security hardening workstream |
-| **archive** | Completed change history (includes `2026-04-16-integrate-spacedrive`) |
+| `2026-04-16-security-remediation-obsolete` | Security remediation workstream (superseded / complete) |
+| `2026-04-16-spacebot-dependency-remediation` | Dependency advisory remediation |
+| `2026-04-16-integrate-spacedrive` | Vendor Spacedrive into `spacedrive/` in preparation for HTTP integration |
+| `2026-04-15-integrate-spaceui` | Adopt SpaceUI (`spaceui/`) as the frontend design system |
+| `2026-04-15-fix-rustls-webpki-audit` | Serenity `next` branch pin to resolve rustls-webpki advisories |
+| `2026-04-15-upgrade-dependencies` | Workspace-level dependency wave |
+| `2026-04-15-dependency-upgrades` | Frontend dependency wave (TypeScript 6, HeadlessUI 2, Vite 8, Storybook 10) |
 
 ---
 

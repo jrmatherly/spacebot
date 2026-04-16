@@ -53,9 +53,9 @@ Enforce these clippy lints in `Cargo.toml`:
 
 ```toml
 [lints.clippy]
-dbg_macro = "forbid"
-todo = "forbid"
-unimplemented = "forbid"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
 ```
 
 `dbg!` and `todo!`/`unimplemented!` should never ship. Use `tracing::debug!` for debug output. Use `// TODO:` comments for tracked future work instead of `todo!()` panics.
