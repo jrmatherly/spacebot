@@ -10,12 +10,12 @@
 - **Database:** SQLite via sqlx 0.8 (42 agent + 6 global migrations)
 - **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb 4.0 (embedded)
-- **LLM Framework:** Rig v0.33 (agentic loop framework)
+- **LLM Framework:** Rig v0.35 (agentic loop framework)
 - **CLI:** clap 4.5
 - **Serialization:** serde/serde_json 1.0
 - **Logging:** tracing 0.1
 - **Error Handling:** thiserror + anyhow
-- **WebSocket:** tokio-tungstenite 0.28
+- **Discord:** Serenity (git next branch, uses tokio-tungstenite 0.28 + rustls 0.23)\n- **WebSocket:** tokio-tungstenite 0.28
 - **Metrics:** Prometheus (feature-gated behind `metrics` feature)
 - **macOS Keychain:** security-framework 3
 

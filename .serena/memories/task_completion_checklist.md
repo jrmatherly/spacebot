@@ -35,7 +35,7 @@ just gate-pr
 ```
 This runs `just preflight` first (git/remote/auth validation), then the gate script.
 
-## Additional Rules
+## 7. Security Audit\n```bash\ncargo audit --ignore RUSTSEC-2023-0071\n```\nMust exit 0. The rsa advisory is ignored (sqlx-mysql, never compiled).\n\n## Additional Rules
 - If the same command fails twice, stop. Capture root cause and switch strategy.
 - For async/stateful path changes (worker lifecycle, cancellation, recall cache), include race/terminal-state reasoning in PR summary.
 - For frontend changes: `cd interface && bun run build` to verify.

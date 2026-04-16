@@ -24,7 +24,7 @@
 
 - [x] 4.1 Run full checks: `cargo fmt --all -- --check && cargo check && cargo clippy --all-targets && cargo test --lib && cargo check --features metrics`
 - [x] 4.2 Run audit: `cargo audit --ignore RUSTSEC-2023-0071` shows 0 vulnerabilities
-- [ ] 4.3 Commit with message: `fix(deps): pin serenity to next branch for rustls-webpki fix`
+- [x] 4.3 Commit with message: `fix(deps): pin serenity to next branch for rustls-webpki fix`
 - [ ] 4.4 Push and create PR
 - [ ] 4.5 Verify CI audit job passes green (not continue-on-error)
 - [ ] 4.6 After PR merge, consider pinning serenity to a specific commit hash for stability
