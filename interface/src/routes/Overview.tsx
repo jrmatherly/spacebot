@@ -5,7 +5,7 @@ import {Sparkle, Lightbulb, FolderSimplePlus} from "@phosphor-icons/react";
 import {api} from "@/api/client";
 import {CreateAgentDialog} from "@/components/CreateAgentDialog";
 import {OrgGraph} from "@/components/org";
-import {Button, CircleButton} from "@spacedrive/primitives";
+import {Button, CircleButton, LoadingDot} from "@spacedrive/primitives";
 import {UpdatePill} from "@/components/UpdatePill";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";
 import {formatUptime} from "@/lib/format";
@@ -173,10 +173,7 @@ export function Overview({liveStates, activeLinks}: OverviewProps) {
 			<div className="flex-1 overflow-hidden">
 				{overviewLoading ? (
 					<div className="flex h-full items-center justify-center">
-						<div className="flex items-center gap-2 text-ink-dull">
-							<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-							Loading...
-						</div>
+						<LoadingDot>Loading...</LoadingDot>
 					</div>
 				) : agents.length === 0 ? (
 					<div className="flex h-full items-center justify-center">

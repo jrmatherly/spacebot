@@ -1,7 +1,7 @@
 import {useState, useEffect} from "react";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {api} from "@/api/client";
-import {Button, Input} from "@spacedrive/primitives";
+import {Button, Input, LoadingDot} from "@spacedrive/primitives";
 import type {GlobalSettingsSectionProps} from "./types";
 
 export function InstanceSection({settings, isLoading}: GlobalSettingsSectionProps) {
@@ -51,10 +51,7 @@ export function InstanceSection({settings, isLoading}: GlobalSettingsSectionProp
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading settings...
-				</div>
+				<LoadingDot>Loading settings...</LoadingDot>
 			) : (
 				<div className="flex flex-col gap-4">
 					<div className="rounded-lg border border-app-line bg-app-box p-4">

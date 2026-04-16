@@ -6,6 +6,7 @@ import {
 	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	LoadingDot,
 } from "@spacedrive/primitives";
 import {ProviderIcon} from "@/lib/providerIcons";
 import type {ChatGptOAuthDialogProps} from "./types";
@@ -60,10 +61,7 @@ export function ChatGptOAuthDialog({
 							{message.text}
 						</div>
 					) : isRequesting && !deviceCodeInfo ? (
-						<div className="flex items-center gap-2 text-sm text-ink-dull">
-							<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-							Requesting device code...
-						</div>
+						<LoadingDot className="text-sm">Requesting device code...</LoadingDot>
 					) : deviceCodeInfo ? (
 						<div className="space-y-4">
 							<div className="rounded-md border border-app-line p-3">
@@ -111,10 +109,9 @@ export function ChatGptOAuthDialog({
 							</div>
 
 							{isPolling && !message && (
-								<div className="flex items-center gap-2 text-sm text-ink-faint">
-									<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+								<LoadingDot className="text-sm text-ink-faint">
 									Waiting for sign-in confirmation...
-								</div>
+								</LoadingDot>
 							)}
 
 							{message && (

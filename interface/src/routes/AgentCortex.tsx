@@ -3,7 +3,7 @@ import {useQuery} from "@tanstack/react-query";
 import {AnimatePresence, motion} from "framer-motion";
 import {api, type CortexEvent, type CortexEventType} from "@/api/client";
 import {formatTimeAgo} from "@/lib/format";
-import {FilterButton} from "@spacedrive/primitives";
+import {FilterButton, LoadingDot} from "@spacedrive/primitives";
 
 const PAGE_SIZE = 50;
 
@@ -195,10 +195,7 @@ export function AgentCortex({agentId}: AgentCortexProps) {
 			{/* Event list */}
 			{isLoading ? (
 				<div className="flex flex-1 items-center justify-center">
-					<div className="flex items-center gap-2 text-ink-dull">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-						Loading cortex events...
-					</div>
+					<LoadingDot>Loading cortex events...</LoadingDot>
 				</div>
 			) : isError ? (
 				<div className="flex flex-1 items-center justify-center">

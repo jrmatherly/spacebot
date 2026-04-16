@@ -13,12 +13,13 @@ import {MemoryGraph} from "@/components/MemoryGraph";
 import {
 	CircleButton,
 	CircleButtonGroup,
-	SearchBar,
 	FilterButton,
-	SelectPill,
-	Popover,
+	LoadingDot,
 	OptionList,
 	OptionListItem,
+	Popover,
+	SearchBar,
+	SelectPill,
 } from "@spacedrive/primitives";
 import {formatTimeAgo} from "@/lib/format";
 import {List, TreeStructure} from "@phosphor-icons/react";
@@ -249,10 +250,9 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 					{/* Virtualized rows */}
 					{isLoading ? (
 						<div className="flex flex-1 items-center justify-center">
-							<div className="flex items-center gap-2 text-ink-dull">
-								<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+							<LoadingDot>
 								{isSearching ? "Searching..." : "Loading memories..."}
-							</div>
+							</LoadingDot>
 						</div>
 					) : isError ? (
 						<div className="flex flex-1 items-center justify-center">

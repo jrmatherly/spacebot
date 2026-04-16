@@ -1,7 +1,7 @@
 import {useState, useEffect} from "react";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {api} from "@/api/client";
-import {Button} from "@spacedrive/primitives";
+import {Button, LoadingDot} from "@spacedrive/primitives";
 import type {GlobalSettingsSectionProps} from "./types";
 
 export function WorkerLogsSection({settings, isLoading}: GlobalSettingsSectionProps) {
@@ -70,10 +70,7 @@ export function WorkerLogsSection({settings, isLoading}: GlobalSettingsSectionPr
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading settings...
-				</div>
+				<LoadingDot>Loading settings...</LoadingDot>
 			) : (
 				<div className="flex flex-col gap-4">
 					<div className="flex flex-col gap-3">

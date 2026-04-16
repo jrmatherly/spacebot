@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
+import {LoadingDot} from "@spacedrive/primitives";
 import {api} from "@/api/client";
 import {
 	PlatformCatalog,
@@ -45,10 +46,7 @@ export function ChannelsSection() {
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading channels...
-				</div>
+				<LoadingDot>Loading channels...</LoadingDot>
 			) : (
 				<div className="grid grid-cols-[200px_1fr] gap-6">
 					{/* Left column: Platform catalog */}

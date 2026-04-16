@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useState, useRef} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {useSearch, useNavigate} from "@tanstack/react-router";
+import {LoadingDot} from "@spacedrive/primitives";
 import {
 	api,
 	type AgentConfigResponse,
@@ -162,10 +163,7 @@ export function AgentConfig({agentId}: AgentConfigProps) {
 	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center">
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading configuration...
-				</div>
+				<LoadingDot>Loading configuration...</LoadingDot>
 			</div>
 		);
 	}

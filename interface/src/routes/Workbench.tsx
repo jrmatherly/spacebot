@@ -1,5 +1,6 @@
 import {useMemo, useEffect, useRef} from "react";
 import {useQuery, useQueryClient, useQueries} from "@tanstack/react-query";
+import {LoadingDot} from "@spacedrive/primitives";
 import {api} from "@/api/client";
 import {useLiveContext} from "@/hooks/useLiveContext";
 import {
@@ -168,10 +169,7 @@ export function Workbench() {
 			<div className="flex min-w-0 flex-1">
 				{isLoading && filteredWorkers.length === 0 ? (
 					<div className="flex h-full flex-1 items-center justify-center">
-						<div className="flex items-center gap-2 text-xs text-ink-faint">
-							<span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-							Loading workers...
-						</div>
+						<LoadingDot className="text-xs text-ink-faint">Loading workers...</LoadingDot>
 					</div>
 				) : filteredWorkers.length === 0 ? (
 					<EmptyState />

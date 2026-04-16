@@ -16,6 +16,7 @@ import {
 	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	LoadingDot,
 	SelectRoot,
 	SelectTrigger,
 	SelectValue,
@@ -391,10 +392,7 @@ export function SecretsSection() {
 
 			{/* Secret list */}
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading secrets...
-				</div>
+				<LoadingDot>Loading secrets...</LoadingDot>
 			) : filteredSecrets.length === 0 ? (
 				<div className="flex flex-col items-center rounded-lg border border-dashed border-app-line py-12">
 					<p className="text-sm font-medium text-ink-dull">

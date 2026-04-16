@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {api, type UpdateStatus} from "@/api/client";
-import {Button} from "@spacedrive/primitives";
+import {Button, LoadingDot} from "@spacedrive/primitives";
 
 function formatCheckedAt(checkedAt: string | null): string {
 	if (!checkedAt) return "Never";
@@ -139,10 +139,7 @@ export function UpdatesSection() {
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading update status...
-				</div>
+				<LoadingDot>Loading update status...</LoadingDot>
 			) : (
 				<div className="flex flex-col gap-4">
 					<div className="rounded-lg border border-app-line bg-app-box p-4">

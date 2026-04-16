@@ -2,7 +2,7 @@ import {useMemo, useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {api} from "@/api/client";
 import {ChannelCard} from "@/components/ChannelCard";
-import {Button, SearchBar} from "@spacedrive/primitives";
+import {Button, LoadingDot, SearchBar} from "@spacedrive/primitives";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";
 import {GearSix} from "@phosphor-icons/react";
 import {useNavigate} from "@tanstack/react-router";
@@ -52,10 +52,7 @@ export function AgentChannels({agentId, liveStates}: AgentChannelsProps) {
 			)}
 			<div className="flex-1 overflow-y-auto p-6">
 				{isLoading ? (
-					<div className="flex items-center gap-2 text-ink-dull">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-						Loading channels...
-					</div>
+					<LoadingDot>Loading channels...</LoadingDot>
 				) : hasChannels ? (
 					<div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
 						{channels.map((channel) => (

@@ -94,6 +94,8 @@ export type { ToastId, ToastMessage } from "./Toast";
 
 // Loader
 export { Loader } from "./Loader";
+export { LoadingDot } from "./LoadingDot";
+export type { LoadingDotProps } from "./LoadingDot";
 
 // Divider
 export { Divider } from "./Divider";

@@ -34,7 +34,7 @@ import {
 	SelectContent,
 	SelectItem,
 } from "@spacedrive/primitives";
-import {Switch} from "@spacedrive/primitives";
+import {LoadingDot, Switch} from "@spacedrive/primitives";
 
 // -- Helpers --
 
@@ -327,7 +327,7 @@ export function AgentCron({agentId}: AgentCronProps) {
 			<div className="flex-1 overflow-auto p-6">
 				{isLoading && (
 					<div className="flex items-center justify-center py-12">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+						<LoadingDot className="gap-0" />
 					</div>
 				)}
 
@@ -914,7 +914,7 @@ function JobExecutions({agentId, jobId}: {agentId: string; jobId: string}) {
 	if (isLoading) {
 		return (
 			<div className="flex items-center justify-center py-3">
-				<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+				<LoadingDot className="gap-0" />
 			</div>
 		);
 	}
