@@ -1108,7 +1108,7 @@ fn split_message(text: &str, max_len: usize) -> Vec<String> {
 
 // --- Rich Message Builders ---
 
-fn build_embed(card: &crate::Card) -> CreateEmbed {
+fn build_embed(card: &crate::Card) -> CreateEmbed<'_> {
     let mut embed = CreateEmbed::new();
 
     if let Some(title) = &card.title {
@@ -1169,7 +1169,7 @@ fn build_embed(card: &crate::Card) -> CreateEmbed {
     embed
 }
 
-fn build_action_row(elements: &crate::InteractiveElements) -> CreateActionRow {
+fn build_action_row(elements: &crate::InteractiveElements) -> CreateActionRow<'_> {
     match elements {
         crate::InteractiveElements::Buttons { buttons } => {
             let mut discord_buttons = Vec::new();
@@ -1293,7 +1293,7 @@ fn prepare_rich_message_parts<'a>(
 
 fn build_poll(
     poll: &crate::Poll,
-) -> Option<serenity::builder::CreatePoll<serenity::builder::create_poll::Ready>> {
+) -> Option<serenity::builder::CreatePoll<'_, serenity::builder::create_poll::Ready>> {
     let question = poll.question.trim();
     if question.is_empty() {
         return None;
