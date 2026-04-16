@@ -140,7 +140,7 @@ Replaced monolithic WebChatPanel and TopBar with modular Portal system (PortalPa
 ### 27. `2432984` — "ui" `+1,201 / -1,730`
 Rewrote task management: deleted 868-line TaskBoard (kanban) and replaced with Linear-style TaskList/TaskDetail/TaskCreateForm. Added GitHub metadata badges (issues/PRs) via TaskUtils.tsx. Rebuilt GlobalTasks with full task CRUD and SSE-driven updates.
 
-### 28. `b8ceff1` — "Rename @spaceui/* packages to @spacedrive/* (npm org)" `+56 / -56`
+### 28. `b8ceff1` — "Rename @spaceui/*packages to @spacedrive/* (npm org)" `+56 / -56`
 Pure package rename across all imports and config: `@spaceui/*` → `@spacedrive/*` in package.json, vite.config.ts, styles.css, bun.lock.
 
 ### 29. `c53a1e3` — "SpaceUI migration: sidebar redesign, global projects, logo detection" `+983 / -641`
