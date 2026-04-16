@@ -16,11 +16,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
-    UNIQUE(agent_id, task_number)
+    UNIQUE (agent_id, task_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks(agent_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_number ON tasks(agent_id, task_number);
-CREATE INDEX IF NOT EXISTS idx_tasks_source_memory ON tasks(source_memory_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_worker ON tasks(worker_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_agent ON tasks (agent_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_number ON tasks (agent_id, task_number);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_source_memory ON tasks (source_memory_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_worker ON tasks (worker_id);

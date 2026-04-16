@@ -23,9 +23,9 @@ Single binary. No server dependencies. Runs on tokio. All data lives in embedded
 
 ## Migration Safety
 
-- **NEVER edit an existing migration file in place** once it has been committed or applied in any environment.
-- Treat migration files as immutable; modifying historical migrations causes checksum mismatches and can block startup.
 - For schema changes, always create a new migration with a new timestamp/version.
+- Historical migration files may be edited for formatting or clarity when semantics are preserved. SQLx stores migration checksums in `_sqlx_migrations` at apply time, so editing an already-applied migration will cause startup to fail on existing databases until the stored checksum is repaired (`sqlx migrate run --target-version`, or manual update of `_sqlx_migrations.checksum`) or the DB is reset. Coordinate deployments accordingly.
+- Never change the SQL semantics of a historical migration; that produces silent schema drift between databases that applied the old version and databases that applied the new version.
 
 ## Delivery Gates (Mandatory)
 

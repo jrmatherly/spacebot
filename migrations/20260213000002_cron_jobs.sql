@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS cron_executions (
     executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     success INTEGER NOT NULL,
     result_summary TEXT,
-    FOREIGN KEY (cron_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+    FOREIGN KEY (cron_id) REFERENCES cron_jobs (id) ON DELETE CASCADE
 );

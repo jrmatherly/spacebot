@@ -32,15 +32,15 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 ## Database Migrations
 
-- NEVER edit existing files in `migrations/`
-- Always create a new timestamped migration for schema changes
-- Treat migration files as immutable
+- Prefer creating a new timestamped migration for schema changes
+- Historical migration files may be edited for formatting or clarity, but be aware: SQLx stores migration checksums in `_sqlx_migrations` at apply time, so editing an already-applied migration will cause startup to fail on that database until the stored checksum is repaired or the DB is reset
+- Keep SQL semantics unchanged when reformatting historical migrations
 
 ## Key Directories
 
 - `prompts/` — Jinja2 system prompt templates
 - `presets/` — Agent persona presets (IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
-- `migrations/` — SQLite migrations (immutable, append-only)
+- `migrations/` — SQLite migrations (append-only by default; reformatting allowed with checksum-repair awareness)
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)

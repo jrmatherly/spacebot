@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS cortex_chat_messages (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_cortex_chat_created ON cortex_chat_messages(created_at);
+CREATE INDEX idx_cortex_chat_created ON cortex_chat_messages (created_at);

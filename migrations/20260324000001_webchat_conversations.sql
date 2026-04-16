@@ -8,5 +8,8 @@ CREATE TABLE IF NOT EXISTS webchat_conversations (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_webchat_conversations_agent_updated
-    ON webchat_conversations(agent_id, archived, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webchat_conversations_agent_updated ON webchat_conversations (
+    agent_id,
+    archived,
+    updated_at DESC
+);

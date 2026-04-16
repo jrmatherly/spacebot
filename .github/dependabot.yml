@@ -1,3 +1,13 @@
+# Dependabot configuration
+#
+# This file controls UPDATE-PR scoping only. It does NOT control security-alert
+# visibility on the Security dashboard. GitHub's security-alert engine scans
+# every manifest in the repo regardless of what is listed here. To dismiss an
+# alert, use the GitHub API (`gh api -X PATCH .../dependabot/alerts/{n}`).
+#
+# Vendored upstream paths (e.g., `spacedrive/**`) are deliberately omitted:
+# spacebot does not compile those lockfiles, so automated update PRs against
+# them are not useful.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -15,10 +25,58 @@ updates:
       prefix: "deps"
     open-pull-requests-limit: 10
 
+  - package-ecosystem: "cargo"
+    directory: "/desktop/src-tauri"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(desktop)"
+    open-pull-requests-limit: 5
+
   - package-ecosystem: "npm"
     directory: "/interface"
     schedule:
       interval: "weekly"
     commit-message:
       prefix: "deps(interface)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/packages/api-client"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(api-client)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/spaceui"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(spaceui)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/spaceui/.storybook"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(spaceui-storybook)"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "npm"
+    directory: "/spaceui/examples/showcase"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(spaceui-showcase)"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "npm"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(docs)"
     open-pull-requests-limit: 5

@@ -15,8 +15,9 @@ CREATE TABLE IF NOT EXISTS projects (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_root_path ON projects(root_path);
-CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_root_path ON projects (root_path);
+
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status);
 
 CREATE TABLE IF NOT EXISTS project_repos (
     id TEXT PRIMARY KEY NOT NULL,
@@ -30,11 +31,12 @@ CREATE TABLE IF NOT EXISTS project_repos (
     disk_usage_bytes INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_project_repos_project ON project_repos(project_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_project_repos_path ON project_repos(project_id, path);
+CREATE INDEX IF NOT EXISTS idx_project_repos_project ON project_repos (project_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_repos_path ON project_repos (project_id, path);
 
 CREATE TABLE IF NOT EXISTS project_worktrees (
     id TEXT PRIMARY KEY NOT NULL,
@@ -47,10 +49,12 @@ CREATE TABLE IF NOT EXISTS project_worktrees (
     disk_usage_bytes INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    FOREIGN KEY (repo_id) REFERENCES project_repos(id) ON DELETE CASCADE
+    FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+    FOREIGN KEY (repo_id) REFERENCES project_repos (id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_project_worktrees_project ON project_worktrees(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_worktrees_repo ON project_worktrees(repo_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_project_worktrees_path ON project_worktrees(project_id, path);
+CREATE INDEX IF NOT EXISTS idx_project_worktrees_project ON project_worktrees (project_id);
+
+CREATE INDEX IF NOT EXISTS idx_project_worktrees_repo ON project_worktrees (repo_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_worktrees_path ON project_worktrees (project_id, path);

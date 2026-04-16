@@ -169,6 +169,16 @@ SQLite migrations are **immutable**. Never edit an existing migration file. Alwa
 
 ---
 
+## Security and Dependency Policy
+
+Dependabot security alerts in spacebot-owned code that are blocked on upstream crate or package updates are tracked in-repo at [`docs/security/deferred-advisories.md`](docs/security/deferred-advisories.md). The file documents each open advisory, why it is deferred, which upstream we are waiting on, and the trigger that would unblock local resolution.
+
+Review `docs/security/deferred-advisories.md` whenever dependencies are refreshed. Do not dismiss deferred advisories via the GitHub API — visibility on the dashboard is intentional.
+
+Spacedrive-scoped Dependabot alerts (under `spacedrive/**`) are left open and will be re-triaged when the planned runtime integration lands. Any OpenSpec change that proposes spacebot↔spacedrive runtime coupling must include a task to re-evaluate those alerts.
+
+---
+
 ## Architecture
 
 See the [Architecture](<docs/content/docs/(core)/architecture.mdx>) page for the full design. The short version: five process types, each with one job.

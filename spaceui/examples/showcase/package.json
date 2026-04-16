@@ -27,6 +27,6 @@
     "@tailwindcss/vite": "^4.1.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.4.2",
-    "vite": "^5.1.6"
+    "vite": "^6.4.2"
   }
 }
