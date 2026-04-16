@@ -223,6 +223,8 @@ Everything goes through typed tools into structured storage. Nothing drifts.
 
 Spacebot pairs with [Spacedrive](https://github.com/spacedriveapp/spacedrive), an open-source cross-platform file manager built on a virtual distributed filesystem. Neither requires the other. When paired, Spacebot is the only agent harness with direct integration into a cross-device filesystem.
 
+The Spacedrive source is co-located in this repo at `spacedrive/` for single-clone development. It remains an independent Cargo workspace with its own toolchain. Runtime integration over HTTP is planned but not yet wired. See `CONTRIBUTING.md` for working with the in-tree copy.
+
 ### What Pairing Enables Today
 
 **Multi-device access:** one Spacebot instance, all your devices. Talk to your agent from your phone while a worker executes on your server. Spacedrive's P2P layer (Iroh/QUIC) routes from every device through the paired node to Spacebot. No separate SDK, no separate auth.

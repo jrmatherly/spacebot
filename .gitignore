@@ -27,6 +27,14 @@ spaceui/examples/*/dist/
 spaceui/.storybook/node_modules/
 spaceui/.storybook/storybook-static/
 
+# Spacedrive (independent workspace, build artifacts only)
+spacedrive/target/
+spacedrive/node_modules/
+spacedrive/apps/*/node_modules/
+spacedrive/packages/*/node_modules/
+spacedrive/apps/*/dist/
+spacedrive/packages/*/dist/
+
 # Desktop sidecar binaries (built by scripts/bundle-sidecar.sh)
 desktop/src-tauri/binaries/
 

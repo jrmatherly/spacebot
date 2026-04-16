@@ -21,7 +21,7 @@ cargo run -- start       # Start the daemon (port 19898)
 
 ## Architecture
 
-Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Five process types (Channel, Branch, Worker, Compactor, Cortex), each a Rig `Agent<SpacebotModel, SpacebotHook>`. Three databases: SQLite (relational), LanceDB (vectors), redb (key-value).
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` — an intentional guard that prevents Cargo from auto-discovering the vendored `spacedrive/` workspace. Do not delete the `[workspace]` block; if anything, the only safe change is to extend the exclude list. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Five process types (Channel, Branch, Worker, Compactor, Cortex), each a Rig `Agent<SpacebotModel, SpacebotHook>`. Three databases: SQLite (relational), LanceDB (vectors), redb (key-value).
 
 ## Package Managers
 
@@ -44,6 +44,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
+- `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Vendored in preparation for the planned HTTP integration; no live runtime coupling exists yet.
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 

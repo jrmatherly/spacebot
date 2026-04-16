@@ -9,6 +9,7 @@ Cargo.lock @jrmatherly
 # Frontend
 interface/ @jrmatherly
 spaceui/ @jrmatherly
+spacedrive/ @jrmatherly
 
 # Migrations are immutable — extra scrutiny on new ones
 migrations/ @jrmatherly

@@ -1,0 +1,22 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"target": "ES2022",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"baseUrl": ".",
+		"paths": {
+			"~/*": ["./src/*"],
+			"@spacebot/api-client": [
+				"../../../spacebot/packages/api-client/src/index.ts"
+			],
+			"@spacebot/api-client/*": ["../../../spacebot/packages/api-client/src/*"]
+		},
+		"types": ["@react-three/fiber"]
+	},
+	"include": ["src", "src/vite-env.d.ts"]
+}

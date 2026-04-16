@@ -4,7 +4,7 @@ Core conventions that apply to every Rust change. For the full style reference, 
 
 ## Project Structure
 
-Single binary crate. No workspace, no sub-crates. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Module root files contain `mod` declarations and re-exports. Prefer implementing in existing files unless it's a new logical component.
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to keep the vendored `spacedrive/` directory out of Cargo auto-discovery. The `[workspace]` block is intentional — never delete it; extend the exclude list if a similar sibling project lands. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Module root files contain `mod` declarations and re-exports. Prefer implementing in existing files unless it's a new logical component.
 
 ## Lint Rules
 

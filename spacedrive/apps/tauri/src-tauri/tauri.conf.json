@@ -1,0 +1,109 @@
+{
+  "productName": "Spacedrive",
+  "version": "2.0.0-alpha.2",
+  "identifier": "com.spacedrive.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev:with-daemon",
+    "beforeBuildCommand": "bun run build:daemon:release && bun run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "Spacedrive",
+        "width": 1400,
+        "height": 750,
+        "minWidth": 768,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "hiddenTitle": true,
+        "transparent": true,
+        "center": true,
+        "visible": false,
+        "dragDropEnabled": true,
+        "decorations": true,
+        "windowEffects": {
+          "effects": ["sidebar"],
+          "state": "followsWindowActiveState",
+          "radius": 9
+        }
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:*",
+        "img-src": "'self' asset: http://asset.localhost http://127.0.0.1:* http://localhost:* blob: data:",
+        "style-src": "'self' 'unsafe-inline'"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/**", "/Volumes/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Spacedrive Technology Inc.",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["../../../target/release/sd-daemon"],
+    "resources": {
+      "gen/**/*": "./"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["memory"],
+        "name": "Spacedrive Memory",
+        "description": "Spacedrive Memory File",
+        "role": "Editor",
+        "mimeType": "application/x-spacedrive-memory"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libc6",
+          "libxdo3",
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ],
+        "files": {
+          "/usr/lib/spacedrive/": "../../.deps/lib/"
+        }
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist",
+      "frameworks": ["../../.deps/Spacedrive.framework"]
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA1M0E3REYzMzM3NEM2OEIKUldTTHhuUXo4MzA2QlRaOXVrcmg1Vml2NGNTNXlHK0hXc0tKaFZxMi9oRVhCVmVCSnA5bDg1UzEK",
+      "endpoints": [
+        "https://github.com/spacedriveapp/spacedrive/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

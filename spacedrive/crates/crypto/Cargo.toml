@@ -1,0 +1,55 @@
+[package]
+name    = "sd-crypto"
+version = "0.0.1"
+
+authors = [
+	"Arnab Chakraborty <arnab@spacedrive.com>",
+	"Ericson Soares <ericson@spacedrive.com>",
+	"Jake Robinson <jake@spacedrive.com>"
+]
+description = """
+A cryptographic library that provides safe and high-level
+encryption, hashing, and encoding interfaces.
+"""
+
+edition.workspace      = true
+keywords               = ["crypto"]
+license.workspace      = true
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+
+[dependencies]
+# Workspace dependencies
+async-stream = { workspace = true }
+base64       = { workspace = true }
+blake3       = { workspace = true }
+futures      = { workspace = true }
+rand         = { workspace = true }
+serde        = { workspace = true, features = ["derive"] }
+thiserror    = { workspace = true }
+tokio        = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "sync"] }
+tracing      = { workspace = true }
+tracing-test = { workspace = true }
+zeroize      = { workspace = true, features = ["derive"] }
+
+# External dependencies
+aead             = { version = "0.6.0-rc.2", default-features = false }
+chacha20poly1305 = "0.11.0-rc.1"
+cmov             = "0.3.1"
+generic-array    = { version = "=0.14.7", features = ["serde", "zeroize"] } # Update blocked by aead
+hex              = "0.4.3"
+rand_chacha      = "0.9.0-alpha.2"
+rand_core        = "0.9.0-alpha.2"
+serdect          = "0.3.0-pre.0"
+typenum          = "1.17"
+
+old-rand-core = { package = "rand_core", version = "0.6.4" }
+
+[dev-dependencies]
+paste    = "1.0"
+tempfile = "3.10"
+
+[[example]]
+name = "secure_erase"
+path = "examples/secure_erase.rs"
