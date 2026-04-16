@@ -19,11 +19,34 @@ CREATE TABLE projects_new (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO projects_new (id, name, description, icon, tags, root_path, settings, status, created_at, updated_at)
-SELECT id, name, description, icon, tags, root_path, settings, status, created_at, updated_at
+INSERT INTO
+    projects_new (
+        id,
+        name,
+        description,
+        icon,
+        tags,
+        root_path,
+        settings,
+        status,
+        created_at,
+        updated_at
+    )
+SELECT
+    id,
+    name,
+    description,
+    icon,
+    tags,
+    root_path,
+    settings,
+    status,
+    created_at,
+    updated_at
 FROM projects;
 
 DROP TABLE projects;
+
 ALTER TABLE projects_new RENAME TO projects;
 
-CREATE UNIQUE INDEX idx_projects_root_path ON projects(root_path);
+CREATE UNIQUE INDEX idx_projects_root_path ON projects (root_path);

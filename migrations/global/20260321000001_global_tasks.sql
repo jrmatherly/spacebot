@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'backlog',
     priority TEXT NOT NULL DEFAULT 'medium',
 
-    -- Ownership: the agent that created this task.
-    owner_agent_id TEXT NOT NULL,
+-- Ownership: the agent that created this task.
+owner_agent_id TEXT NOT NULL,
     -- Assignment: the agent responsible for executing this task.
     assigned_agent_id TEXT NOT NULL,
 
@@ -28,9 +28,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_agent_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_agent_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_worker ON tasks(worker_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_priority_status ON tasks(status, priority);
-CREATE INDEX IF NOT EXISTS idx_tasks_source_memory ON tasks(source_memory_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks (owner_agent_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks (assigned_agent_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_worker ON tasks (worker_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_priority_status ON tasks (status, priority);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_source_memory ON tasks (source_memory_id);

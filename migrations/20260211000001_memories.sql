@@ -20,13 +20,20 @@ CREATE TABLE IF NOT EXISTS associations (
     relation_type TEXT NOT NULL,
     weight REAL NOT NULL DEFAULT 0.5,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (source_id) REFERENCES memories(id) ON DELETE CASCADE,
-    FOREIGN KEY (target_id) REFERENCES memories(id) ON DELETE CASCADE,
-    UNIQUE(source_id, target_id, relation_type)
+    FOREIGN KEY (source_id) REFERENCES memories (id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES memories (id) ON DELETE CASCADE,
+    UNIQUE (
+        source_id,
+        target_id,
+        relation_type
+    )
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
-CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
-CREATE INDEX IF NOT EXISTS idx_associations_source ON associations(source_id);
-CREATE INDEX IF NOT EXISTS idx_associations_target ON associations(target_id);
+CREATE INDEX IF NOT EXISTS idx_memories_type ON memories (memory_type);
+
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories (importance);
+
+CREATE INDEX IF NOT EXISTS idx_associations_source ON associations (source_id);
+
+CREATE INDEX IF NOT EXISTS idx_associations_target ON associations (target_id);

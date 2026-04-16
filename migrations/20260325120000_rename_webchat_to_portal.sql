@@ -8,5 +8,8 @@ DROP INDEX IF EXISTS idx_webchat_conversations_agent_updated;
 ALTER TABLE webchat_conversations RENAME TO portal_conversations;
 
 -- Recreate the index with the new name
-CREATE INDEX IF NOT EXISTS idx_portal_conversations_agent_updated 
-    ON portal_conversations(agent_id, archived, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_portal_conversations_agent_updated ON portal_conversations (
+    agent_id,
+    archived,
+    updated_at DESC
+);

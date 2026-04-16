@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS cortex_events (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_cortex_events_type ON cortex_events(event_type, created_at);
-CREATE INDEX idx_cortex_events_created ON cortex_events(created_at);
+CREATE INDEX idx_cortex_events_type ON cortex_events (event_type, created_at);
+
+CREATE INDEX idx_cortex_events_created ON cortex_events (created_at);

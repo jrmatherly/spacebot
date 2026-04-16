@@ -8,8 +8,9 @@ CREATE TABLE IF NOT EXISTS saved_attachments (
     size_bytes INTEGER NOT NULL,
     disk_path TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+    FOREIGN KEY (channel_id) REFERENCES channels (id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_saved_attachments_channel ON saved_attachments(channel_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_saved_attachments_message ON saved_attachments(message_id);
+CREATE INDEX IF NOT EXISTS idx_saved_attachments_channel ON saved_attachments (channel_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_saved_attachments_message ON saved_attachments (message_id);

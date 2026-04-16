@@ -50,7 +50,7 @@ A comprehensive audit of ugly hardcoded stuff and DRY violations in the interfac
 
 ### 2. Color/Style Maps Still Scattered (4 locations) 🟡
 
-#### TYPE_COLORS in `AgentMemories.tsx` (lines 36-45):
+#### TYPE_COLORS in `AgentMemories.tsx` (lines 36-45)
 ```tsx
 const TYPE_COLORS: Record<MemoryType, string> = {
   fact: "bg-blue-500/15 text-blue-400",
@@ -59,7 +59,7 @@ const TYPE_COLORS: Record<MemoryType, string> = {
 };
 ```
 
-#### EVENT_CATEGORY_COLORS in `AgentCortex.tsx` (lines 18-32):
+#### EVENT_CATEGORY_COLORS in `AgentCortex.tsx` (lines 18-32)
 ```tsx
 const EVENT_CATEGORY_COLORS: Record<string, string> = {
   bulletin_generated: "bg-blue-500/15 text-blue-400",
@@ -67,7 +67,7 @@ const EVENT_CATEGORY_COLORS: Record<string, string> = {
 };
 ```
 
-#### MEMORY_TYPE_COLORS in `AgentDetail.tsx` (line 303):
+#### MEMORY_TYPE_COLORS in `AgentDetail.tsx` (line 303)
 ```tsx
 const MEMORY_TYPE_COLORS = [
   "bg-blue-500/15 text-blue-400",
@@ -75,7 +75,7 @@ const MEMORY_TYPE_COLORS = [
 ];
 ```
 
-#### platformColor in `lib/format.ts`:
+#### platformColor in `lib/format.ts`
 ```tsx
 export function platformColor(platform: string): string {
   switch (platform) {

@@ -4,5 +4,7 @@
 -- which copies rows into the instance DB before this migration drops the tables.
 
 DROP TABLE IF EXISTS project_worktrees;
+
 DROP TABLE IF EXISTS project_repos;
+
 DROP TABLE IF EXISTS projects;
