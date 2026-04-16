@@ -1,7 +1,6 @@
 ---
 name: cluster-deploy
 description: Guide for deploying Spacebot into the Talos Kubernetes cluster via Flux GitOps. Use when the user wants to create or update Spacebot's Kubernetes manifests, add Spacebot to the cluster, scaffold the Flux app structure, configure secrets for the cluster, set up ingress/networking, or prepare Spacebot for Kubernetes deployment. Also triggers on "deploy to cluster", "add to k8s", "create helm release", "flux app", or "cluster manifest".
-disable-model-invocation: true
 ---
 
 # Cluster Deploy

@@ -1,7 +1,6 @@
 ---
 name: cluster-ops
 description: Debug, clean, redeploy, and validate Spacebot's running deployment in the Talos Kubernetes cluster. Use when the user wants to check pod status, view logs, clean up a failed deployment, force a redeployment, troubleshoot a crash loop, inspect cluster resources, or validate Spacebot is running correctly. Also triggers on "pod logs", "restart spacebot", "why is spacebot down", "flux reconcile", "clean deploy", "redeploy", or "cluster status".
-disable-model-invocation: true
 ---
 
 # Cluster Ops
