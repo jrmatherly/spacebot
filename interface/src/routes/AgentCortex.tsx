@@ -2,26 +2,12 @@ import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {AnimatePresence, motion} from "framer-motion";
 import {api, type CortexEvent, type CortexEventType} from "@/api/client";
+import {eventCategoryClass} from "@/lib/colors";
 import {formatTimeAgo} from "@/lib/format";
 import {FilterButton, LoadingDot} from "@spacedrive/primitives";
 
 const PAGE_SIZE = 50;
 
-const EVENT_CATEGORY_COLORS: Record<string, string> = {
-	bulletin_generated: "bg-blue-500/15 text-blue-400",
-	bulletin_failed: "bg-red-500/15 text-red-400",
-	maintenance_run: "bg-green-500/15 text-green-400",
-	memory_merged: "bg-green-500/15 text-green-400",
-	memory_decayed: "bg-green-500/15 text-green-400",
-	memory_pruned: "bg-green-500/15 text-green-400",
-	association_created: "bg-violet-500/15 text-violet-400",
-	contradiction_flagged: "bg-violet-500/15 text-violet-400",
-	worker_killed: "bg-amber-500/15 text-amber-400",
-	branch_killed: "bg-amber-500/15 text-amber-400",
-	circuit_breaker_tripped: "bg-amber-500/15 text-amber-400",
-	observation_created: "bg-cyan-500/15 text-cyan-400",
-	health_check: "bg-blue-500/15 text-blue-400",
-};
 
 /** Groups for the filter pills — reduces clutter vs showing all 13 types. */
 const FILTER_GROUPS: {label: string; types: CortexEventType[]}[] = [
@@ -55,8 +41,7 @@ const FILTER_GROUPS: {label: string; types: CortexEventType[]}[] = [
 ];
 
 function EventTypeBadge({eventType}: {eventType: string}) {
-	const color =
-		EVENT_CATEGORY_COLORS[eventType] ?? "bg-app-dark-box text-ink-faint";
+	const color = eventCategoryClass(eventType);
 	const label = eventType.replace(/_/g, " ");
 	return (
 		<span

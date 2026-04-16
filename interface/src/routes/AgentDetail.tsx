@@ -8,6 +8,7 @@ import {
 	MEMORY_TYPES,
 } from "@/api/client";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";
+import {MEMORY_TYPE_HEX_PALETTE} from "@/lib/colors";
 import {formatTimeAgo, formatCronSchedule} from "@/lib/format";
 import {DeleteAgentDialog} from "@/components/DeleteAgentDialog";
 import {
@@ -387,16 +388,6 @@ const CHART_COLORS = {
 	},
 };
 
-const MEMORY_TYPE_COLORS = [
-	"#3b82f6", // fact - blue
-	"#ec4899", // preference - pink
-	"#f59e0b", // decision - amber
-	"#10b981", // identity - green
-	"#06b6d4", // event - cyan
-	"#8b5cf6", // observation - purple
-	"#f97316", // goal - orange
-	"#ef4444", // todo - red
-];
 
 function MemoryGrowthChart({data}: {data: {date: string; count: number}[]}) {
 	if (data.length === 0) {
@@ -669,7 +660,7 @@ function MemoryDonut({counts}: {counts: Record<string, number>}) {
 	const data = MEMORY_TYPES.map((type, idx) => ({
 		name: type,
 		value: counts[type] ?? 0,
-		color: MEMORY_TYPE_COLORS[idx % MEMORY_TYPE_COLORS.length],
+		color: MEMORY_TYPE_HEX_PALETTE[idx % MEMORY_TYPE_HEX_PALETTE.length],
 	})).filter((d) => d.value > 0);
 	const total = data.reduce((sum, item) => sum + item.value, 0);
 

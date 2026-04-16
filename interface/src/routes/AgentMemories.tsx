@@ -21,6 +21,7 @@ import {
 	SearchBar,
 	SelectPill,
 } from "@spacedrive/primitives";
+import {memoryTypeClass} from "@/lib/colors";
 import {formatTimeAgo} from "@/lib/format";
 import {List, TreeStructure} from "@phosphor-icons/react";
 
@@ -32,21 +33,10 @@ const SORT_OPTIONS: {value: MemorySort; label: string}[] = [
 	{value: "most_accessed", label: "Most Accessed"},
 ];
 
-const TYPE_COLORS: Record<MemoryType, string> = {
-	fact: "bg-blue-500/15 text-blue-400",
-	preference: "bg-pink-500/15 text-pink-400",
-	decision: "bg-amber-500/15 text-amber-400",
-	identity: "bg-purple-500/15 text-purple-400",
-	event: "bg-green-500/15 text-green-400",
-	observation: "bg-cyan-500/15 text-cyan-400",
-	goal: "bg-orange-500/15 text-orange-400",
-	todo: "bg-red-500/15 text-red-400",
-};
-
 function TypeBadge({type: memoryType}: {type: MemoryType}) {
 	return (
 		<span
-			className={`inline-flex items-center rounded px-1.5 py-0.5 text-tiny font-medium ${TYPE_COLORS[memoryType]}`}
+			className={`inline-flex items-center rounded px-1.5 py-0.5 text-tiny font-medium ${memoryTypeClass(memoryType)}`}
 		>
 			{memoryType}
 		</span>
