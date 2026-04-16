@@ -155,7 +155,7 @@ ProcessEvent           — tagged enum for inter-process events
 Channel (struct)       — owns history, spawns branches, routes to workers
 WorkerState            — state machine: Running, WaitingForInput, Done, Failed
 Memory                 — content + type + importance + timestamps + source + associations
-MemoryType             — enum: Fact, Preference, Decision, Identity, Event, Observation
+MemoryType             — enum: Fact, Preference, Decision, Identity, Event, Observation, Goal, Todo
 ChannelId              — Arc<str> type alias
 AgentDeps              — dependency bundle (memory_store, llm_manager, tool_server, event_tx)
 LlmManager             — holds provider clients, routes by model name
@@ -268,7 +268,7 @@ Actual queries live in the modules that use them — `memory/store.rs` has graph
 
 Memories are structured objects, not files. Every memory is a row in SQLite with typed metadata and graph connections, paired with a vector embedding in LanceDB.
 
-**Types:** Fact, Preference, Decision, Identity, Event, Observation.
+**Types:** Fact, Preference, Decision, Identity, Event, Observation, Goal, Todo.
 
 **Graph edges:** RelatedTo, Updates, Contradicts, CausedBy, PartOf. Auto-associated on creation via similarity search. >0.9 similarity marks as `Updates`.
 

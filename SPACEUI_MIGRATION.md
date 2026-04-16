@@ -1,8 +1,10 @@
 # SpaceUI Migration
 
-**345 files changed | +39,873 / -17,225**
+**345 files changed | +39,873 / -17,225** (original migration totals)
 
-Migrates the entire frontend to [SpaceUI](https://github.com/spacedriveapp/spaceui), Spacedrive's component library. The local UI primitives (~25 components, ~3000 lines) are gone — replaced by `@spacedrive/primitives`, `@spacedrive/ai`, `@spacedrive/forms`, and `@spacedrive/explorer`. Tailwind v3 is out, Tailwind v4 via `@tailwindcss/vite` is in, with SpaceUI's design token system and theme imports.
+> **Document status:** Frozen historical record of the original frontend migration onto SpaceUI, ending at commit `248d740`. Later work (the April 2026 dependency wave — Vite 8, Storybook 10, HeadlessUI 2, TypeScript 6, react-spring 10, react-markdown 10, graphology 0.26 — plus the Tailwind v4 canonical class syntax cleanup in PR #45 and the documentation drift sync in PR #46) lives in `git log` and the GitHub PR history rather than here. The commit-SHA references in the log below are from the pre-rebase history and may not exist in the current tree.
+
+Migrates the entire frontend to [SpaceUI](https://github.com/spacedriveapp/spaceui), Spacedrive's component library. The local UI primitives (~25 components, ~3000 lines) are gone — replaced by the six `@spacedrive/*` packages: `tokens`, `primitives`, `forms`, `icons`, `ai`, and `explorer`. Tailwind v3 is out, Tailwind v4 via `@tailwindcss/vite` is in, with SpaceUI's design-token system and theme imports.
 
 But this isn't just a component swap. The interface has been restructured from the ground up.
 
