@@ -1003,29 +1003,28 @@ async fn build_metadata(
         .channel_id
         .to_channel(&ctx.http, message.guild_id)
         .await
+        && let Some(guild_channel) = channel.guild()
     {
-        if let Some(guild_channel) = channel.guild() {
-            metadata.insert(
-                "discord_channel_name".into(),
-                serde_json::Value::String(guild_channel.base.name.to_string()),
-            );
-            metadata.insert(
-                crate::metadata_keys::CHANNEL_NAME.into(),
-                serde_json::Value::String(guild_channel.base.name.to_string()),
-            );
+        metadata.insert(
+            "discord_channel_name".into(),
+            serde_json::Value::String(guild_channel.base.name.to_string()),
+        );
+        metadata.insert(
+            crate::metadata_keys::CHANNEL_NAME.into(),
+            serde_json::Value::String(guild_channel.base.name.to_string()),
+        );
 
-            // Threads have a parent_id pointing to the text channel they were created in
-            if matches!(
-                guild_channel.base.kind,
-                ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread
-            ) {
-                metadata.insert("discord_is_thread".into(), serde_json::Value::Bool(true));
-                if let Some(parent_id) = guild_channel.parent_id {
-                    metadata.insert(
-                        "discord_parent_channel_id".into(),
-                        serde_json::Value::Number(parent_id.get().into()),
-                    );
-                }
+        // Threads have a parent_id pointing to the text channel they were created in
+        if matches!(
+            guild_channel.base.kind,
+            ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread
+        ) {
+            metadata.insert("discord_is_thread".into(), serde_json::Value::Bool(true));
+            if let Some(parent_id) = guild_channel.parent_id {
+                metadata.insert(
+                    "discord_parent_channel_id".into(),
+                    serde_json::Value::Number(parent_id.get().into()),
+                );
             }
         }
     }
