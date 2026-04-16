@@ -91,6 +91,40 @@ The CMEM header is injected at the top of each session as a system reminder. It 
 4. smart_outline("file") → smart_unfold("file", "section") — progressive file reading
 ```
 
+### Claude-Mem File-Read Gate (Important Gotcha)
+
+The claude-mem plugin registers a `PreToolUse:Read` hook (file: `~/.claude/plugins/cache/thedotmack/claude-mem/<version>/hooks/hooks.json`) that rewrites Read tool calls for token economy. When all three conditions are true, the hook replaces the Read with `limit: 1` and injects a semantic timeline as context:
+
+1. The target file is **≥ 1,500 bytes** (`FILE_READ_GATE_MIN_BYTES` in `src/cli/handlers/file-context.ts:20`)
+2. The file has **prior claude-mem observations** for this project
+3. The Read tool call passed **no explicit `offset` or `limit`**
+
+**Symptoms:**
+- `Read({file_path: "..."})` returns only line 1
+- Hook-additional-context says "This file has prior observations. Only line 1 was read to save tokens."
+- Suggests running `smart_outline()` or re-reading with `offset`/`limit`
+
+**Workaround (for full reads):** Always pass an explicit `limit`. The hook checks `isTargetedRead = userOffset !== undefined || userLimit !== undefined` (line 186) and preserves any explicit value:
+
+```
+Read({file_path: "...", limit: 2000})   # reads full file if under 2000 lines
+Read({file_path: "...", offset: 1, limit: 500})  # targeted read
+```
+
+**Scope:** Only affects the main-agent `Read` tool. Does NOT affect:
+- Serena MCP tools (`read_memory`, `read_file`) — use these for full-file reads of architectural docs
+- `cat`/`head`/`tail` via Bash — but prefer the dedicated tools
+- Sub-agent Read calls (they run in isolated contexts without this hook)
+
+**When this matters:**
+- OpenSpec change artifacts (proposal.md, design.md, tasks.md, spec.md) — always pass `limit`
+- Any file you've read or modified before in this project
+- Reading code for review where you need full context
+
+**Disabling entirely (not recommended):**
+- Set `CLAUDE_MEM_EXCLUDED_PROJECTS` in `~/.claude-mem/settings.json` to include the project path
+- Or remove the `PreToolUse` block from the plugin's `hooks.json` (lost on plugin update)
+
 ---
 
 ## System 3: Auto-Memory (Claude Code Built-in)

@@ -18,6 +18,13 @@ Bootstrap a new Claude Code session with full project context. This skill activa
 
 Execute these steps in order. Steps 1-3 are independent of each other and have no data dependencies. Steps 4-5 depend on earlier results.
 
+> **⚠️ Read truncation gate.** The `claude-mem` plugin installs a `PreToolUse:Read` hook that truncates any `Read` call to 1 line when:
+> (a) the target file is ≥ 1,500 bytes, AND
+> (b) the file has prior claude-mem observations, AND
+> (c) no explicit `offset` or `limit` was passed.
+>
+> **To bypass:** always pass an explicit `limit` parameter when reading files that may have prior observations. A large sentinel value like `limit: 2000` reads the whole file for most artifacts. This affects `Read` (the tool in this assistant), not Serena's `read_memory` or `read_file` MCP calls. See `references/memory-systems.md` → "Claude-Mem file-read gate" for the full mechanism.
+
 ### Step 1: Activate Serena Project Context
 
 ```
