@@ -20,6 +20,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
+/// Boxed one-shot callback that signals the shard manager to shut down.
+/// Held behind `Arc<RwLock<Option<_>>>` so it can be taken by the shutdown path.
+type ShutdownTrigger = Box<dyn FnOnce() -> bool + Send + Sync>;
+
 /// Discord adapter state.
 pub struct DiscordAdapter {
     runtime_key: String,
@@ -31,7 +35,7 @@ pub struct DiscordAdapter {
     active_messages: Arc<RwLock<HashMap<String, serenity::all::MessageId>>>,
     /// Typing handles per message. Typing stops when the handle is dropped.
     typing_tasks: Arc<RwLock<HashMap<String, serenity::http::Typing>>>,
-    shutdown_trigger: Arc<RwLock<Option<Box<dyn FnOnce() -> bool + Send + Sync>>>>,
+    shutdown_trigger: Arc<RwLock<Option<ShutdownTrigger>>>,
 }
 
 impl DiscordAdapter {
