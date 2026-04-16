@@ -23,7 +23,7 @@
 - **Web UI:** Vite + React + TypeScript (`interface/`)
 - **JS Package Manager:** bun (NEVER npm/pnpm/yarn)
 - **Documentation Site:** Next.js + Fumadocs (`docs/`)
-- **SpaceUI:** Design system (5 packages: tokens, primitives, forms, ai, explorer) (`spaceui/`)
+- **SpaceUI:** Design system (6 packages: tokens, primitives, forms, icons, ai, explorer) (`spaceui/`)
 - **Desktop App:** Tauri (`desktop/`)
 
 ## Deployment

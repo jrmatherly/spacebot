@@ -36,6 +36,7 @@
 | `cargo test` | Run all tests |
 | `cargo fmt --all` | Format code |
 | `cargo clippy --all-targets` | Lint code |
+| `cargo audit --ignore RUSTSEC-2023-0071` | Security audit |
 
 ## Frontend Commands (interface/)
 **Always use `bun`, never npm/pnpm/yarn**
