@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Spacedrive source available in project tree
-The Spacedrive platform source SHALL reside at `spacedrive/` in the Spacebot project root, excluding `.github/`, `target/`, `node_modules/`, `.next/`, and `dist/` directories.
+The Spacedrive platform source SHALL reside at `spacedrive/` in the Spacebot project root, excluding `.git/`, `.github/`, `target/`, `node_modules/`, `.next/`, and `dist/` directories.
 
 #### Scenario: Fresh clone contains Spacedrive source
 - **WHEN** a developer clones the Spacebot repository
@@ -10,6 +10,10 @@ The Spacedrive platform source SHALL reside at `spacedrive/` in the Spacebot pro
 #### Scenario: Spacedrive .github excluded
 - **WHEN** the `spacedrive/` directory is listed
 - **THEN** it SHALL NOT contain a `.github/` directory
+
+#### Scenario: Spacedrive .git excluded
+- **WHEN** the `spacedrive/` directory is listed
+- **THEN** it SHALL NOT contain a `.git/` directory (source is co-located, not a submodule)
 
 ### Requirement: Cargo workspaces remain independent
 Spacebot's `Cargo.toml` SHALL contain a `[workspace]` section with an `exclude` list that includes `"spacedrive"`, preventing Cargo from discovering Spacedrive as a workspace member.
@@ -21,6 +25,10 @@ Spacebot's `Cargo.toml` SHALL contain a `[workspace]` section with an `exclude` 
 #### Scenario: Workspace exclude guard present
 - **WHEN** `grep -A2 '\[workspace\]' Cargo.toml` is run
 - **THEN** the output contains `exclude` with `"spacedrive"` in the list
+
+#### Scenario: Workspace has exactly one member
+- **WHEN** `cargo metadata --format-version=1 --no-deps` is run and parsed
+- **THEN** `workspace_members` contains exactly one entry (Spacebot's package)
 
 #### Scenario: Future workspace additions are safe
 - **WHEN** a `[workspace.lints]` or `[workspace.metadata]` section is added to Spacebot's Cargo.toml

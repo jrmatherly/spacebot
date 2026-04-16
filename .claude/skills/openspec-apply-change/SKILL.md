@@ -24,7 +24,18 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
-2. **Check status to understand the schema**
+2. **Enter worktree for isolation**
+
+   Implementation work MUST happen in an isolated worktree to protect the main working tree.
+
+   **If not already in a worktree:**
+   - **REQUIRED SUB-SKILL:** Use `superpowers:using-git-worktrees` to create an isolated workspace
+   - Use the change name as the worktree/branch name (e.g., `fix-rustls-webpki-audit`)
+   - Follow that skill's directory selection, safety verification, and baseline test steps
+
+   **If already in a worktree:** Skip — already isolated. Announce which worktree you're in.
+
+3. **Check status to understand the schema**
    ```bash
    openspec status --change "<name>" --json
    ```

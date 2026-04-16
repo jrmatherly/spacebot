@@ -23,9 +23,11 @@ Spacedrive is a 15-crate Rust workspace (236K Rust LOC) with frontend apps (desk
 
 Same pattern as SpaceUI (`spaceui/`). Keeps all three projects (Spacebot, SpaceUI, Spacedrive) at the same directory level. Spacedrive's internal structure (Cargo workspace, Bun workspaces, Turbo) stays intact.
 
-### 2. Add `[workspace] exclude` to Spacebot's Cargo.toml
+### 2. Add `[workspace] exclude = ["spacedrive"]` to Spacebot's Cargo.toml
 
-Spacebot currently has no `[workspace]` section. This isolation is implicit and fragile — if anyone adds `[workspace]` (e.g., for workspace lints), Cargo would auto-discover `spacedrive/Cargo.toml`. Adding `[workspace] exclude = ["spacedrive", "spaceui", "desktop"]` makes isolation explicit.
+Spacebot currently has no `[workspace]` section. This isolation is implicit and fragile — if anyone adds `[workspace]` (e.g., for workspace lints), Cargo would auto-discover `spacedrive/Cargo.toml`. Adding `[workspace] exclude = ["spacedrive"]` makes isolation explicit.
+
+Only `spacedrive/` needs exclusion. `spaceui/` has no `Cargo.toml` (pure Bun/TS workspace), and `desktop/src-tauri/Cargo.toml` is nested two levels deep where Cargo auto-discovery does not reach. A minimal exclude list documents the one genuine risk rather than listing sibling directories that Cargo would ignore anyway.
 
 **Alternative considered:** Rely on the implicit behavior. Rejected because a future `[workspace]` addition would silently break the build with confusing nesting errors.
 

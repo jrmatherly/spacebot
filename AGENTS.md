@@ -8,7 +8,7 @@ A Rust agentic system where every LLM process has a dedicated role and delegatio
 
 Single binary. No server dependencies. Runs on tokio. All data lives in embedded databases in a local data directory.
 
-**Stack:** Rust (edition 2024), tokio, Rig (v0.33, agentic loop framework), SQLite (sqlx), LanceDB (embedded vector + FTS), redb (embedded key-value).
+**Stack:** Rust (edition 2024), tokio, Rig (v0.35, agentic loop framework), SQLite (sqlx), LanceDB (embedded vector + FTS), redb (embedded key-value).
 
 ## JavaScript Tooling (Critical)
 
