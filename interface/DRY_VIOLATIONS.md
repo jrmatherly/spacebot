@@ -1,147 +1,64 @@
-# Interface DRY Violations & Hardcoded Patterns
+# Interface DRY Violations
 
-A comprehensive audit of hardcoded patterns and DRY violations in the interface codebase.
+Tracked hardcoded patterns and duplication in `interface/src/` that are worth consolidating. Every entry is grounded in a grep against the current tree (not historical claims).
 
-**Last snapshot:** Round 2 of fixes (pre-2026-04). Several of the items below predate the `@spacedrive/primitives` migration and may no longer exist after the interface was retargeted onto the spaceui design system. Before fixing any entry, verify the pattern still appears in the current code.
+**Snapshot:** 2026-04-16 — post `@spacedrive/primitives` migration, Tailwind v4.
 
----
-
-## FIXED ✅
-
-### Input Styling (was 20+ copies)
-**Status:** RESOLVED - Now using shared Input component or proper abstractions
-
-### Stat Component (was 2+ copies)
-**Status:** RESOLVED - Consolidated into shared component
-
-### Field Component (was 2 copies)
-**Status:** MOSTLY RESOLVED - Only 1 remaining in `AgentCron.tsx`
+**How to use this doc:**
+- Before "fixing" anything here, re-run the referenced grep. Counts drift quickly.
+- Entries marked 🔴 are high-value; 🟡 are medium; ⚪ are optional.
+- When you land a fix, update the entry or delete it.
 
 ---
 
-## STILL PENDING
+## 🔴 Pulse-dot loading indicator (26 occurrences, 24 files)
 
-### 1. Loading Pulse Dot (11 copies) 🔴
-
-**Files affected:**
-- `AgentConfig.tsx` (1)
-- `Settings.tsx` (2)
-- `AgentChannels.tsx` (1)
-- `AgentCron.tsx` (2)
-- `AgentIngest.tsx` (1)
-- `AgentCortex.tsx` (1)
-- `AgentMemories.tsx` (1)
-- `MemoryGraph.tsx` (1)
-- `Overview.tsx` (1)
-
-**Hardcoded pattern:**
+**Pattern:**
 ```tsx
-<div className="flex items-center gap-2 text-ink-dull">
-  <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-  Loading...
-</div>
+<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
 ```
 
-**Note:** `Loader.tsx` exists but has a spinner icon, not the pulse dot. Need either:
-- Add pulse variant to `Loader`
-- Or create a simple `LoadingDot` component
+**Verify:**
+```bash
+grep -rnE 'h-2 w-2 animate-pulse rounded-full bg-accent' interface/src/
+```
+
+**Top offenders:** `routes/AgentCron.tsx` (2), `components/settings/ChatGptOAuthDialog.tsx` (2). Every other file has exactly 1 occurrence. Spread is wide (most of `components/settings/*`, most `routes/Agent*.tsx`, `routes/Workbench.tsx`, `components/OpenCodeEmbed.tsx`, `components/MemoryGraph.tsx`, `components/org/OrgGraphInner.tsx`).
+
+**Fix:** Add a `LoadingDot` component. Two reasonable homes:
+1. `spaceui/packages/primitives/src/LoadingDot.tsx` — reusable across interface and the showcase app. Preferred if `spaceui/` should own generic loading primitives.
+2. `interface/src/components/LoadingDot.tsx` — interface-local if the pattern is specific to daemon control UI idioms.
+
+Keep the default markup identical (`flex items-center gap-2 text-ink-dull` wrapper + dot + "Loading..." label) and accept `label?: string` and `className?: string` for variation.
 
 ---
 
-### 2. Color/Style Maps Still Scattered (4 locations) 🟡
+## 🟡 Scattered color maps (4 locations, no central tokens file)
 
-#### TYPE_COLORS in `AgentMemories.tsx` (lines 36-45)
-```tsx
-const TYPE_COLORS: Record<MemoryType, string> = {
-  fact: "bg-blue-500/15 text-blue-400",
-  preference: "bg-pink-500/15 text-pink-400",
-  // ... 6 more
-};
+Per-domain color mappings live as inline consts instead of semantic tokens:
+
+| Const | File:line |
+|-------|-----------|
+| `TYPE_COLORS` (MemoryType → Tailwind classes) | `interface/src/routes/AgentMemories.tsx:34` |
+| `EVENT_CATEGORY_COLORS` (event type → classes) | `interface/src/routes/AgentCortex.tsx:10` |
+| `MEMORY_TYPE_COLORS` (array, positional) | `interface/src/routes/AgentDetail.tsx:390` |
+| `platformColor()` (switch on platform name) | `interface/src/lib/format.ts:50` |
+
+**Verify:**
+```bash
+grep -n "TYPE_COLORS\|EVENT_CATEGORY_COLORS\|MEMORY_TYPE_COLORS" interface/src/routes/*.tsx
+grep -n "platformColor" interface/src/lib/format.ts
 ```
 
-#### EVENT_CATEGORY_COLORS in `AgentCortex.tsx` (lines 18-32)
-```tsx
-const EVENT_CATEGORY_COLORS: Record<string, string> = {
-  bulletin_generated: "bg-blue-500/15 text-blue-400",
-  // ... 11 more
-};
-```
-
-#### MEMORY_TYPE_COLORS in `AgentDetail.tsx` (line 303)
-```tsx
-const MEMORY_TYPE_COLORS = [
-  "bg-blue-500/15 text-blue-400",
-  // ... array of colors
-];
-```
-
-#### platformColor in `lib/format.ts`
-```tsx
-export function platformColor(platform: string): string {
-  switch (platform) {
-    case "discord": return "bg-indigo-500/20 text-indigo-400";
-    // ...
-  }
-}
-```
-
-**Fix:** Create a centralized `theme.ts` or `colors.ts` with all color mappings.
+**Fix:** These are semantic color mappings, not arbitrary styling. The natural home is `@spacedrive/tokens` as named semantic tokens (e.g. `color.memory.fact`, `color.event.bulletin_generated`), consumed from interface via the existing `@spacedrive/tokens` dependency. A local `interface/src/lib/semantic-colors.ts` is acceptable if the domain is too interface-specific for the shared design system.
 
 ---
 
-### 3. Toolbar/Header Pattern (10+ copies) 🟡
+## 🟡 Generic `Field` wrapper duplicated in AgentCron.tsx
 
-**Common pattern:**
+**Location:** `interface/src/routes/AgentCron.tsx:718`
 ```tsx
-<div className="flex items-center gap-3 border-b border-app-line/50 bg-app-darkBox/20 px-6 py-3">
-```
-
-**Variations in:**
-- `AgentConfig.tsx` (2 toolbar headers)
-- `Settings.tsx` (sidebar + content headers)
-- `AgentChannels.tsx` (toolbar)
-- `AgentCortex.tsx` (filter bar)
-- `AgentMemories.tsx` (2 toolbars)
-- `ChannelDetail.tsx` (header)
-
-**Fix:** Create a `Toolbar` or `PageHeader` component in `ui/`.
-
----
-
-### 4. Grid Column Layout Duplication 🟡
-
-**In `AgentMemories.tsx`:**
-```tsx
-// Table header (line 231)
-<div className="grid grid-cols-[80px_1fr_100px_120px_100px] gap-3 ...">
-
-// Table row (line 280)  
-<div className="grid h-auto w-full grid-cols-[80px_1fr_100px_120px_100px] ...">
-```
-
-**Fix:** Define column layout as a constant or use CSS grid template areas.
-
----
-
-### 5. text-tiny text-ink-faint (69 matches) 🟡
-
-**This is a very common pattern** - might be acceptable if used intentionally for consistency, but could also indicate:
-- Missing typography components
-- Over-reliance on utility classes
-
-**Files with highest usage:**
-- `ChannelDetail.tsx` (15 matches)
-- `AgentDetail.tsx` (9 matches)
-- `Settings.tsx` (14 matches)
-- `AgentConfig.tsx` (6 matches)
-
----
-
-### 6. Field Component Remaining 🟡
-
-**File:** `AgentCron.tsx` (line 400)
-```tsx
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({label, children}: {label: string; children: React.ReactNode}) {
   return (
     <div className="space-y-1.5">
       <label className="text-xs font-medium text-ink-dull">{label}</label>
@@ -151,34 +68,67 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 ```
 
-**Fix:** Use `Forms.Field` from `ui/forms/index.ts` instead.
+**Verify:**
+```bash
+grep -nE "^function Field" interface/src/routes/AgentCron.tsx
+```
+
+**Fix:** `@spacedrive/forms` exports typed variants (`InputField`, `SwitchField`, `SelectField`, `TextAreaField`, `RadioGroupField`) rather than a generic label-wrapper. Options:
+1. Replace each `<Field>` usage with the appropriate typed variant from `@spacedrive/forms` (preferred — this keeps form semantics consistent).
+2. If a plain label wrapper is genuinely needed, promote this helper to `spaceui/packages/forms/src/FieldLabel.tsx` so other pages don't re-invent it.
 
 ---
 
-## NEW COMPONENTS ADDED ✅
+## 🟡 Grid column template duplicated in table rows
 
-### NumberStepper
-**File:** `ui/NumberStepper.tsx`
-**Usage:** Reusable number input with +/- buttons
-**Exported:** Yes, in `ui/index.ts`
+**Pattern:** `grid-cols-[80px_1fr_100px_120px_100px]` — appears twice in `interface/src/routes/AgentMemories.tsx` (lines 241 header, 292 row) and nowhere else.
 
----
+**Verify:**
+```bash
+grep -rnE 'grid-cols-\[80px_1fr_100px_120px_100px\]' interface/src/
+```
 
-## LOW PRIORITY PATTERNS
-
-These are acceptable repetition or would be over-engineering to DRY:
-
-1. **Empty/Error State Patterns** - Similar but context-specific
-2. **AnimatePresence Wrappers** - Framer Motion patterns are fine
-3. **Modal/Dialog Structures** - Each has unique content
-4. **Pagination Controls** - Only 2-3 instances, not worth abstracting yet
+**Fix:** Low blast radius — hoist the template to a local const at the top of `AgentMemories.tsx`:
+```tsx
+const MEMORY_TABLE_COLS = "grid-cols-[80px_1fr_100px_120px_100px]";
+```
+Not worth a shared component unless a second table with the same shape appears.
 
 ---
 
-## PRIORITY ORDER
+## ⚪ `text-tiny text-ink-faint` utility combo (133 occurrences)
 
-1. **Loading pulse dot** - 11 copies, easy win, should be component
-2. **Color maps consolidation** - Centralize all color mappings
-3. **Toolbar component** - 10+ identical patterns
-4. **Field component** - 1 remaining, quick fix
-5. **Grid layouts** - Only if more tables added
+This pair is effectively the project's "small muted caption" style. 133 occurrences across 30+ files suggests intentional consistency, not a violation.
+
+**Verify:**
+```bash
+grep -rn "text-tiny text-ink-faint" interface/src/ | wc -l
+```
+
+**Decide:**
+- **Leave as-is** if the utility pair is the canonical muted-caption style. No action.
+- **Promote** to a semantic utility (e.g. `text-caption-muted` in `@spacedrive/tokens`) only if the project wants to abstract typography into named roles. This is an opinion call, not drift.
+
+---
+
+## Reference-only: patterns considered and rejected
+
+These were evaluated and deemed not worth consolidating:
+
+- **Empty/error state blocks** — structurally similar but copy and CTA are always context-specific; abstracting them costs more than it saves.
+- **`AnimatePresence` wrappers** — Framer Motion idioms; repetition is expected.
+- **Modal/Dialog structures** — `@spacedrive/primitives` already provides the shell; per-dialog content is the whole point.
+- **Pagination controls** — only a few instances and they differ in filter shape.
+
+---
+
+## Priority
+
+Do these in order:
+
+1. **Pulse-dot component** (🔴, 26 sites — highest leverage)
+2. **Semantic colors in `@spacedrive/tokens`** (🟡, fixes 4 scattered maps in one move)
+3. **AgentCron `Field` → `@spacedrive/forms` variants** (🟡, narrow but finishes the forms migration)
+4. **Hoist grid template to const** (🟡, 2-line change)
+
+The `text-tiny text-ink-faint` item is explicitly a decide-don't-fix.
