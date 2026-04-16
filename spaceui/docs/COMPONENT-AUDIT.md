@@ -101,12 +101,15 @@ Not audited yet. These components were extracted from the Spacebot interface and
 ## Migration Checklist
 
 ### Phase 1 — Fix the good ones
-- [ ] Button — add missing variants (subtle, gray, accent, colored, bare), add link mode
-- [ ] Checkbox — add RadixCheckbox extended variant
-- [ ] Tooltip — add keybind display support
-- [ ] RadioGroup — match real wrapper/layout pattern
-- [ ] TagPill — align props API (color+children vs tag object)
-- [ ] RenameInput — add extension handling, async save, blur cancellation
+
+Verified complete as of 2026-04-16 during PR II prep (grep against the current tree, not the 2026-03-26 snapshot):
+
+- [x] Button — all 8 variants present (default, subtle, outline, dotted, gray, accent, colored, bare) + link mode via `href?` / `LinkButtonProps` union
+- [x] Checkbox — both `CheckBox` and `RadixCheckbox` exported
+- [x] Tooltip — `keybinds` prop + `Kbd` component present
+- [x] RadioGroup — custom `Root` + `Item` wrappers with Spacedrive's bordered-box pattern
+- [x] TagPill — `color: string, children: ReactNode, size, onClick, onRemove, className` API
+- [x] RenameInput — extension handling, async save, blur cancellation (`name`, `extension`, `onSave`, `onCancel`)
 
 ### Phase 2 — Rework the mediocre ones
 - [ ] Input — rebuild with sizes, icon support, SearchInput, PasswordInput, TextArea

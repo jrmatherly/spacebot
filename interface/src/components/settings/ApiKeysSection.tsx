@@ -10,6 +10,7 @@ import {
 	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	LoadingDot,
 } from "@spacedrive/primitives";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faSearch} from "@fortawesome/free-solid-svg-icons";
@@ -61,10 +62,7 @@ export function ApiKeysSection({settings, isLoading}: GlobalSettingsSectionProps
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading settings...
-				</div>
+				<LoadingDot>Loading settings...</LoadingDot>
 			) : (
 				<div className="flex flex-col gap-3">
 					<div className="rounded-lg border border-app-line bg-app-box p-4">

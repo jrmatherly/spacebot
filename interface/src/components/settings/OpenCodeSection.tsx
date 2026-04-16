@@ -4,6 +4,7 @@ import {api} from "@/api/client";
 import {
 	Button,
 	Input,
+	LoadingDot,
 	SelectRoot,
 	SelectTrigger,
 	SelectValue,
@@ -128,10 +129,7 @@ export function OpenCodeSection({settings, isLoading}: GlobalSettingsSectionProp
 			</div>
 
 			{isLoading ? (
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading settings...
-				</div>
+				<LoadingDot>Loading settings...</LoadingDot>
 			) : (
 				<div className="flex flex-col gap-4">
 					{/* Enable toggle */}

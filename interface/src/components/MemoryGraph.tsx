@@ -13,7 +13,7 @@ import {
 	type RelationType,
 } from "@/api/client";
 import {formatTimeAgo} from "@/lib/format";
-import {Button, CircleButton} from "@spacedrive/primitives";
+import {Button, CircleButton, LoadingDot} from "@spacedrive/primitives";
 import {
 	Crosshair,
 	Plus,
@@ -517,10 +517,7 @@ export function MemoryGraph({agentId, sort, typeFilter}: MemoryGraphProps) {
 			{/* Loading / error / empty states */}
 			{isLoading && (
 				<div className="absolute inset-0 flex items-center justify-center bg-app/80">
-					<div className="flex items-center gap-2 text-ink-dull">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-						Loading graph...
-					</div>
+					<LoadingDot>Loading graph...</LoadingDot>
 				</div>
 			)}
 			{error && (

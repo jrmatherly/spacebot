@@ -1,4 +1,5 @@
 import {useState, useEffect, useRef} from "react";
+import {LoadingDot} from "@spacedrive/primitives";
 
 /** RFC 4648 base64url encoding (no padding), matching OpenCode's directory encoding. */
 export function base64UrlEncode(value: string): string {
@@ -375,10 +376,9 @@ export function OpenCodeEmbed({
 			/>
 			{state === "loading" && (
 				<div className="absolute inset-0 flex items-center justify-center bg-app-dark-box/80">
-					<div className="flex items-center gap-2 text-xs text-ink-faint">
-						<span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+					<LoadingDot className="text-xs text-ink-faint">
 						Loading OpenCode...
-					</div>
+					</LoadingDot>
 				</div>
 			)}
 			{state === "error" && (

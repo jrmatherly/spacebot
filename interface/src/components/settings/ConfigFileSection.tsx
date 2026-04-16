@@ -1,7 +1,7 @@
 import {useState, useEffect, useRef} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {api} from "@/api/client";
-import {Button} from "@spacedrive/primitives";
+import {Button, LoadingDot} from "@spacedrive/primitives";
 import {parse as parseToml} from "smol-toml";
 
 export function ConfigFileSection() {
@@ -209,10 +209,7 @@ export function ConfigFileSection() {
 			{/* Editor */}
 			<div className="flex-1 overflow-hidden">
 				{isLoading ? (
-					<div className="flex items-center gap-2 p-6 text-ink-dull">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-						Loading config...
-					</div>
+					<LoadingDot className="p-6">Loading config...</LoadingDot>
 				) : (
 					<div ref={editorRef} className="h-full" />
 				)}

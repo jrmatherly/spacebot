@@ -10,6 +10,7 @@ import {
 	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	LoadingDot,
 } from "@spacedrive/primitives";
 import {SettingSidebarButton} from "@/ui/SettingSidebarButton";
 import {useSearch, useNavigate} from "@tanstack/react-router";
@@ -578,10 +579,7 @@ export function Settings() {
 							</div>
 
 							{isLoading ? (
-								<div className="flex items-center gap-2 text-ink-dull">
-									<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-									Loading providers...
-								</div>
+								<LoadingDot>Loading providers...</LoadingDot>
 							) : (
 								<div className="flex flex-col gap-3">
 									{PROVIDERS.map((provider) => [

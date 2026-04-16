@@ -47,16 +47,10 @@ export function platformIcon(platform: string): string {
 	}
 }
 
-export function platformColor(platform: string): string {
-	switch (platform) {
-		case "discord": return "bg-indigo-500/20 text-indigo-400";
-		case "slack": return "bg-green-500/20 text-green-400";
-		case "telegram": return "bg-blue-500/20 text-blue-400";
-		case "twitch": return "bg-purple-500/20 text-purple-400";
-		case "cron": return "bg-amber-500/20 text-amber-400";
-		default: return "bg-gray-500/20 text-gray-400";
-	}
-}
+// Re-exported from the central color module so existing call sites keep
+// importing `platformColor` from "@/lib/format" without change. The
+// authoritative mapping lives in `@/lib/colors`.
+export {platformColor} from "./colors";
 
 // E.164 Phone Number Validation
 // Validates international phone numbers in format: + followed by country code and 6-15 digits

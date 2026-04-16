@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {MagnifyingGlassMinus, MagnifyingGlassPlus, CornersOut} from "@phosphor-icons/react";
-import {CircleButton} from "@spacedrive/primitives";
+import {CircleButton, LoadingDot} from "@spacedrive/primitives";
 import {
 	ReactFlow,
 	Background,
@@ -561,10 +561,7 @@ export function OrgGraphInner({activeEdges, agents}: OrgGraphInnerProps) {
 	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center">
-				<div className="flex items-center gap-2 text-ink-dull">
-					<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-					Loading topology...
-				</div>
+				<LoadingDot>Loading topology...</LoadingDot>
 			</div>
 		);
 	}

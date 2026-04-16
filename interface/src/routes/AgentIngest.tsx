@@ -2,7 +2,7 @@ import {useState, useRef, useCallback} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {api, type IngestFileInfo} from "@/api/client";
 import {formatTimeAgo} from "@/lib/format";
-import {Badge} from "@spacedrive/primitives";
+import {Badge, LoadingDot} from "@spacedrive/primitives";
 import {clsx} from "clsx";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faTrash} from "@fortawesome/free-solid-svg-icons";
@@ -208,7 +208,7 @@ export function AgentIngest({agentId}: AgentIngestProps) {
 				{/* File list */}
 				{isLoading && (
 					<div className="flex items-center justify-center py-12">
-						<div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+						<LoadingDot className="gap-0" />
 					</div>
 				)}
 
