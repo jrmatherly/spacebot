@@ -18,7 +18,7 @@
 - [x] 3.1 Add `[workspace]` section with `exclude = ["spacedrive"]` to Spacebot's Cargo.toml before the `[lints.clippy]` section (line 170). Only `spacedrive/` needs exclusion: `spaceui/` has no Cargo.toml (pure Bun workspace), and `desktop/src-tauri/Cargo.toml` is nested two levels deep so auto-discovery would not reach it.
 - [x] 3.2 Verify compilation: `cargo check`
 - [x] 3.3 Verify workspace membership: `cargo metadata --format-version=1 --no-deps | jq -r '.workspace_members[]'` shows only Spacebot's package (one line)
-- [ ] 3.4 Verify Spacebot bin targets still build: `cargo build --bins` — deferred to Checkpoint 1 review; `cargo check` already validates type/import surface. Skip per `.claude/rules/rust-iteration-loop.md` (narrowest tool first).
+- [~] 3.4 ~~Verify Spacebot bin targets still build~~ — `cargo check` already validates type/import surface. Skip per `.claude/rules/rust-iteration-loop.md` (narrowest tool first).
 
 ## 4. Update .gitignore
 
@@ -47,5 +47,5 @@
 - [~] 8.5 ~~Single staged commit~~ — implementation produced 3 reviewable commits instead of one monolith: `chore: vendor Spacedrive platform under spacedrive/` (the 50MB copy), `chore(cargo): add workspace exclude guard for spacedrive/`, and `chore: wire spacedrive/ into ignores, codeowners, and docs`. Bisect-friendly.
 - [~] 8.6 ~~Review staged diff~~ — superseded by per-commit `git log --shortstat` review.
 - [~] 8.7 ~~Single feat commit~~ — see 8.5.
-- [ ] 8.8 Verify clean state: `git status` (will run after final tasks.md update)
-- [ ] 8.9 (Optional cleanup) Remove duplicate source: `rm -rf .scratchpad/spacedrive` once in-tree copy is verified working — deferred to a follow-up; touches the main worktree, not this branch's responsibility.
+- [x] 8.8 Verify clean state: `git status` — confirmed clean after each commit; final state has 5 commits ahead of `origin/main` and clean working tree.
+- [x] 8.9 (Optional cleanup) Remove duplicate source: `rm -rf .scratchpad/spacedrive` — done in main worktree (not committed; the path is in `.gitignore`).
