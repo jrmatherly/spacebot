@@ -387,34 +387,38 @@ This walks you through an interactive prompt:
 
 It creates a markdown file in `.changeset/` — commit this with your PR.
 
-#### 2. Merge to main
+#### 2. Local validation before merge
 
-CI runs on every PR (typecheck, build, export verification). The `changeset` job warns if no changeset is included.
+There is no automated SpaceUI CI in this repo (the upstream workflows were removed since they only auto-discover at the repo root). Run the checks locally before merging:
 
-#### 3. Version Packages PR (automatic)
+```bash
+cd spaceui
+bun run typecheck
+bun run build
+```
 
-When changesets land on `main`, the release workflow automatically opens (or updates) a **"Version Packages"** PR. This PR:
-- Bumps version numbers in all affected `package.json` files
-- Updates `CHANGELOG.md` in each package
-- Updates internal `@spacedrive/*` dependency ranges
+Both must pass. Confirm the relevant `.changeset/*.md` file is in your PR.
 
-Review this PR to see exactly what versions will be published.
+#### 3. Manual versioning
 
-#### 4. Publish (automatic)
+After changesets land on `main`, run versioning locally:
 
-When you merge the "Version Packages" PR, the release workflow runs again and:
-- Builds all packages (`turbo run build`)
-- Publishes to npm (`changeset publish`)
-- Creates git tags for each released version
+```bash
+cd spaceui
+bunx changeset version
+```
 
-### Setting up the release workflow
+This bumps version numbers in affected `package.json` files, updates each package's `CHANGELOG.md`, and updates internal `@spacedrive/*` dependency ranges. Review the resulting diff, then commit it (`chore: version packages`).
 
-The GitHub Actions workflow (`.github/workflows/release.yml`) needs one secret:
+#### 4. Manual publish
 
-1. Generate an npm access token: `npm token create` (or create one at npmjs.com → Access Tokens)
-2. Add it as `NPM_TOKEN` in your GitHub repo: Settings → Secrets and variables → Actions → New repository secret
+```bash
+cd spaceui
+bun run build
+bunx changeset publish
+```
 
-The `GITHUB_TOKEN` is provided automatically by GitHub Actions.
+`changeset publish` requires `NPM_TOKEN` set in your environment (`npm token create` to generate one). Tag the release with `git tag` after publishing.
 
 ### Consuming published versions
 

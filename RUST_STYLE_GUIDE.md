@@ -4,7 +4,7 @@ Conventions for Spacebot. Follow these exactly. When in doubt, consistency with 
 
 ## Project Structure
 
-Single binary crate. No workspace, no sub-crates. Library root is `src/lib.rs`, binary entry is `src/main.rs`.
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to keep the vendored Spacedrive workspace out of Cargo auto-discovery; the `[workspace]` block is intentional. Library root is `src/lib.rs`, binary entry is `src/main.rs`.
 
 ```
 src/

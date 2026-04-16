@@ -1,5 +1,7 @@
 # Spacedrive Security Policy
 
+> **Vendored upstream policy.** This is upstream Spacedrive's security policy. The contact below reaches Spacedrive's team, not Spacebot's. To report a security issue in **Spacebot** itself, open a private vulnerability report at https://github.com/jrmatherly/spacebot/security/advisories/new.
+
 ## Reporting a vulnerability
 
 If you find a vulnerability within the app, please report it to us. You may do so anonymously, or we can credit you for it if you wish.

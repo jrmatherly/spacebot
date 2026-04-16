@@ -46,7 +46,7 @@ The frontend CI (`interface-ci.yml`) runs `bun ci` and `bunx tsc --noEmit` on in
 
 ## Project Structure
 
-Single binary crate (no workspace). Key directories:
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to keep the vendored Spacedrive workspace out of Cargo auto-discovery. Key directories:
 
 ```
 src/

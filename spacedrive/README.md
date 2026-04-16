@@ -1,3 +1,9 @@
+<!--
+  Vendored upstream documentation. This README describes the Spacedrive
+  project as built and shipped by the upstream Spacedrive team. For Spacebot
+  setup and architecture, see the root README.md.
+-->
+
 <p align="center">
   <img src=".github/logo.png" alt="Spacedrive" width="120" height="120" />
 </p>

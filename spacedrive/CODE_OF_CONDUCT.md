@@ -1,5 +1,7 @@
 # Contributor Covenant Code of Conduct
 
+> **Vendored upstream policy.** This is upstream Spacedrive's Code of Conduct. The enforcement contact below reaches Spacedrive's team, not Spacebot's. For Spacebot community matters, contact this repository's owner via GitHub.
+
 ## Our Pledge
 
 We as members, contributors, and leaders pledge to make participation in our

@@ -42,6 +42,7 @@ spaceui/
 │   ├── tokens/         # Design tokens & Tailwind preset
 │   ├── primitives/     # Base UI components
 │   ├── forms/          # react-hook-form wrappers
+│   ├── icons/          # File type icons and KindIcon component
 │   ├── ai/             # AI agent components
 │   └── explorer/       # File management components
 ├── examples/

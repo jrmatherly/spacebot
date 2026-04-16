@@ -37,6 +37,7 @@ spacebot/
 ├── prompts/                        (86 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
+├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
 └── tests/                          (11 integration test files)
 ```
 
@@ -198,9 +199,8 @@ Under `openspec/changes/` — structured change proposals with specs + phased ta
 
 | Change | Purpose |
 |---|---|
-| **integrate-spacedrive** | VDFS integration, P2P sync, remote execution |
 | **security-remediation** | Security hardening workstream |
-| **archive** | Completed change history |
+| **archive** | Completed change history (includes `2026-04-16-integrate-spacedrive`) |
 
 ---
 
