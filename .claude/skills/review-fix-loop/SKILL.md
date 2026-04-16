@@ -45,3 +45,7 @@ Use one row per finding:
 - Pass/fail evidence per finding
 - Remaining open findings with rationale
 - Residual risk
+
+## Coding Discipline
+
+- See `.claude/rules/coding-discipline.md`. Apply surgical edits: each fix should touch only what the finding requires. Do not bundle drive-by improvements into a review-response commit.

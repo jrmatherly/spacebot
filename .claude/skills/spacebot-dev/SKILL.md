@@ -623,7 +623,9 @@ cargo test --tests --no-run        # Compile integration tests
 just check-typegen                 # Verify TypeScript schema sync
 ```
 
-**Cadence guidance:** See `.claude/rules/rust-iteration-loop.md` for which of these to run per change class. The inner loop should use the narrowest check that catches the bug class; reserve `just gate-pr` for pre-push.
+**Cadence guidance:** See `.claude/rules/rust-iteration-loop.md` for which of these to run per change class. The inner loop should use the narrowest check that catches the bug class. Reserve `just gate-pr` for pre-push.
+
+**Coding discipline:** See `.claude/rules/coding-discipline.md`. Surface assumptions before implementing, keep changes surgical, and default to TDD with the named escape hatches for docs, config, and async-state paths.
 
 ### Frontend
 Always use `bun`, never npm/pnpm/yarn:

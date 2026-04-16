@@ -64,6 +64,7 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 ## Reference Docs
 
 - `RUST_STYLE_GUIDE.md` — Full Rust coding conventions
+- `.claude/rules/coding-discipline.md` — Surface assumptions, simplicity, surgical edits, goal-driven TDD
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
 - `SPACEUI_MIGRATION.md` — Frontend migration changelog

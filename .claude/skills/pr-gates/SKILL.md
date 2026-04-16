@@ -42,3 +42,7 @@ When touching worker lifecycle, cancellation, retries, state transitions, or cac
 - Gate commands executed
 - P1/P2 finding-to-evidence mapping
 - Residual risk
+
+## Coding Discipline
+
+- See `.claude/rules/coding-discipline.md`. Before push, confirm every changed line traces to the request (surgical changes). If TDD was skipped, the exception must be named in the PR summary.

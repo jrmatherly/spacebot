@@ -88,18 +88,22 @@ These MCP servers provide specialized tool capabilities beyond the built-in Clau
 - **Focus:** Secret handling (DecryptedSecret wrapper), unsafe blocks, error exposure, injection vectors, auth enforcement
 - **Invoke:** `Agent({ subagent_type: "security-reviewer", prompt: "..." })`
 
-## Project Rules (6 files in `.claude/rules/`)
+## Project Rules (10 files in `.claude/rules/`)
 
-These load automatically based on file path globs — no explicit invocation needed.
+These are referenced from CLAUDE.md and domain skills. Some are path-scoped, others apply to every change of a given kind.
 
 | Rule | Applies To | Purpose |
 |------|-----------|---------|
 | `rust-essentials.md` | All Rust changes | Imports (3-tier), naming, error handling, comments, visibility, panics, logging |
 | `rust-patterns.md` | Implementation reference | Struct derives, async patterns, trait design, serde, state machines, Rig integration |
-| `writing-guide.md` | Documentation | Direct technical voice, patterns to avoid (AI-generated constructions) |
+| `rust-iteration-loop.md` | Every Rust change | Which check to run per change class (fmt, clippy, test, gate) |
+| `coding-discipline.md` | All code work | Surface assumptions, simplicity, surgical edits, goal-driven TDD with docs/config/async escape hatches |
+| `writing-guide.md` | Documentation and prose | Direct technical voice, banned patterns (em-dashes in prose, "Not X. Not Y." openers, banned words) |
 | `async-state-safety.md` | `src/agent/**`, `src/messaging/**`, `src/tasks/**` | Race condition prevention, terminal states, idempotent termination |
 | `messaging-adapter-parity.md` | `src/messaging/**/*.rs` | Behavior contracts across messaging backends |
 | `provider-integration.md` | `src/llm/**`, `src/config/providers.rs`, `src/config/toml_schema.rs` | Config keys, resolution order, routing defaults, auth flows |
+| `api-handler.md` | `src/api/**/*.rs` | Axum handler conventions |
+| `tool-authoring.md` | `src/tools/**/*.rs` | Rig tool definition conventions |
 
 ## Environment Variables
 
