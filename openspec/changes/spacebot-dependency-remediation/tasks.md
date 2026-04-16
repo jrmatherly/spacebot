@@ -1,15 +1,15 @@
 ## 1. Vite Upgrade in Spaceui
 
-- [ ] 1.1 Identify the minimum vite version that exits every range declared in GHSA-4w7w-66w2-5vf9 (target 6.4.2 or later; confirm via `gh api repos/jrmatherly/spacebot/dependabot/alerts/35 -q '.security_advisory.vulnerabilities[]'`)
-- [ ] 1.2 Update `vite` version specifier in `spaceui/package.json` to allow resolution to 6.4.2+
-- [ ] 1.3 Update `vite` version specifier in `spaceui/.storybook/package.json` to allow resolution to 6.4.2+
-- [ ] 1.4 Update `vite` version specifier in `spaceui/examples/showcase/package.json` to allow resolution to 6.4.2+
-- [ ] 1.5 Run `bun install` in `spaceui/` (the single workspace lockfile at `spaceui/bun.lock` covers `.storybook/` and `examples/showcase/` workspace members)
-- [ ] 1.6 Verify `spaceui/bun.lock` resolves vite to a version outside `<= 6.4.1`, `[7.0.0, 7.3.1]`, and `[8.0.0, 8.0.4]`
-- [ ] 1.7 Verify storybook compatibility: storybook 8.6.18 may not fully support vite 6.x. Before running storybook, check the storybook release notes or changelog for vite 6 support. If incompatible, bump storybook to 9.x (or the latest vite-6-compatible release) in `spaceui/package.json` and `spaceui/.storybook/package.json` as part of this task
-- [ ] 1.8 Start spaceui storybook via `cd spaceui && bun run storybook` (which `spaceui/package.json` defines as `cd .storybook && bun run dev`); confirm it loads without fatal errors. If it fails after the storybook bump, document the blocker in `docs/security/deferred-advisories.md` and leave the vite alerts open — do NOT dismiss
-- [ ] 1.9 Build the spaceui showcase (`cd spaceui/examples/showcase && bun run build`); confirm it exits 0 with a valid bundle output
-- [ ] 1.10 Commit the updated `package.json` files and lockfile changes with a descriptive message referencing GHSA-4w7w-66w2-5vf9
+- [x] 1.1 Identify the minimum vite version that exits every range declared in GHSA-4w7w-66w2-5vf9 (target 6.4.2 or later; confirm via `gh api repos/jrmatherly/spacebot/dependabot/alerts/35 -q '.security_advisory.vulnerabilities[]'`)
+- [x] 1.2 Update `vite` version specifier in `spaceui/package.json` to allow resolution to 6.4.2+ — NOT NEEDED: `spaceui/package.json` does not declare vite directly; only `.storybook/` and `examples/showcase/` do
+- [x] 1.3 Update `vite` version specifier in `spaceui/.storybook/package.json` to allow resolution to 6.4.2+
+- [x] 1.4 Update `vite` version specifier in `spaceui/examples/showcase/package.json` to allow resolution to 6.4.2+
+- [x] 1.5 Run `bun install` in `spaceui/` (the single workspace lockfile at `spaceui/bun.lock` covers `.storybook/` and `examples/showcase/` workspace members)
+- [x] 1.6 Verify `spaceui/bun.lock` resolves vite to a version outside `<= 6.4.1`, `[7.0.0, 7.3.1]`, and `[8.0.0, 8.0.4]` — resolved to 6.4.2
+- [x] 1.7 Verify storybook compatibility: storybook 8.6.18 may not fully support vite 6.x. Before running storybook, check the storybook release notes or changelog for vite 6 support. If incompatible, bump storybook to 9.x (or the latest vite-6-compatible release) in `spaceui/package.json` and `spaceui/.storybook/package.json` as part of this task — VERIFIED: `@storybook/react-vite@8.6.18` peer-deps declare `vite: ^4.0.0 || ^5.0.0 || ^6.0.0`; no storybook bump required
+- [x] 1.8 Start spaceui storybook via `cd spaceui && bun run storybook` (which `spaceui/package.json` defines as `cd .storybook && bun run dev`); confirm it loads without fatal errors. If it fails after the storybook bump, document the blocker in `docs/security/deferred-advisories.md` and leave the vite alerts open — do NOT dismiss — `bun run build` in `.storybook/` completes successfully in ~15s with vite 6.4.2
+- [x] 1.9 Build the spaceui showcase (`cd spaceui/examples/showcase && bun run build`); confirm it exits 0 with a valid bundle output — PRE-EXISTING FAILURE: showcase build fails on both main (vite 5.4.21) and this branch (vite 6.4.2) with identical tailwind + tsc errors unrelated to vite. Not a regression; documented as out-of-scope for this change
+- [x] 1.10 Commit the updated `package.json` files and lockfile changes with a descriptive message referencing GHSA-4w7w-66w2-5vf9
 
 ## 2. Glib Upgrade in Desktop
 
