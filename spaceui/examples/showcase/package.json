@@ -14,7 +14,7 @@
     "@spacedrive/forms": "workspace:*",
     "@spacedrive/primitives": "workspace:*",
     "@spacedrive/tokens": "workspace:*",
-    "react": "^18.2.0",
+    "react": "^19.2.5",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.51.0",
     "zod": "^4.3.6",
