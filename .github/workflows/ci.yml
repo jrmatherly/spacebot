@@ -89,9 +89,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # TODO: Remove continue-on-error once transitive dep vulnerabilities are resolved
-    # (aws-lc-sys, lz4_flex, protobuf, quinn-proto, rsa, rustls-webpki, tar)
-    continue-on-error: true
+    # Audit is a hard gate — only RUSTSEC-2023-0071 (rsa, never compiled) is ignored.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -99,4 +97,6 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: cargo audit
-        run: cargo audit
+        # RUSTSEC-2023-0071: rsa Marvin Attack — pulled by sqlx-mysql but never compiled
+        # (spacebot uses only the sqlite feature). No upstream fix available.
+        run: cargo audit --ignore RUSTSEC-2023-0071

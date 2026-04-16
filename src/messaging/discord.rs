@@ -13,8 +13,8 @@ use serenity::all::{
     CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, CreatePoll, CreatePollAnswer,
     CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, CreateThread, EditMessage,
-    EventHandler, GatewayIntents, GetMessages, Http, Interaction, Message, MessageId, ReactionType,
-    Ready, ShardManager, Timestamp, User, UserId,
+    EventHandler, FullEvent, GatewayIntents, GetMessages, Http, Interaction, Message, MessageId,
+    ReactionType, Ready, Timestamp, Token, User, UserId,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,7 +31,7 @@ pub struct DiscordAdapter {
     active_messages: Arc<RwLock<HashMap<String, serenity::all::MessageId>>>,
     /// Typing handles per message. Typing stops when the handle is dropped.
     typing_tasks: Arc<RwLock<HashMap<String, serenity::http::Typing>>>,
-    shard_manager: Arc<RwLock<Option<Arc<ShardManager>>>>,
+    shutdown_trigger: Arc<RwLock<Option<Box<dyn FnOnce() -> bool + Send + Sync>>>>,
 }
 
 impl DiscordAdapter {
@@ -48,7 +48,7 @@ impl DiscordAdapter {
             bot_user_id: Arc::new(RwLock::new(None)),
             active_messages: Arc::new(RwLock::new(HashMap::new())),
             typing_tasks: Arc::new(RwLock::new(HashMap::new())),
-            shard_manager: Arc::new(RwLock::new(None)),
+            shutdown_trigger: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -120,13 +120,19 @@ impl Messaging for DiscordAdapter {
             | GatewayIntents::MESSAGE_CONTENT
             | GatewayIntents::GUILDS;
 
-        let mut client = serenity::Client::builder(&self.token, intents)
-            .event_handler(handler)
+        let token: Token = self
+            .token
+            .parse()
+            .context("invalid discord bot token format")?;
+
+        let mut client = serenity::Client::builder(token, intents)
+            .event_handler(Arc::new(handler))
             .await
             .context("failed to build discord client")?;
 
         *self.http.write().await = Some(client.http.clone());
-        *self.shard_manager.write().await = Some(client.shard_manager.clone());
+        let trigger = client.shard_manager.get_shutdown_trigger();
+        *self.shutdown_trigger.write().await = Some(Box::new(trigger));
 
         tokio::spawn(async move {
             if let Err(error) = client.start().await {
@@ -156,9 +162,16 @@ impl Messaging for DiscordAdapter {
                     if index == 0
                         && let Some(reply_message_id) = reply_to
                     {
-                        builder = builder.reference_message((channel_id, reply_message_id));
+                        builder = builder.reference_message(
+                            serenity::all::MessageReference::new(
+                                serenity::all::MessageReferenceKind::default(),
+                                channel_id.widen(),
+                            )
+                            .message_id(reply_message_id),
+                        );
                     }
                     channel_id
+                        .widen()
                         .send_message(&*http, builder)
                         .await
                         .context("failed to send discord message")?;
@@ -199,7 +212,7 @@ impl Messaging for DiscordAdapter {
                         let components: Vec<_> = parts
                             .interactive_elements
                             .iter()
-                            .map(build_action_row)
+                            .map(|e| serenity::all::CreateComponent::ActionRow(build_action_row(e)))
                             .collect();
                         if !components.is_empty() {
                             msg = msg.components(components);
@@ -213,10 +226,17 @@ impl Messaging for DiscordAdapter {
                     if i == 0
                         && let Some(reply_message_id) = reply_to
                     {
-                        msg = msg.reference_message((channel_id, reply_message_id));
+                        msg = msg.reference_message(
+                            serenity::all::MessageReference::new(
+                                serenity::all::MessageReferenceKind::default(),
+                                channel_id.widen(),
+                            )
+                            .message_id(reply_message_id),
+                        );
                     }
 
                     channel_id
+                        .widen()
                         .send_message(&*http, msg)
                         .await
                         .context("failed to send discord rich message")?;
@@ -253,6 +273,7 @@ impl Messaging for DiscordAdapter {
                         for chunk in split_message(&text, 2000) {
                             thread
                                 .id
+                                .widen()
                                 .say(&*http, &chunk)
                                 .await
                                 .context("failed to send message in new thread")?;
@@ -268,6 +289,7 @@ impl Messaging for DiscordAdapter {
                         );
                         for chunk in split_message(&text, 2000) {
                             channel_id
+                                .widen()
                                 .say(&*http, &chunk)
                                 .await
                                 .context("failed to send discord message")?;
@@ -284,16 +306,23 @@ impl Messaging for DiscordAdapter {
                 self.stop_typing(message).await;
                 let reply_to = Self::extract_reply_message_id(message);
 
-                let attachment = CreateAttachment::bytes(data, &filename);
+                let attachment = CreateAttachment::bytes(data, filename);
                 let mut builder = CreateMessage::new().add_file(attachment);
                 if let Some(caption_text) = caption {
                     builder = builder.content(caption_text);
                 }
                 if let Some(reply_message_id) = reply_to {
-                    builder = builder.reference_message((channel_id, reply_message_id));
+                    builder = builder.reference_message(
+                        serenity::all::MessageReference::new(
+                            serenity::all::MessageReferenceKind::default(),
+                            channel_id.widen(),
+                        )
+                        .message_id(reply_message_id),
+                    );
                 }
 
                 channel_id
+                    .widen()
                     .send_message(&*http, builder)
                     .await
                     .context("failed to send file attachment")?;
@@ -306,10 +335,13 @@ impl Messaging for DiscordAdapter {
                     .context("missing discord_message_id for reaction")?;
 
                 channel_id
+                    .widen()
                     .create_reaction(
                         &*http,
                         MessageId::new(message_id),
-                        ReactionType::Unicode(emoji),
+                        ReactionType::Unicode(
+                            serenity::small_fixed_array::TruncatingInto::trunc_into(emoji),
+                        ),
                     )
                     .await
                     .context("failed to add reaction")?;
@@ -318,6 +350,7 @@ impl Messaging for DiscordAdapter {
                 self.stop_typing(message).await;
 
                 let placeholder = channel_id
+                    .widen()
                     .say(&*http, "\u{200B}")
                     .await
                     .context("failed to send stream placeholder")?;
@@ -337,7 +370,11 @@ impl Messaging for DiscordAdapter {
                         text
                     };
                     let builder = EditMessage::new().content(display_text);
-                    if let Err(error) = channel_id.edit_message(&*http, message_id, builder).await {
+                    if let Err(error) = channel_id
+                        .widen()
+                        .edit_message(&*http, message_id, builder)
+                        .await
+                    {
                         tracing::warn!(%error, "failed to edit streaming message");
                     }
                 }
@@ -355,6 +392,7 @@ impl Messaging for DiscordAdapter {
                 if let Ok(channel_id) = self.extract_channel_id(message) {
                     let http = self.get_http().await?;
                     channel_id
+                        .widen()
                         .say(&*http, &text)
                         .await
                         .context("failed to send ephemeral fallback on discord")?;
@@ -365,6 +403,7 @@ impl Messaging for DiscordAdapter {
                 if let Ok(channel_id) = self.extract_channel_id(message) {
                     let http = self.get_http().await?;
                     channel_id
+                        .widen()
                         .say(&*http, &text)
                         .await
                         .context("failed to send scheduled message fallback on discord")?;
@@ -385,7 +424,7 @@ impl Messaging for DiscordAdapter {
                 let http = self.get_http().await?;
                 let channel_id = self.extract_channel_id(message)?;
 
-                let typing = channel_id.start_typing(&http);
+                let typing = channel_id.widen().start_typing(http.clone());
                 self.typing_tasks
                     .write()
                     .await
@@ -425,6 +464,7 @@ impl Messaging for DiscordAdapter {
         if let OutboundResponse::Text(text) = response {
             for chunk in split_message(&text, 2000) {
                 channel_id
+                    .widen()
                     .say(&*http, &chunk)
                     .await
                     .context("failed to broadcast discord message")?;
@@ -463,7 +503,7 @@ impl Messaging for DiscordAdapter {
                     let components: Vec<_> = parts
                         .interactive_elements
                         .iter()
-                        .map(build_action_row)
+                        .map(|e| serenity::all::CreateComponent::ActionRow(build_action_row(e)))
                         .collect();
                     if !components.is_empty() {
                         msg = msg.components(components);
@@ -475,6 +515,7 @@ impl Messaging for DiscordAdapter {
                 }
 
                 channel_id
+                    .widen()
                     .send_message(&*http, msg)
                     .await
                     .context("failed to broadcast discord rich message")?;
@@ -505,6 +546,7 @@ impl Messaging for DiscordAdapter {
             .limit(capped_limit);
 
         let messages = channel_id
+            .widen()
             .messages(&*http, builder)
             .await
             .context("failed to fetch discord message history")?;
@@ -572,8 +614,8 @@ impl Messaging for DiscordAdapter {
     async fn shutdown(&self) -> crate::Result<()> {
         self.typing_tasks.write().await.clear();
 
-        if let Some(shard_manager) = self.shard_manager.read().await.as_ref() {
-            shard_manager.shutdown_all().await;
+        if let Some(trigger) = self.shutdown_trigger.write().await.take() {
+            trigger();
         }
 
         tracing::info!("discord adapter shut down");
@@ -593,7 +635,24 @@ struct Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, ctx: Context, ready: Ready) {
+    async fn dispatch(&self, ctx: &Context, event: &FullEvent) {
+        match event {
+            FullEvent::Ready { data_about_bot, .. } => {
+                self.handle_ready(ctx, data_about_bot).await;
+            }
+            FullEvent::Message { new_message, .. } => {
+                self.handle_message(ctx, new_message).await;
+            }
+            FullEvent::InteractionCreate { interaction, .. } => {
+                self.handle_interaction(ctx, interaction).await;
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Handler {
+    async fn handle_ready(&self, ctx: &Context, ready: &Ready) {
         tracing::info!(bot_name = %ready.user.name, "discord connected");
 
         *self.http_slot.write().await = Some(ctx.http.clone());
@@ -601,7 +660,7 @@ impl EventHandler for Handler {
         tracing::info!(guild_count = ready.guilds.len(), "discord guilds available");
     }
 
-    async fn message(&self, ctx: Context, message: Message) {
+    async fn handle_message(&self, ctx: &Context, message: &Message) {
         // Always ignore our own messages to prevent self-response loops
         let bot_user_id = *self.bot_user_id_slot.read().await;
         if bot_user_id.is_some_and(|id| message.author.id == id) {
@@ -612,7 +671,7 @@ impl EventHandler for Handler {
         let permissions = self.permissions.load();
 
         // Filter other bots unless explicitly allowed
-        if message.author.bot && !permissions.allow_bot_messages {
+        if message.author.bot() && !permissions.allow_bot_messages {
             return;
         }
 
@@ -633,9 +692,9 @@ impl EventHandler for Handler {
             return;
         }
 
-        let conversation_id = build_conversation_id(&self.runtime_key, &message);
-        let content = extract_content(&message);
-        let (metadata, formatted_author) = build_metadata(&ctx, &message, bot_user_id).await;
+        let conversation_id = build_conversation_id(&self.runtime_key, message);
+        let content = extract_content(message);
+        let (metadata, formatted_author) = build_metadata(ctx, message, bot_user_id).await;
 
         // Channel filter: allow if the channel ID or its parent (for threads) is in the allowlist
         if let Some(guild_id) = message.guild_id
@@ -675,7 +734,7 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+    async fn handle_interaction(&self, ctx: &Context, interaction: &Interaction) {
         let component = match interaction {
             Interaction::Component(c) => c,
             _ => return, // Only handle component interactions
@@ -717,13 +776,15 @@ impl EventHandler for Handler {
         let conversation_id =
             apply_runtime_adapter_to_conversation_id(&self.runtime_key, base_conversation_id);
 
-        let values = match &component.data.kind {
-            serenity::all::ComponentInteractionDataKind::StringSelect { values } => values.clone(),
+        let values: Vec<String> = match &component.data.kind {
+            serenity::all::ComponentInteractionDataKind::StringSelect { values } => {
+                values.iter().map(|v| v.to_string()).collect()
+            }
             _ => Vec::new(),
         };
 
         let content = MessageContent::Interaction {
-            action_id: component.data.custom_id.clone(),
+            action_id: component.data.custom_id.to_string(),
             block_id: None,
             values,
             label: None,
@@ -830,9 +891,13 @@ fn extract_content(message: &Message) -> MessageContent {
             .attachments
             .iter()
             .map(|attachment| crate::Attachment {
-                filename: attachment.filename.clone(),
-                mime_type: attachment.content_type.clone().unwrap_or_default(),
-                url: attachment.url.clone(),
+                filename: attachment.filename.to_string(),
+                mime_type: attachment
+                    .content_type
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_string(),
+                url: attachment.url.to_string(),
                 size_bytes: Some(attachment.size as u64),
                 auth_header: None,
                 pre_saved_id: None,
@@ -881,26 +946,29 @@ async fn build_metadata(
     );
     metadata.insert(
         "discord_author_name".into(),
-        message.author.name.clone().into(),
+        serde_json::Value::String(message.author.name.to_string()),
     );
 
     // Display name: member nickname > global display name > username
-    let display_name = if let Some(member) = &message.member {
-        member.nick.clone().unwrap_or_else(|| {
-            message
-                .author
-                .global_name
-                .clone()
-                .unwrap_or_else(|| message.author.name.clone())
-        })
+    let display_name: String = if let Some(member) = &message.member {
+        member
+            .nick
+            .as_deref()
+            .or(message.author.global_name.as_deref())
+            .unwrap_or(&message.author.name)
+            .to_string()
     } else {
         message
             .author
             .global_name
-            .clone()
-            .unwrap_or_else(|| message.author.name.clone())
+            .as_deref()
+            .unwrap_or(&message.author.name)
+            .to_string()
     };
-    metadata.insert("sender_display_name".into(), display_name.clone().into());
+    metadata.insert(
+        "sender_display_name".into(),
+        serde_json::Value::String(display_name.clone()),
+    );
     metadata.insert("sender_id".into(), message.author.id.get().into());
     metadata.insert(
         "discord_user_mention".into(),
@@ -910,7 +978,7 @@ async fn build_metadata(
     // Platform-formatted author for LLM context
     let formatted_author = format!("{} (<@{}>)", display_name, message.author.id);
 
-    if message.author.bot {
+    if message.author.bot() {
         metadata.insert("sender_is_bot".into(), true.into());
     }
 
@@ -919,29 +987,45 @@ async fn build_metadata(
 
         // Try to get guild name
         if let Ok(guild) = guild_id.to_partial_guild(&ctx.http).await {
-            metadata.insert("discord_guild_name".into(), guild.name.clone().into());
-            metadata.insert(crate::metadata_keys::SERVER_NAME.into(), guild.name.into());
+            metadata.insert(
+                "discord_guild_name".into(),
+                serde_json::Value::String(guild.name.to_string()),
+            );
+            metadata.insert(
+                crate::metadata_keys::SERVER_NAME.into(),
+                serde_json::Value::String(guild.name.to_string()),
+            );
         }
     }
 
     // Try to get channel name and detect threads
-    if let Ok(channel) = message.channel_id.to_channel(&ctx.http).await
-        && let Some(guild_channel) = channel.guild()
+    if let Ok(channel) = message
+        .channel_id
+        .to_channel(&ctx.http, message.guild_id)
+        .await
     {
-        metadata.insert(
-            "discord_channel_name".into(),
-            guild_channel.name.clone().into(),
-        );
-        metadata.insert(
-            crate::metadata_keys::CHANNEL_NAME.into(),
-            guild_channel.name.clone().into(),
-        );
+        if let Some(guild_channel) = channel.guild() {
+            metadata.insert(
+                "discord_channel_name".into(),
+                serde_json::Value::String(guild_channel.base.name.to_string()),
+            );
+            metadata.insert(
+                crate::metadata_keys::CHANNEL_NAME.into(),
+                serde_json::Value::String(guild_channel.base.name.to_string()),
+            );
 
-        // Threads have a parent_id pointing to the text channel they were created in
-        if guild_channel.thread_metadata.is_some() {
-            metadata.insert("discord_is_thread".into(), true.into());
-            if let Some(parent_id) = guild_channel.parent_id {
-                metadata.insert("discord_parent_channel_id".into(), parent_id.get().into());
+            // Threads have a parent_id pointing to the text channel they were created in
+            if matches!(
+                guild_channel.base.kind,
+                ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::NewsThread
+            ) {
+                metadata.insert("discord_is_thread".into(), serde_json::Value::Bool(true));
+                if let Some(parent_id) = guild_channel.parent_id {
+                    metadata.insert(
+                        "discord_parent_channel_id".into(),
+                        serde_json::Value::Number(parent_id.get().into()),
+                    );
+                }
             }
         }
     }
@@ -954,7 +1038,7 @@ async fn build_metadata(
             .as_deref()
             .unwrap_or(&referenced.author.name);
         metadata.insert("reply_to_author".into(), reply_author.into());
-        metadata.insert("reply_to_is_bot".into(), referenced.author.bot.into());
+        metadata.insert("reply_to_is_bot".into(), referenced.author.bot().into());
 
         let reply_content = resolve_mentions(&referenced.content, &referenced.mentions);
         // Truncate to avoid bloating context with long quoted messages
@@ -1120,7 +1204,7 @@ fn build_action_row(elements: &crate::InteractiveElements) -> CreateActionRow {
 
                 discord_buttons.push(b);
             }
-            CreateActionRow::Buttons(discord_buttons)
+            CreateActionRow::Buttons(discord_buttons.into())
         }
         crate::InteractiveElements::Select { select } => {
             let mut options = Vec::new();
@@ -1136,8 +1220,12 @@ fn build_action_row(elements: &crate::InteractiveElements) -> CreateActionRow {
             // Discord limit: custom_id max 100 characters.
             let custom_id = &select.custom_id[..select.custom_id.floor_char_boundary(100)];
 
-            let mut discord_select =
-                CreateSelectMenu::new(custom_id, CreateSelectMenuKind::String { options });
+            let mut discord_select = CreateSelectMenu::new(
+                custom_id,
+                CreateSelectMenuKind::String {
+                    options: options.into(),
+                },
+            );
             if let Some(placeholder) = &select.placeholder {
                 discord_select = discord_select.placeholder(placeholder);
             }
