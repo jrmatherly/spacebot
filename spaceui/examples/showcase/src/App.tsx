@@ -14,9 +14,9 @@ import {
 	TabsList,
 	TabsRoot,
 	TabsTrigger,
-	Tooltip,
 	TooltipContent,
 	TooltipProvider,
+	TooltipRoot,
 	TooltipTrigger,
 } from "@spacedrive/primitives";
 import { ChatComposer, Markdown, ModelSelector, ToolCall } from "@spacedrive/ai";
@@ -121,14 +121,14 @@ export default function App() {
 									<SelectOption value="beta">Beta</SelectOption>
 									<SelectOption value="stable">Stable</SelectOption>
 								</Select>
-								<Tooltip>
+								<TooltipRoot>
 									<TooltipTrigger asChild>
 										<Button size="xs" variant="outline">
 											Hover for tooltip
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>Tooltip is wired</TooltipContent>
-								</Tooltip>
+								</TooltipRoot>
 							</CardContent>
 						</Card>
 					</TabsContent>
@@ -139,7 +139,7 @@ export default function App() {
 								<CardTitle>ToolCall + Markdown</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-3">
-								<ToolCall toolCall={toolCall} expanded />
+								<ToolCall pair={toolCall} />
 								<Markdown content={"## Markdown\n\n- list item\n- code\n\n`spaceui`"} />
 							</CardContent>
 						</Card>
