@@ -25,6 +25,7 @@
 - **JS Package Manager:** bun (NEVER npm/pnpm/yarn)
 - **Documentation Site:** Next.js + Fumadocs (`docs/`)
 - **SpaceUI:** Design system (6 packages: tokens, primitives, forms, icons, ai, explorer) (`spaceui/`)
+- **Spacedrive:** Vendored upstream platform at `spacedrive/` — independent Cargo workspace with its own toolchain (`stable`), excluded via `[workspace] exclude = ["spacedrive"]` in root `Cargo.toml`. HTTP integration is planned but not yet wired.
 - **Desktop App:** Tauri (`desktop/`)
 
 ## Deployment

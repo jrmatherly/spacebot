@@ -1,6 +1,6 @@
 # Spacebot - Project Structure
 
-Single binary crate. No workspace, no sub-crates.
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to keep the vendored Spacedrive workspace out of Cargo auto-discovery.
 
 ```
 spacebot/
@@ -31,6 +31,7 @@ spacebot/
 │   ├── src/              # React app, components, routes, hooks
 │   └── opencode-embed-src/  # Embeddable widget variant
 ├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
+├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`)
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
 ├── migrations/           # 42 SQLite migrations: agent + global (2026-02 → 2026-04)
