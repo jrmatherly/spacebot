@@ -34,7 +34,7 @@
     "@storybook/react-vite": "^10.3.5",
     "storybook": "^10.3.5",
     "turbo": "^2.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.2"
   },
   "packageManager": "bun@1.1.0",
   "engines": {
