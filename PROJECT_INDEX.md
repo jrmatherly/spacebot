@@ -60,7 +60,7 @@ spacebot/
 | **agent** | Channel, worker, branch, cortex, compactor process model |
 | **api** | 32 REST endpoints via axum + utoipa OpenAPI |
 | **config** | TOML loader, permissions, provider routing, runtime watcher |
-| **llm** | Rig-core v0.33 orchestration, model routing, pricing, auth |
+| **llm** | Rig-core v0.35 orchestration, model routing, pricing, auth |
 | **memory** | Graph store (typed SQLite), working memory, semantic search |
 | **messaging** | Discord, Slack, Telegram, Twitch, Email adapters |
 | **conversation** | Channel state, history, participants, portal |
@@ -95,11 +95,11 @@ spacebot/
 | Category | Dependencies |
 |---|---|
 | **Runtime** | tokio 1.44 |
-| **LLM** | rig-core 0.33 |
+| **LLM** | rig-core 0.35 |
 | **HTTP** | axum 0.8, reqwest 0.13 |
 | **Databases** | sqlx 0.8 (SQLite), lancedb 0.27, redb 4.0 |
 | **Embeddings** | fastembed 5 |
-| **Discord** | serenity 0.12 |
+| **Discord** | serenity (git next branch) |
 | **Slack** | slack-morphism 2.19 |
 | **Telegram** | teloxide 0.17 |
 | **Browser** | chromiumoxide 0.9 |
