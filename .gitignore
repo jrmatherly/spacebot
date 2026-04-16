@@ -32,7 +32,8 @@ spacedrive/target/
 spacedrive/node_modules/
 spacedrive/apps/*/node_modules/
 spacedrive/packages/*/node_modules/
-spacedrive/.next/
+spacedrive/apps/*/dist/
+spacedrive/packages/*/dist/
 
 # Desktop sidecar binaries (built by scripts/bundle-sidecar.sh)
 desktop/src-tauri/binaries/

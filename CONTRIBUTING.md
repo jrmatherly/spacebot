@@ -133,7 +133,7 @@ Changes to SpaceUI source files trigger HMR in the interface automatically.
 
 ## Spacedrive
 
-Spacedrive lives at `spacedrive/` as an independent Cargo workspace. Spacebot talks to it over HTTP on port 19898 at runtime. The two projects share zero Rust crates.
+Spacedrive lives at `spacedrive/` as an independent Cargo workspace. The two projects share zero Rust crates and are vendored together so the planned HTTP integration can be developed from a single clone. Runtime coupling does not exist yet; the in-tree copy is preparation.
 
 **Always `cd spacedrive` before running cargo commands inside it.** The root `cargo` invocations only see Spacebot. Spacedrive declares its own `[workspace]` and Spacebot's `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` to prevent auto-discovery.
 

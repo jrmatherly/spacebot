@@ -167,11 +167,13 @@ metrics = ["dep:prometheus"]
 [patch.crates-io]
 imap-proto = { path = "vendor/imap-proto-0.10.2" }
 
-# Spacedrive lives at `spacedrive/` as an independent Cargo workspace with its
-# own toolchain, edition, and dependency versions. The exclude prevents Cargo
-# from auto-discovering its Cargo.toml if a [workspace] members section is ever
-# added here. spaceui/ is pure Bun (no Cargo.toml) and desktop/src-tauri/ is
-# nested too deep for auto-discovery, so neither needs an explicit exclude.
+# Spacebot has no [workspace] members today, so the workspace boundary is
+# implicit. If [workspace] is later extended (for shared lints, etc.), Cargo
+# would auto-discover spacedrive/Cargo.toml, which declares its own workspace
+# with crates this one does not have, and resolution would fail. This explicit
+# exclude pins the boundary now so a future [workspace] extension is safe.
+# spaceui/ has no Cargo.toml (pure Bun) and desktop/src-tauri/ is nested too
+# deep for auto-discovery, so neither needs its own exclude.
 [workspace]
 exclude = ["spacedrive"]
 
