@@ -61,12 +61,27 @@ templates/config/kubernetes/apps/<namespace>/<app-name>/
 ├── ks.yaml.j2                    # Flux Kustomization
 └── app/
     ├── kustomization.yaml.j2     # Kustomize resource list
-    ├── helmrelease.yaml.j2       # Helm chart config (if using a chart)
-    ├── ocirepository.yaml.j2     # Chart source (if OCI)
-    ├── deployment.yaml.j2        # Direct manifests (if not using Helm)
-    ├── service.yaml.j2
-    └── secret.sops.yaml.j2       # SOPS-encrypted secrets
+    ├── helmrelease.yaml.j2       # Helm chart config (canonical pattern)
+    ├── ocirepository.yaml.j2     # Chart source (OCI)
+    ├── configmap.yaml.j2         # Non-secret config
+    ├── secret.sops.yaml.j2       # SOPS-encrypted secrets
+    ├── httproute.yaml.j2         # Gateway API ingress
+    └── ciliumnetworkpolicy.yaml.j2  # Network policy
 ```
+
+### Flux app distribution patterns
+
+Apps come in three distribution shapes. Pick the one that matches the app, then follow that shape exactly.
+
+| Pattern | How it works | When to use | Count in `ai` namespace |
+|---|---|---|---|
+| **app-template + values (canonical)** | `OCIRepository` points at `oci://ghcr.io/bjw-s-labs/helm/app-template`; `HelmRelease.spec.values` carries all customization; no per-app templates | Any single-service app (Deployment/StatefulSet/CronJob) that app-template 4.x can express | 12 of 14 |
+| **Upstream chart + values** | `HelmRepository` or `OCIRepository` points at the app's vendor chart (e.g. CNPG, vendor-shipped Helm); `HelmRelease` configures it | App ships its own chart and we use it unmodified | 2 of 14 |
+| **Raw manifests (rare)** | Direct `Deployment` / `StatefulSet` / `Service` YAML, no Helm | Non-app cluster resources (pull secrets, namespace-scoped RBAC). Not used for apps. | 0 of 14 |
+
+**Default to pattern 1.** The bjw-s `app-template` chart covers Deployment, StatefulSet, DaemonSet, CronJob, Job, Service, Ingress, PVC, ConfigMap, Secret, ServiceMonitor, PodSecurityContext, probes, init containers, and sidecars through structured values. Writing per-app templates is almost always wrong and will diverge from the other 12 apps.
+
+**`/cluster-deploy` teaches pattern 1.** When scaffolding a new app, the skill walks through `ocirepository.yaml.j2`, `helmrelease.yaml.j2`, and `kustomization.yaml.j2` — not individual Deployment/Service manifests.
 
 Variables flow from `cluster.yaml` through the Jinja2 templates. The 8-location checklist for new variables:
 1. `cluster.sample.yaml` (documented entry)

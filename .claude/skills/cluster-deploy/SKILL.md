@@ -29,22 +29,29 @@ If unavailable, tell the user and stop. The manifests belong in that repo.
 
 ## Deployment Architecture
 
-Spacebot deploys as a single-replica Deployment (not a StatefulSet, because the embedded databases use file locking that doesn't support multi-replica). The full resource set:
+Spacebot deploys via the **canonical `ai`-namespace pattern**: a `HelmRelease` that consumes the `bjw-s-labs/app-template` chart, with all customization expressed as structured values. No per-app templates. 12 of 14 `ai`-namespace apps use this pattern (litellm, apollos-portal, cluster-docs, open-webui, etc.) — Spacebot follows suit.
+
+Spacebot's deployment shape:
+- **Deployment**, not StatefulSet — embedded databases use file locking, can't be multi-replica
+- **`strategy: Recreate`** — new pod can't mount the `ReadWriteOnce` PVC while the old one holds it
+- **`replicas: 1`**
+
+The resource set in the cluster repo:
 
 ```
 templates/config/kubernetes/apps/ai/spacebot/
 ├── ks.yaml.j2                           # Flux Kustomization entry point
 └── app/
-    ├── kustomization.yaml.j2            # Resource list
-    ├── deployment.yaml.j2               # Pod spec with probes, volumes, env
-    ├── service.yaml.j2                  # ClusterIP service (port 19898)
+    ├── kustomization.yaml.j2            # Kustomize resource list
+    ├── ocirepository.yaml.j2            # app-template chart source
+    ├── helmrelease.yaml.j2              # HelmRelease with all Spacebot values
+    ├── configmap.yaml.j2                # Non-secret config
+    ├── secret.sops.yaml.j2              # SOPS-encrypted credentials
     ├── httproute.yaml.j2                # Envoy Gateway ingress
-    ├── pvc.yaml.j2                      # Persistent storage for /data
-    ├── secret.sops.yaml.j2             # Encrypted credentials
-    ├── configmap.yaml.j2               # Non-secret configuration
-    ├── servicemonitor.yaml.j2          # Prometheus scrape config
-    └── ciliumnetworkpolicy.yaml.j2     # Network access rules
+    └── ciliumnetworkpolicy.yaml.j2      # Network policy
 ```
+
+**No `deployment.yaml.j2`, `service.yaml.j2`, `pvc.yaml.j2`, or `servicemonitor.yaml.j2`.** app-template generates all of those from `HelmRelease.spec.values`.
 
 ## Step 1: Scaffold the Flux App (`/cluster-deploy scaffold`)
 
@@ -82,78 +89,154 @@ spec:
 #% endif %#
 ```
 
-### app/deployment.yaml.j2
-
-Key decisions for the pod spec:
-
-- **Image**: `ghcr.io/spacedriveapp/spacebot:#{ spacebot_version }#` (or internal fork registry)
-- **Port**: 19898 (API + web UI)
-- **Volume mount**: `/data` from a PVC
-- **Environment**: `SPACEBOT_DIR=/data`, `SPACEBOT_DEPLOYMENT=docker`
-- **Probes**: All three point at `/api/health` on port 19898
-  - Startup: `initialDelaySeconds: 5`, `periodSeconds: 5`, `failureThreshold: 30`
-  - Liveness: `periodSeconds: 30`, `failureThreshold: 3`
-  - Readiness: `periodSeconds: 10`, `failureThreshold: 3`
-- **Resources**: Start with `requests: 256Mi/250m`, `limits: 1Gi/1000m`, tune from metrics
-- **Security context**: `runAsNonRoot: true`, `readOnlyRootFilesystem: false` (Spacebot writes to `/data`)
-
-### app/service.yaml.j2
+### app/ocirepository.yaml.j2
 
 ```yaml
+#% if spacebot_enabled %#
 ---
-apiVersion: v1
-kind: Service
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
 metadata:
   name: spacebot
-  labels:
-    app.kubernetes.io/name: spacebot
 spec:
-  type: ClusterIP
-  ports:
-    - name: http
-      port: 19898
-      targetPort: 19898
-      protocol: TCP
-    - name: metrics
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: spacebot
+  interval: 15m
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  ref:
+    tag: 4.6.2
+  url: oci://ghcr.io/bjw-s-labs/helm/app-template
+#% endif %#
 ```
 
-### app/pvc.yaml.j2
+The `tag:` pins the `app-template` chart version. Update when bjw-s ships a new major version and the cluster has been migrated.
+
+### app/helmrelease.yaml.j2
 
 ```yaml
+#% if spacebot_enabled %#
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
 metadata:
-  name: spacebot-data
+  name: spacebot
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: "#{ spacebot_storage_size | default('5Gi') }#"
+  timeout: 15m
+  chartRef:
+    kind: OCIRepository
+    name: spacebot
+  interval: 1h
+  values:
+    defaultPodOptions:
+      annotations:
+        configmap.reloader.stakater.com/reload: spacebot-config
+        secret.reloader.stakater.com/reload: spacebot-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      # Uncomment if the GHCR image is private. ghcr-pull-secret already
+      # exists in the `ai` namespace.
+      # imagePullSecrets:
+      #   - name: ghcr-pull-secret
+    controllers:
+      spacebot:
+        type: deployment
+        replicas: 1
+        strategy: Recreate
+        pod:
+          terminationGracePeriodSeconds: 30
+        containers:
+          app:
+            image:
+              repository: ghcr.io/#{ spacebot_image_owner }#/spacebot
+              tag: #{ spacebot_version }#
+            env:
+              SPACEBOT_DIR: /data
+              SPACEBOT_DEPLOYMENT: docker
+              RUST_LOG: info
+            envFrom:
+              - secretRef:
+                  name: spacebot-secret
+              - configMapRef:
+                  name: spacebot-config
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet: { path: /api/health, port: 19898 }
+                  periodSeconds: 30
+                  failureThreshold: 3
+                  timeoutSeconds: 5
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet: { path: /api/health, port: 19898 }
+                  periodSeconds: 10
+                  failureThreshold: 3
+                  timeoutSeconds: 5
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet: { path: /api/health, port: 19898 }
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+                  failureThreshold: 30
+                  timeoutSeconds: 5
+            resources:
+              requests: { cpu: 250m, memory: 256Mi }
+              limits: { cpu: 1000m, memory: 1Gi }
+    service:
+      app:
+        controller: spacebot
+        ports:
+          http:
+            port: 19898
+            protocol: HTTP
+          metrics:
+            port: 9090
+            protocol: HTTP
+    persistence:
+      data:
+        enabled: true
+        type: persistentVolumeClaim
+        accessMode: ReadWriteOnce
+        size: "#{ spacebot_storage_size | default('5Gi') }#"
+        globalMounts:
+          - path: /data
+    serviceMonitor:
+      app:
+        enabled: true
+        serviceName: spacebot
+        endpoints:
+          - port: metrics
+            scheme: http
+            path: /metrics
+            interval: 30s
+#% endif %#
 ```
 
 ### app/kustomization.yaml.j2
 
 ```yaml
+#% if spacebot_enabled %#
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ./deployment.yaml
-  - ./service.yaml
-  - ./pvc.yaml
-  - ./httproute.yaml
-  - ./secret.sops.yaml
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
   - ./configmap.yaml
-  - ./servicemonitor.yaml
+  - ./secret.sops.yaml
+  - ./httproute.yaml
   - ./ciliumnetworkpolicy.yaml
+#% endif %#
 ```
+
+`ocirepository.yaml` and `helmrelease.yaml` are both listed — they reconcile together.
 
 ### Post-scaffold
 
@@ -164,6 +247,16 @@ templates/config/kubernetes/apps/ai/kustomization.yaml.j2
 ```
 
 Add `- ./spacebot/ks.yaml` under `resources:`.
+
+### Why this shape, not raw manifests
+
+An earlier version of this skill showed `deployment.yaml.j2`, `service.yaml.j2`, `pvc.yaml.j2`, and `servicemonitor.yaml.j2` as separate files. That pattern is **wrong for this cluster** — zero `ai`-namespace apps deploy that way. Every app uses `HelmRelease + OCIRepository + app-template + values`. Writing raw manifests would:
+
+- Diverge from 12 working apps' patterns (litellm, apollos-portal, cluster-docs, etc.)
+- Force manual maintenance of fields app-template handles (pod security context defaults, labels, ServiceMonitor wiring, reloader annotations)
+- Break when K8s API versions shift (app-template handles migrations)
+
+If a specific app genuinely needs shapes app-template cannot express, that's when to consider an upstream chart (pattern 2 in `/cluster-context`) or raw manifests (pattern 3). Spacebot does not need either.
 
 ## Step 2: Configure Secrets (`/cluster-deploy secrets`)
 
@@ -232,27 +325,9 @@ The `${SECRET_DOMAIN}` variable comes from Flux post-build substitution (cluster
 
 ## Step 4: Configure Monitoring (`/cluster-deploy monitoring`)
 
-### app/servicemonitor.yaml.j2
+**Already handled in Step 1.** The `serviceMonitor:` values block inside `helmrelease.yaml.j2` tells app-template to generate a `ServiceMonitor` pointing at the `metrics` port (9090) at path `/metrics`. Do NOT add a separate `servicemonitor.yaml.j2` file — that would create a second, duplicate ServiceMonitor.
 
-```yaml
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: spacebot
-  labels:
-    app.kubernetes.io/name: spacebot
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: spacebot
-  endpoints:
-    - port: metrics
-      interval: 30s
-      path: /metrics
-```
-
-Spacebot already exposes Prometheus metrics on port 9090 (see `METRICS.md`). The ServiceMonitor tells Prometheus where to find them.
+If you need additional Prometheus resources beyond the auto-generated ServiceMonitor (e.g., `PrometheusRule` for alerts, `PodMonitor` for sidecar metrics), add them as separate files in `app/` and list them in `kustomization.yaml.j2`. Spacebot exposes metrics on port 9090; see `METRICS.md` for the metric surface.
 
 ## Step 5: Network Policy (`/cluster-deploy network`)
 
