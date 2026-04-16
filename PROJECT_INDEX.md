@@ -32,9 +32,9 @@ spacebot/
 │   └── package.json               - React 19, Tailwind 4, React Router
 ├── docs/                           (40 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (43 SQL migrations)
+├── migrations/                     (47 SQL migrations)
 ├── presets/                        (9 agent persona presets)
-├── prompts/                        (Jinja2 system prompt templates)
+├── prompts/                        (86 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
 └── tests/                          (11 integration test files)
@@ -132,9 +132,75 @@ just gate-pr
 
 ## Test Coverage
 
-- 768 inline `#[test]` and `#[cfg(test)]` blocks across src/
+- 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
 - 11 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces fmt + clippy + tests + migration safety
+
+---
+
+## Agent Presets
+
+Nine persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, `SOUL.md`, `meta.toml`.
+
+| Preset | Role |
+|---|---|
+| **main-agent** | Default generalist |
+| **community-manager** | Community engagement |
+| **content-writer** | Editorial authoring |
+| **customer-support** | Support triage |
+| **engineering-assistant** | Technical pairing |
+| **executive-assistant** | Scheduling + comms |
+| **project-manager** | Task orchestration |
+| **research-analyst** | Research synthesis |
+| **sales-bdr** | Outbound prospecting |
+
+---
+
+## Design Docs
+
+`docs/design-docs/` — 47 architecture and implementation notes. Partial index (see directory for full list):
+
+| Domain | Docs |
+|---|---|
+| **Agent model** | agent-factory, autonomy, branch-and-spawn, cortex-{chat,history,implementation}, worker-briefing, workers-tab |
+| **Memory** | working-memory, working-memory-implementation-plan, working-memory-problem-analysis, working-memory-triage, tiered-memory, user-scoped-memories |
+| **Tasks** | task-tracking, goals, global-task-elevation, link-channels-task-delegation |
+| **Messaging** | named-messaging-adapters, multi-agent-communication-graph, participant-awareness, channel-attachment-persistence, channel-settings-unification, conversation-settings, attachment-portal-and-defaults |
+| **Cron** | cron-outcome-delivery, cron-timezone-and-reliability |
+| **Sandbox** | sandbox, sandbox-hardening, interactive-shell |
+| **Integrations** | mcp, stereos-integration, slash-commands, skill-authoring, projects |
+| **Secrets & security** | secret-store, sandbox-hardening |
+| **Observability** | live-logs, token-usage-tracking, production-worker-failures |
+| **Frontend** | openapi-migration, api-client-package-followup, wiki |
+| **Prompts** | prompt-routing, tool-nudging |
+
+---
+
+## Project Rules (`.claude/rules/`)
+
+Seven rule files that govern agent behavior across Rust edits, messaging parity, and writing style.
+
+| Rule | Scope |
+|---|---|
+| **rust-essentials.md** | Core Rust conventions (imports, naming, errors, lints) |
+| **rust-patterns.md** | Subsystem patterns (async, Rig, Serde, state machines) |
+| **rust-iteration-loop.md** | Fast inner-loop tool selection (fmt → check → clippy → tests) |
+| **async-state-safety.md** | Race conditions, cancellation, terminal-state reasoning |
+| **messaging-adapter-parity.md** | Cross-adapter feature consistency |
+| **provider-integration.md** | LLM provider wiring and pricing |
+| **writing-guide.md** | Copy voice and anti-patterns |
+
+---
+
+## Active OpenSpec Changes
+
+Under `openspec/changes/` — structured change proposals with specs + phased tasks.
+
+| Change | Purpose |
+|---|---|
+| **integrate-spacedrive** | VDFS integration, P2P sync, remote execution |
+| **security-remediation** | Security hardening workstream |
+| **archive** | Completed change history |
 
 ---
 
@@ -150,3 +216,5 @@ just gate-pr
 | RUST_STYLE_GUIDE.md | Coding conventions |
 | SPACEUI_MIGRATION.md | Frontend migration changelog |
 | CLAUDE.md | AI assistant context |
+| docs/design-docs/ | 47 architecture + implementation notes |
+| openspec/ | Active change proposals + archived specs |
