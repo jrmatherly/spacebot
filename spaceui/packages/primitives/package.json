@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@headlessui/react": "^1.7.0",
-    "@phosphor-icons/react": "^2.1.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-checkbox": "^1.1.0",
     "@radix-ui/react-collapsible": "^1.1.0",
     "@radix-ui/react-context-menu": "^2.2.0",
@@ -39,21 +39,21 @@
     "@radix-ui/react-toggle-group": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.0",
     "@react-spring/web": "^10.0.3",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.1.0",
-    "framer-motion": "^11.0.0",
-    "react-hook-form": "^7.50.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.38.0",
+    "react-hook-form": "^7.72.1",
     "react-loading-icons": "^1.1.0",
     "react-resizable-layout": "^0.7.0",
-    "sonner": "^1.4.0",
-    "zod": "^3.22.0"
+    "sonner": "^2.0.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "tailwindcss": "^4.1.0"
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.2.2"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
