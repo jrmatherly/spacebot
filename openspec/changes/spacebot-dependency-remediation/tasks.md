@@ -13,13 +13,13 @@
 
 ## 2. Glib Upgrade in Desktop
 
-- [ ] 2.1 Run `cd desktop/src-tauri && cargo tree -i glib` to identify the transitive chain and any tauri plugins pinning `glib ^0.18`
-- [ ] 2.2 Attempt `cd desktop/src-tauri && cargo update -p glib --precise 0.20.X` (substituting latest 0.20.x patch version); record whether the resolver accepts or refuses
-- [ ] 2.3 If resolver refuses: bump the blocking tauri plugin's version in `desktop/src-tauri/Cargo.toml` to a release that depends on `glib` 0.20+; re-run step 2.2
-- [ ] 2.4 Run `cargo tree -p glib` in `desktop/src-tauri/`; confirm the output shows `glib v0.20.x` or later and no `glib v0.18.x` entries
-- [ ] 2.5 Run `just desktop-build` on macOS; confirm it exits 0 and produces a valid binary
-- [ ] 2.6 Trigger the Linux CI matrix (or run an equivalent local Linux build if available) to confirm the webkit2gtk path still compiles
-- [ ] 2.7 Commit the updated `desktop/src-tauri/Cargo.lock` and `desktop/src-tauri/Cargo.toml` (if plugin bumped) with a descriptive message referencing GHSA-wrw7-89jp-8q8g
+- [x] 2.1 Run `cd desktop/src-tauri && cargo tree -i glib` to identify the transitive chain and any tauri plugins pinning `glib ^0.18` — BLOCKED INITIALLY: desktop/src-tauri/Cargo.toml lacks an empty `[workspace]` table, so cargo traverses upward and errors with "current package believes it's in a workspace when it's not". Fixed by adding `[workspace]` to `desktop/src-tauri/Cargo.toml`. Full chain: tauri 2.10.3 → wry 0.54.3 → webkit2gtk/gtk/gdk/gio/atk/cairo/pango 0.18.x → glib 0.18.5. Linux-only.
+- [x] 2.2 Attempt `cd desktop/src-tauri && cargo update -p glib --precise 0.20.X` (substituting latest 0.20.x patch version); record whether the resolver accepts or refuses — RESOLVER REFUSED: `error: no matching package named 'glib' found. required by package 'gtk v0.18.2' which satisfies dependency 'gtk = "^0.18"' (locked to 0.18.2) of package 'tauri v2.10.3'`. Expected per design.md.
+- [x] 2.3 If resolver refuses: bump the blocking tauri plugin's version in `desktop/src-tauri/Cargo.toml` to a release that depends on `glib` 0.20+; re-run step 2.2 — DEFERRED per Option B non-dismissal policy. No tauri version currently ships against gtk 0.20 ecosystem. Forcing a tauri major-version bump is out of scope. Documented in `docs/security/deferred-advisories.md`.
+- [x] 2.4 Run `cargo tree -p glib` in `desktop/src-tauri/`; confirm the output shows `glib v0.20.x` or later and no `glib v0.18.x` entries — N/A: upgrade not applied.
+- [x] 2.5 Run `just desktop-build` on macOS; confirm it exits 0 and produces a valid binary — N/A: no glib change to verify. Also, glib is Linux-only — not compiled on macOS.
+- [x] 2.6 Trigger the Linux CI matrix (or run an equivalent local Linux build if available) to confirm the webkit2gtk path still compiles — N/A: no glib change to verify.
+- [x] 2.7 Commit the updated `desktop/src-tauri/Cargo.lock` and `desktop/src-tauri/Cargo.toml` (if plugin bumped) with a descriptive message referencing GHSA-wrw7-89jp-8q8g — REVISED: commits the `[workspace]` table addition to `desktop/src-tauri/Cargo.toml` (cargo tooling fix) plus the glib entry in `deferred-advisories.md`. No lockfile change.
 
 ## 3. Dependabot Config Expansion
 

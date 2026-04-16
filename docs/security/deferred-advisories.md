@@ -47,6 +47,18 @@ These alerts remain open on the GitHub Security dashboard as tracking signal. Th
 - **Blocker:** tauri transitive chain pins `rand` 0.8.
 - **Unblock trigger:** tauri releases using `rand` 0.9, or the blocking tauri plugin bumps its own rand dependency.
 
+### glib 0.18.5 (desktop) — GHSA-wrw7-89jp-8q8g
+
+- **Alert:** #17
+- **Manifest:** `desktop/src-tauri/Cargo.lock`
+- **Severity:** medium
+- **Current:** 0.18.5
+- **Patched:** 0.20.0
+- **Blocker:** the entire gtk ecosystem (gtk 0.18.2, webkit2gtk 2.0.2, wry 0.54.3, tauri 2.10.3) is pinned to the 0.18.x gtk stack which depends on glib 0.18. A `cargo update -p glib --precise 0.20.X` fails with a resolver error: "no matching package named `glib` found" because gtk 0.18 requires `glib ^0.18`. Advancing glib to 0.20 requires tauri to release a version built against the gtk 0.20 ecosystem.
+- **Unblock trigger:** tauri releases a version depending on `gtk ^0.20` (and corresponding `wry`, `gdk`, `gio`, `webkit2gtk` bumps). At that point `cargo update -p tauri` followed by `cargo tree -p glib` should show 0.20.
+- **Risk note:** glib is a Linux-only transitive dep. It is not compiled into the macOS desktop binary. Spacebot does not currently publish Linux desktop builds. The practical exposure for our shipped artifacts is near-zero until a Linux desktop release is produced.
+- **Workspace fix applied:** as part of this investigation, `desktop/src-tauri/Cargo.toml` gained an empty `[workspace]` table so `cargo` commands inside the desktop crate don't traverse upward and fail. The previous root `Cargo.toml` comment claiming "desktop/src-tauri/ is nested too deep for auto-discovery" was incorrect once `desktop/src-tauri/Cargo.lock` began existing.
+
 ## Review Cadence
 
 Review this file whenever dependencies are refreshed (`just deps-update` or equivalent). For each entry:

@@ -3,6 +3,11 @@ name = "spacebot-desktop"
 version = "0.1.0"
 edition = "2021"
 
+# Standalone cargo project with its own Cargo.lock. The empty [workspace]
+# table prevents cargo from traversing upward and attaching this crate to
+# the spacebot root workspace (which declares its own exclude for spacedrive).
+[workspace]
+
 [[bin]]
 name = "Spacebot"
 path = "src/main.rs"
