@@ -5,11 +5,11 @@ description: Use when auditing project documentation for drift, stale claims, mi
 
 # Docs Audit
 
-Systematic audit of Spacebot's project documentation to find drift between what docs claim and what the codebase, git history, and release artifacts actually show. Produces a prioritized finding list with file:line citations and recommended remediation — never rewrites docs without confirmation.
+Systematic audit of Spacebot's project documentation to find drift between what docs claim and what the codebase, git history, and release artifacts actually show. Produces a prioritized finding list with file:line citations and recommended remediation. Never rewrites docs without confirmation.
 
 ## Scope
 
-This skill covers documentation **outside** session-sync's scope. Roughly **505 markdown/MDX files** are tracked in the repo; after the exclusions below, ~210 are in scope for audit. Organized in two tiers.
+This skill covers documentation **outside** session-sync's scope. Several hundred markdown/MDX files are tracked in the repo. The majority are excluded below (most live under vendored `spacedrive/`). The remainder is in scope for audit, organized in two tiers. Per-category commands in Step 1 produce the exact counts. Avoid quoting a single aggregate here to prevent drift.
 
 ### Tier 1 — Shipped / User-Facing Documentation (highest drift impact)
 
@@ -48,7 +48,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 |------|--------|-------------|
 | `CLAUDE.md` | Session memory + instruction drift | `/session-sync` |
 | `.serena/memories/*.md` | Project memories | `/session-sync` |
-| `openspec/changes/archive/*` (37 files) | Immutable historical record — never edit archived specs | `/openspec-verify-change` (active only) |
+| `openspec/changes/archive/*` (7 archived changes, immutable) | Immutable historical record — never edit archived specs | `/openspec-verify-change` (active only) |
 | `openspec/changes/<active>/*` | Active change artifacts | `/openspec-apply-change`, `/openspec-verify-change` |
 | `.codex/skills/*` (5), `.windsurf/skills/*` (5), `.windsurf/workflows/opsx-*` (5) | Mirror copies of `.claude/skills/openspec-*` for other agent platforms. Windsurf `opsx-*` workflows are thin wrappers that invoke the same skills. | Audit canonical source in `.claude/skills/`; mirrors are derived. |
 | `.full-review/*.md` (14 files) | Code-review framework templates, not project docs | N/A |
@@ -61,11 +61,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | `desktop/` top-level | Has `desktop/CLAUDE.md` (covered by the "Nested CLAUDE.md" Tier 2 row) — no other docs | N/A |
 | Dependency version bumps in any doc | | `/deps-update` |
 
-**Approximate scale:**
-- Tier 1 (user-facing): ~120 files
-- Tier 2 (operational): ~90 files
-- Out of scope: ~295 files (including vendored spacedrive and sibling-platform mirrors)
-- Full audit = ~210 files reviewed against ground truth
+**Scale guidance:** Tier 1 (user-facing) dominates drift impact. Tier 2 (operational) governs agent and tooling behavior. Out-of-scope is the majority (vendored `spacedrive/`, sibling-platform mirrors). Per-category verify commands in Step 1 produce exact counts at audit time. Don't bake aggregates into this skill.
 
 ## When to Use
 
@@ -73,15 +69,15 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 - After a batch of merged PRs when package/interface state has shifted (e.g., Tailwind v4 migration, dep upgrade wave)
 - Before a release to validate CHANGELOGs match landed commits
 - When a doc claim ("Status: in progress", "as of YYYY-MM-DD", "v0.33") is suspected stale
-- Before handing the repo to a new contributor — to catch drift that'll confuse them
+- Before handing the repo to a new contributor, to catch drift that'll confuse them
 
 ## When NOT to Use
 
 - For CLAUDE.md or Serena memory drift → use `/session-sync`
 - For dependency upgrades themselves → use `/deps-update`
 - For OpenSpec change artifacts → use `/openspec-verify-change`
-- For *writing new docs* from scratch — this skill audits existing docs only
-- For one-file spot-fixes the user already identified — just fix directly
+- For *writing new docs* from scratch. This skill audits existing docs only.
+- For one-file spot-fixes the user already identified. Just fix directly.
 
 ## The Core Discipline
 
@@ -135,26 +131,40 @@ ls prompts/ | wc -l                                 # prompt count claim
 
 # Changeset state — what's queued that CHANGELOGs haven't absorbed yet
 ls spaceui/.changeset/*.md 2>/dev/null | grep -v README
+
+# Nested CLAUDE.md inventory — each file scopes agent behavior in a subtree
+find . -maxdepth 3 -name "CLAUDE.md" -not -path "./spacedrive/*" -not -path "./node_modules/*"
+
+# Coding rules inventory + path-scoped frontmatter audit
+ls .claude/rules/*.md
+grep -l '^paths:' .claude/rules/*.md    # which rules are path-scoped?
+grep -H '^paths:' .claude/rules/*.md    # verify no two rules collide on the same path
+
+# Deploy/Helm ground truth
+grep -E '^\s*(tag|repository|port|path):' deploy/helm/spacebot/values.yaml
+git tag -l | tail -5                    # image tag should match a real release
+ls openspec/changes/                    # active proposals vs archived-only state
+ls openspec/changes/archive/            # archived changes (directories, not files)
 ```
 
 Also pull the code-review-graph summary if available (`list_graph_stats_tool`) for authoritative node/edge counts that docs sometimes quote.
 
 ### Step 2: Read Docs With Cross-Reference in Hand
 
-For each target file, don't just read — compare against Step 1 evidence. Specific patterns to hunt:
+For each target file, don't just read. Compare against Step 1 evidence. Specific patterns to hunt:
 
 **Version claims**
 - Any "v0.X", "version 0.X", "x.y.z" mentioned in prose → diff against actual manifest
-- "Rig v0.33" type references are known drift risk — memory obs #25725 flagged this
+- "Rig v0.33" type references are known drift risk (memory obs #25725 flagged this)
 
 **Date-stamped claims**
 - `**Last updated:** ...`, `**Status (as of YYYY-MM-DD):** ...`, `**Updated:**` headers
 - If the doc is in a directory with commits newer than the stamp, flag it
 
 **Status trackers in living plans**
-- `interface/DRY_VIOLATIONS.md`: each "STILL PENDING" item — grep the codebase for the hardcoded pattern; if 0 matches, item is fixed and should move to ✅
-- `interface/PLAN.md`: tasks marked incomplete — check `git log --all --grep="<task keyword>"` and current file state
-- Any "TODO", "Planned", "Not yet implemented" — verify against code
+- `interface/DRY_VIOLATIONS.md`: for each "STILL PENDING" item, grep the codebase for the hardcoded pattern. If 0 matches, the item is fixed and should move to ✅.
+- `interface/PLAN.md`: for tasks marked incomplete, check `git log --all --grep="<task keyword>"` and current file state.
+- Any "TODO", "Planned", "Not yet implemented" claim. Verify against code.
 
 **CHANGELOG completeness**
 - For each `spaceui/packages/X/CHANGELOG.md`: take the latest version entry, find its commit, then `git log <that-commit>..HEAD -- spaceui/packages/X/`. Any commits not reflected in CHANGELOG or in `.changeset/` queue = missing entry.
@@ -170,7 +180,7 @@ For each target file, don't just read — compare against Step 1 evidence. Speci
 - If it references phases/steps: which are complete per commits, which per doc?
 
 **Cross-doc consistency**
-- Tech stack claims in `README.md` vs `AGENTS.md` vs `PROJECT_INDEX.md` vs `CLAUDE.md` — mismatches are drift
+- Tech stack claims in `README.md` vs `AGENTS.md` vs `PROJECT_INDEX.md` vs `CLAUDE.md`. Mismatches are drift.
 - Package count/name in `spaceui/README.md` vs actual `spaceui/packages/` listing
 - `INTEGRATION.md` install instructions vs current package names in `package.json`
 
@@ -214,7 +224,7 @@ Standard report format:
 ... same structure ...
 
 ## Out of Scope (deferred)
-- <anything you noticed but belongs to another skill — name the skill>
+- <anything you noticed but belongs to another skill; name the skill>
 ```
 
 ### Step 5: Await Direction
@@ -222,15 +232,15 @@ Standard report format:
 Stop after the report. Do not begin edits. Ask:
 > "Want me to apply these fixes? You can accept all, a subset (by number), or revise."
 
-Apply only what's approved. For changelog-related fixes in `spaceui/`, remember changesets are the source of truth — add `.changeset/*.md` entries rather than hand-editing `CHANGELOG.md` unless the changelog is already published.
+Apply only what's approved. For changelog-related fixes in `spaceui/`, remember changesets are the source of truth. Add `.changeset/*.md` entries rather than hand-editing `CHANGELOG.md` unless the changelog is already published.
 
 ## Category-Specific Rules
 
 ### CHANGELOGs (spaceui/packages/*/CHANGELOG.md)
 
 - Never hand-edit CHANGELOG.md if changesets govern it. Instead: create `spaceui/.changeset/<descriptive-name>.md` with the missing entries, and let the release workflow consume them.
-- Exception: previously-released entries can be corrected (typo, wrong version) — but never add new released entries directly.
-- If version mismatch between `CHANGELOG.md` top entry and `package.json`: likely an unpublished changeset queued — check `.changeset/*.md` first.
+- Exception: previously-released entries can be corrected (typo, wrong version), but never add new released entries directly.
+- If version mismatch between `CHANGELOG.md` top entry and `package.json`: likely an unpublished changeset queued. Check `.changeset/*.md` first.
 
 ### Living plans (PLAN.md, DRY_VIOLATIONS.md)
 
@@ -250,22 +260,50 @@ Apply only what's approved. For changelog-related fixes in `spaceui/`, remember 
 
 ### docs/ (Fumadocs site)
 
-- Content files under `docs/content/` or `docs/app/` are published. Drift here is user-facing — high priority.
+- Content files under `docs/content/` or `docs/app/` are published. Drift here is user-facing and high priority.
 - `docs/design-docs/` is append-mostly. Don't retro-edit historical design docs; add new ones or append "Status updated" sections.
-- `docs/security/deferred-advisories.md` is policy-tracked (per `project_overview` memory) — changes here need context.
+- `docs/security/deferred-advisories.md` is policy-tracked (per `project_overview` memory). Changes here need context.
+
+### Deploy/Helm values (`deploy/helm/spacebot/`)
+
+The Helm bundle is a values-only wrapper around `bjw-s-labs/app-template`. Drift shows up in three places: image tag vs released version, port/env alignment with `src/config/`, probe paths against API handlers.
+
+- Image tag: `grep -E '^\s*tag:' deploy/helm/spacebot/values.yaml` and compare with `git tag -l`. A tag that doesn't exist in the repo is 🔴 Incorrect.
+- Port/env: ports declared in `values.yaml` must match what `src/config/runtime.rs` binds. If docs claim port 19898 for API and 9090 for metrics, verify both sides.
+- Probe paths: `grep -E 'livenessProbe|readinessProbe|httpGet|path:' deploy/helm/spacebot/values.yaml` → verify each path resolves to a real handler via `grep -rE '"/health"|"/ready"' src/api/`.
+- README: `deploy/helm/spacebot/README.md` should not list values that aren't in `values.yaml`. A diff between the two is a quick way to spot drift.
+
+### Nested CLAUDE.md (subtree-scoped)
+
+Four nested files: `spaceui/CLAUDE.md`, `interface/CLAUDE.md`, `desktop/CLAUDE.md`, `openspec/CLAUDE.md`. Root `CLAUDE.md` is owned by `/session-sync`. These four are owned by this skill.
+
+- **Cross-consistency with root:** shared facts (bun-only, `src/module.rs` convention, `just gate-pr` gate, `[workspace] exclude` guard) must agree across root and nested. If the root says "bun only" and a nested CLAUDE.md says "npm or bun", that's 🔴 Incorrect.
+- **Subtree accuracy:** each nested file's claims about its own subtree must be verifiable. Package list in `spaceui/CLAUDE.md` must match `ls spaceui/packages/`. Commands in `interface/CLAUDE.md` must run from `interface/`.
+- **Boundary policy:** a nested CLAUDE.md shouldn't duplicate content from a `.claude/rules/*.md` that already covers the same path via `paths:` frontmatter. Flag duplication. The rule file is canonical.
+- **Orphan check:** a nested CLAUDE.md under a directory that no longer exists is 🔴 Incorrect (rare, but happens after subtree deletion).
+
+### Coding rules (`.claude/rules/`)
+
+Nine rule files, some path-scoped via `paths:` frontmatter. Rules are loaded automatically when their paths match, so drift here propagates into every code change in the covered subtree.
+
+- **Path frontmatter correctness:** for each rule with `paths:`, verify the globs match real files. `grep -H '^paths:' .claude/rules/*.md` then sanity-check each glob.
+- **No conflicting rules:** two rules that both claim authority over the same path but give different guidance is 🔴 Incorrect. The narrower scope should win; the broader rule should link out.
+- **No duplication with `RUST_STYLE_GUIDE.md`:** if a rule restates the style guide verbatim, either cite it or trim it. Duplicated content drifts independently.
+- **No duplication with nested CLAUDE.md:** see the Nested CLAUDE.md note above — rule files are canonical for their `paths:`.
+- **Writing-guide compliance:** rule files are Tier-2 docs but user-visible via agent behavior. The `.claude/rules/writing-guide.md` constraints (no em dashes in prose, etc.) apply to rule prose too.
 
 ### OpenSpec canonical specs (`openspec/specs/*/spec.md`)
 
-These describe the **current** state of dependency management, integration surfaces, and security posture. After an OpenSpec change is archived, its `specs/*/spec.md` content merges into the canonical `openspec/specs/*/spec.md` — but the spec file can still drift if implementation moves without a formal OpenSpec change. This is a docs-audit-owned slice because no other skill covers it.
+These describe the **current** state of dependency management, integration surfaces, and security posture. After an OpenSpec change is archived, its `specs/*/spec.md` content merges into the canonical `openspec/specs/*/spec.md`. The spec file can still drift if implementation moves without a formal OpenSpec change. This is a docs-audit-owned slice because no other skill covers it.
 
 - Grep each spec for version strings, package names, file paths, and command examples; verify against actual manifests (`Cargo.toml`, `package.json`) and the tree.
 - If a spec references a file path: check the path exists. If a spec names a crate/package at a version: diff against the manifest.
 - If drift is found: recommend opening a formal OpenSpec change via `/openspec-propose` rather than inline-editing the spec, unless the drift is purely cosmetic (typo, wording).
-- Archived changes (`openspec/changes/archive/*`) are off-limits — never propose edits there.
+- Archived changes (`openspec/changes/archive/*`) are off-limits. Never propose edits there.
 
 ### Project skills (`.claude/skills/*/SKILL.md`)
 
-- When a new skill is added or renamed, `session-primer/references/skills-catalog.md` must be updated. This is the highest-velocity drift point in the meta-docs — check it every audit.
+- When a new skill is added or renamed, `session-primer/references/skills-catalog.md` must be updated. This is the highest-velocity drift point in the meta-docs, so check it every audit.
 - Skill reference files under `.claude/skills/<name>/references/` and `.claude/skills/<name>/guides/` are in scope but often nested deep. Use `find .claude/skills -name "*.md"` to enumerate before auditing.
 
 ## Common Mistakes
@@ -315,8 +353,9 @@ grep -rE "tool|command" presets/<name>/ROLE.md
 grep -rE '`src/[a-z]+\.rs`' .claude/rules/
 
 # Is every skill listed in skills-catalog.md?
-diff <(ls .claude/skills/ | grep -v '\.') \
-     <(grep -oE '/[a-z-]+$' .claude/skills/session-primer/references/skills-catalog.md | sort -u)
+# skills-catalog.md uses "### skill-name (NNN lines)" format for entries
+diff <(ls .claude/skills/ | grep -v '\.' | sort -u) \
+     <(grep -oE '^### [a-z][a-z0-9-]+' .claude/skills/session-primer/references/skills-catalog.md | sed 's/^### //' | sort -u)
 
 # Does a canonical openspec spec still match reality?
 grep -oE '`[a-z_-]+`|[0-9]+\.[0-9]+\.[0-9]+' openspec/specs/<name>/spec.md
@@ -325,7 +364,7 @@ grep -oE '`[a-z_-]+`|[0-9]+\.[0-9]+\.[0-9]+' openspec/specs/<name>/spec.md
 
 ## Composition With Other Skills
 
-- Run **after** `/deps-update` lands version bumps — catches doc refs that weren't updated
+- Run **after** `/deps-update` lands version bumps, to catch doc refs that weren't updated
 - Run **before** `/pr-gates` on doc-only branches
 - Run **alongside** `/session-sync` for a full documentation + memory refresh
 - If findings touch CLAUDE.md → hand off to `/session-sync`
@@ -333,14 +372,14 @@ grep -oE '`[a-z_-]+`|[0-9]+\.[0-9]+\.[0-9]+' openspec/specs/<name>/spec.md
 
 ## When to Update THIS Skill
 
-This skill is itself Tier 2 documentation — it goes stale as the repo evolves. Revisit the scope tables above when any of these happen:
+This skill is itself Tier 2 documentation and goes stale as the repo evolves. Revisit the scope tables above when any of these happen:
 
 - A new top-level directory is added (check for new docs in it; add to Tier 1 or explicit out-of-scope)
 - A new directory appears under `.claude/` (agents, rules, skills, or something new)
 - A new package is added to `spaceui/packages/` (update the package row)
-- A new agent-platform mirror is added (`.codex/`, `.windsurf/`, `.cursor/`, etc.) — add to out-of-scope
+- A new agent-platform mirror is added (`.codex/`, `.windsurf/`, `.cursor/`, etc.): add to out-of-scope
 - A new route group is added under `docs/content/docs/(...)/`
-- The `packages/api-client/` policy changes (currently private, no README — if it gains a README, move to Tier 1)
-- A new skill is created or an existing one is renamed — update `session-primer/references/skills-catalog.md` and verify this skill's scope still matches reality
-- A new nested `CLAUDE.md` is added under a subtree (not the repo root) — add it to the Tier 2 "Nested CLAUDE.md" row
-- A new `.claude/rules/*.md` file is added — bump the count in the Tier 2 "Coding rules" row and check whether its `paths:` frontmatter overlaps with an existing rule
+- The `packages/api-client/` policy changes (currently private, no README). If it gains a README, move to Tier 1.
+- A new skill is created or an existing one is renamed: update `session-primer/references/skills-catalog.md` and verify this skill's scope still matches reality
+- A new nested `CLAUDE.md` is added under a subtree (not the repo root): add it to the Tier 2 "Nested CLAUDE.md" row
+- A new `.claude/rules/*.md` file is added: bump the count in the Tier 2 "Coding rules" row and check whether its `paths:` frontmatter overlaps with an existing rule

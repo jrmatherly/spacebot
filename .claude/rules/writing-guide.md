@@ -12,10 +12,30 @@ The tagline sets the tone: "The agent harness that runs teams, communities, and 
 
 These are the specific patterns that make copy sound AI-generated. Avoid all of them.
 
-**Em dashes in prose sentences.** Em dashes are fine in bullet point labels ("**Shell** — run arbitrary commands") but not inside sentences. Replace with a comma, a period, or restructure.
+**Em dashes in prose sentences.** Em dashes are banned inside sentences. Replace with a comma, a period, a colon, parentheses, or restructure the sentence. This rule keeps getting re-introduced. Treat every em-dash in a prose sentence as a violation, including when drafting new content.
+
+Where em dashes ARE allowed (narrow list, do not extend):
+- Bullet-point labels: `- **Shell** — run arbitrary commands`
+- Numbered-step labels: `1. **Claim** — verbatim quote`
+- Table cells separating a value from its description: `| Foo | path/to/foo — purpose |`
+- Section headers: `## Scale — Targets and Limits`
+
+Where em dashes are NOT allowed (these are the violations to watch for):
+- Inside a complete sentence as a substitute for a period, comma, or colon
+- Joining two independent clauses
+- Adding an aside or afterthought in prose
+- Glueing a trailing fragment to a bullet that is itself a full sentence (if the bullet contains a full sentence, end with a period and start a new sentence)
+
+Self-check before committing: `grep -nE '[a-z)"0-9]\s*—\s*[a-z]' <file>` should return zero matches outside of tables, bullet labels, numbered-step labels, and headers.
 
 Bad: "The cortex sees across all channels — the only process with full system scope."
 Good: "The cortex is the only process that sees across all channels."
+
+Bad: "Drift here is user-facing — high priority."
+Good: "Drift here is user-facing and high priority."
+
+Bad: "A new rule is added — bump the count in the table."
+Good: "A new rule is added: bump the count in the table."
 
 **"Not X. Not Y." openers.** Starting a description by saying what something isn't.
 
