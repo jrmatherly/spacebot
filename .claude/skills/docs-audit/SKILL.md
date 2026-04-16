@@ -33,8 +33,9 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 
 | Area | Files |
 |------|-------|
+| Nested CLAUDE.md | `spaceui/CLAUDE.md`, `interface/CLAUDE.md`, `desktop/CLAUDE.md`, `openspec/CLAUDE.md` — subtree-scoped instructions loaded on-demand when agents edit those subtrees. Distinct from the root `CLAUDE.md` (which is owned by `/session-sync`). |
 | Agent personas | `presets/*/{IDENTITY,ROLE,SOUL}.md` — 27 files across 9 presets. Changes here shape runtime agent behavior. |
-| Coding rules | `.claude/rules/*.md` — 7 files. Referenced by CLAUDE.md; drift propagates into every code change. |
+| Coding rules | `.claude/rules/*.md` — 9 files (`rust-essentials`, `rust-iteration-loop`, `rust-patterns`, `writing-guide`, `async-state-safety`, `messaging-adapter-parity`, `provider-integration`, `tool-authoring`, `api-handler`). Referenced by CLAUDE.md; drift propagates into every code change. |
 | Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (21 top-level skills + 22 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
 | Runtime skills | `skills/builtin/*/SKILL.md` — 1 file (wiki-writing). Skills the daemon ships to agents. |
@@ -339,3 +340,5 @@ This skill is itself Tier 2 documentation — it goes stale as the repo evolves.
 - A new route group is added under `docs/content/docs/(...)/`
 - The `packages/api-client/` policy changes (currently private, no README — if it gains a README, move to Tier 1)
 - A new skill is created or an existing one is renamed — update `session-primer/references/skills-catalog.md` and verify this skill's scope still matches reality
+- A new nested `CLAUDE.md` is added under a subtree (not the repo root) — add it to the Tier 2 "Nested CLAUDE.md" row
+- A new `.claude/rules/*.md` file is added — bump the count in the Tier 2 "Coding rules" row and check whether its `paths:` frontmatter overlaps with an existing rule
