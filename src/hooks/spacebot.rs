@@ -366,6 +366,11 @@ impl SpacebotHook {
                 Ok(response) => {
                     if let Some(new_messages) = response.messages {
                         history.extend(new_messages);
+                    } else {
+                        tracing::warn!(
+                            process_id = %self.process_id,
+                            "prompt returned Ok with no messages; history may be incomplete"
+                        );
                     }
                     Self::prune_successful_tool_nudge_prompt(
                         history,
@@ -456,6 +461,11 @@ impl SpacebotHook {
             .await?;
         if let Some(new_messages) = response.messages {
             history.extend(new_messages);
+        } else {
+            tracing::warn!(
+                process_id = %self.process_id,
+                "prompt returned Ok with no messages; history may be incomplete"
+            );
         }
         Ok(response.output)
     }
