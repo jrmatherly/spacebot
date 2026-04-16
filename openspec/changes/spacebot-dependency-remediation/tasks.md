@@ -23,16 +23,16 @@
 
 ## 3. Dependabot Config Expansion
 
-- [ ] 3.1 Edit `.github/dependabot.yml` to add a top-of-file YAML comment explaining that this file controls update-PR scoping only, NOT security-alert visibility
-- [ ] 3.2 Add `package-ecosystem: "cargo"` entry with `directory: "/desktop/src-tauri"`, weekly schedule, commit-message prefix `deps(desktop)`, and `open-pull-requests-limit: 5`
-- [ ] 3.3 Add `package-ecosystem: "npm"` entry with `directory: "/packages/api-client"`, weekly schedule, commit-message prefix `deps(api-client)`, and `open-pull-requests-limit: 5`
-- [ ] 3.4 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui"`, weekly schedule, commit-message prefix `deps(spaceui)`, and `open-pull-requests-limit: 5`
-- [ ] 3.5 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui/.storybook"`, weekly schedule, commit-message prefix `deps(spaceui-storybook)`, and `open-pull-requests-limit: 3`
-- [ ] 3.6 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui/examples/showcase"`, weekly schedule, commit-message prefix `deps(spaceui-showcase)`, and `open-pull-requests-limit: 3`
-- [ ] 3.7 Add `package-ecosystem: "npm"` entry with `directory: "/docs"`, weekly schedule, commit-message prefix `deps(docs)`, and `open-pull-requests-limit: 5`
-- [ ] 3.8 Verify no entry has a `directory:` value starting with `/spacedrive`
-- [ ] 3.9 Validate the YAML locally (e.g., `python -c 'import yaml; yaml.safe_load(open(".github/dependabot.yml"))'` or equivalent)
-- [ ] 3.10 Commit the updated `.github/dependabot.yml` with a descriptive message
+- [x] 3.1 Edit `.github/dependabot.yml` to add a top-of-file YAML comment explaining that this file controls update-PR scoping only, NOT security-alert visibility
+- [x] 3.2 Add `package-ecosystem: "cargo"` entry with `directory: "/desktop/src-tauri"`, weekly schedule, commit-message prefix `deps(desktop)`, and `open-pull-requests-limit: 5`
+- [x] 3.3 Add `package-ecosystem: "npm"` entry with `directory: "/packages/api-client"`, weekly schedule, commit-message prefix `deps(api-client)`, and `open-pull-requests-limit: 5`
+- [x] 3.4 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui"`, weekly schedule, commit-message prefix `deps(spaceui)`, and `open-pull-requests-limit: 5`
+- [x] 3.5 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui/.storybook"`, weekly schedule, commit-message prefix `deps(spaceui-storybook)`, and `open-pull-requests-limit: 3`
+- [x] 3.6 Add `package-ecosystem: "npm"` entry with `directory: "/spaceui/examples/showcase"`, weekly schedule, commit-message prefix `deps(spaceui-showcase)`, and `open-pull-requests-limit: 3`
+- [x] 3.7 Add `package-ecosystem: "npm"` entry with `directory: "/docs"`, weekly schedule, commit-message prefix `deps(docs)`, and `open-pull-requests-limit: 5`
+- [x] 3.8 Verify no entry has a `directory:` value starting with `/spacedrive`
+- [x] 3.9 Validate the YAML locally (e.g., `python -c 'import yaml; yaml.safe_load(open(".github/dependabot.yml"))'` or equivalent)
+- [x] 3.10 Commit the updated `.github/dependabot.yml` with a descriptive message
 
 ## 4. Deferred-Advisories Documentation
 
