@@ -1,0 +1,977 @@
+//! Device registry for centralized state management
+
+use super::{
+	ConnectionInfo, DeviceInfo, DevicePersistence, DeviceState, PersistedPairedDevice, SessionKeys,
+	TrustLevel,
+};
+use crate::crypto::key_manager::KeyManager;
+use crate::device::DeviceManager;
+use crate::infra::event::EventBus;
+use crate::service::network::{utils::logging::NetworkLogger, NetworkingError, Result};
+use chrono::{DateTime, Utc};
+use iroh::{EndpointAddr, EndpointId};
+use std::collections::HashMap;
+use std::sync::Arc;
+use uuid::Uuid;
+
+/// Central registry for all device state and connections
+pub struct DeviceRegistry {
+	/// Reference to the device manager for local device info
+	device_manager: Arc<DeviceManager>,
+
+	/// Map of device ID to current state
+	devices: HashMap<Uuid, DeviceState>,
+
+	/// Map of node ID to device ID for quick lookup
+	node_to_device: HashMap<EndpointId, Uuid>,
+
+	/// Map of session ID to device ID for pairing lookup
+	session_to_device: HashMap<Uuid, Uuid>,
+
+	/// Persistence manager for paired devices
+	persistence: DevicePersistence,
+
+	/// Logger for device registry operations
+	logger: Arc<dyn NetworkLogger>,
+
+	/// Event bus for emitting resource change events
+	event_bus: Option<Arc<EventBus>>,
+
+	/// Library manager for querying device data from database
+	library_manager: Option<std::sync::Weak<crate::library::LibraryManager>>,
+}
+
+impl DeviceRegistry {
+	/// Create a new device registry
+	pub fn new(
+		device_manager: Arc<DeviceManager>,
+		key_manager: Arc<KeyManager>,
+		logger: Arc<dyn NetworkLogger>,
+	) -> Self {
+		let persistence = DevicePersistence::new(key_manager);
+
+		Self {
+			device_manager,
+			devices: HashMap::new(),
+			node_to_device: HashMap::new(),
+			session_to_device: HashMap::new(),
+			persistence,
+			logger,
+			event_bus: None,
+			library_manager: None,
+		}
+	}
+
+	/// Set the event bus for emitting resource change events
+	pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
+		self.event_bus = Some(event_bus);
+	}
+
+	/// Set the library manager for querying device data
+	pub fn set_library_manager(
+		&mut self,
+		library_manager: std::sync::Weak<crate::library::LibraryManager>,
+	) {
+		self.library_manager = Some(library_manager);
+	}
+
+	/// Clone the persistence manager for async usage without locking
+	pub fn persistence(&self) -> DevicePersistence {
+		self.persistence.clone()
+	}
+
+	/// Update device online status in library database
+	async fn update_device_online_status(&self, device_id: Uuid, is_online: bool) {
+		let Some(library_manager_weak) = &self.library_manager else {
+			return;
+		};
+
+		let Some(library_manager) = library_manager_weak.upgrade() else {
+			return;
+		};
+
+		// Update in all libraries (device data is synced across libraries)
+		let all_libraries = library_manager.list().await;
+
+		for lib in all_libraries {
+			let db = lib.db().conn();
+
+			// Update device is_online status in database
+			use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+
+			match crate::infra::db::entities::device::Entity::find()
+				.filter(
+					crate::infra::db::entities::device::Column::Uuid
+						.eq(device_id.as_bytes().to_vec()),
+				)
+				.one(db)
+				.await
+			{
+				Ok(Some(model)) => {
+					let mut active_model: crate::infra::db::entities::device::ActiveModel =
+						model.into();
+					active_model.is_online = Set(is_online);
+					active_model.last_seen_at = Set(chrono::Utc::now());
+
+					if let Err(e) = active_model.update(db).await {
+						tracing::warn!(
+							device_id = %device_id,
+							error = %e,
+							"Failed to update device online status in database"
+						);
+					}
+				}
+				Ok(None) => {
+					// Device not in this library's database, skip
+				}
+				Err(e) => {
+					tracing::warn!(
+						device_id = %device_id,
+						error = %e,
+						"Failed to query device from database"
+					);
+				}
+			}
+		}
+	}
+
+	/// Emit a ResourceChanged event for a device with complete database data
+	fn emit_device_changed(&self, device_id: Uuid, info: &DeviceInfo, is_connected: bool) {
+		let Some(event_bus) = &self.event_bus else {
+			return;
+		};
+
+		let event_bus = event_bus.clone();
+		let info = info.clone();
+		let library_manager_weak = self.library_manager.clone();
+
+		// Spawn a background task to query database and emit event
+		// This avoids blocking the current thread with database I/O
+		tokio::spawn(async move {
+			// Try to query the full device from database to get hardware_model
+			let device = if let Some(library_manager_weak) = library_manager_weak {
+				if let Some(library_manager) = library_manager_weak.upgrade() {
+					// Try to get device from first available library
+					// (device data should be consistent across libraries since it's synced)
+					let all_libraries = library_manager.list().await;
+
+					let mut device_from_db = None;
+					for lib in all_libraries {
+						let db = lib.db().conn();
+
+						// Query device from database by UUID
+						use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+						if let Ok(Some(model)) = crate::infra::db::entities::device::Entity::find()
+							.filter(
+								crate::infra::db::entities::device::Column::Uuid
+									.eq(device_id.as_bytes().to_vec()),
+							)
+							.one(db)
+							.await
+						{
+							// Convert to domain Device
+							if let Ok(mut device) = crate::domain::Device::try_from(model) {
+								// Merge with network state
+								device.is_connected = is_connected;
+								device.is_online = is_connected;
+								device.is_paired = true;
+								device.connection_method = None;
+
+								device_from_db = Some(device);
+								break;
+							}
+						}
+					}
+
+					device_from_db.unwrap_or_else(|| {
+						crate::domain::Device::from_network_info(&info, is_connected, None)
+					})
+				} else {
+					crate::domain::Device::from_network_info(&info, is_connected, None)
+				}
+			} else {
+				crate::domain::Device::from_network_info(&info, is_connected, None)
+			};
+
+			use crate::domain::resource::EventEmitter;
+			if let Err(e) = device.emit_changed(&event_bus) {
+				tracing::warn!(
+					device_id = %device_id,
+					error = %e,
+					"Failed to emit device ResourceChanged event"
+				);
+			}
+		});
+	}
+
+	/// Load paired devices from persistence on startup
+	pub async fn load_paired_devices(&mut self) -> Result<Vec<Uuid>> {
+		let paired_devices = self.persistence.load_paired_devices().await?;
+		let mut loaded_device_ids = Vec::new();
+
+		for (device_id, persisted_device) in paired_devices {
+			// Add device to registry in Paired state
+			let state = DeviceState::Paired {
+				info: persisted_device.device_info.clone(),
+				session_keys: persisted_device.session_keys.clone(),
+				paired_at: persisted_device.paired_at,
+			};
+
+			self.devices.insert(device_id, state);
+			loaded_device_ids.push(device_id);
+
+			// Restore node-to-device mapping so incoming connections can find this device
+			if let Ok(node_id) = persisted_device
+				.device_info
+				.network_fingerprint
+				.node_id
+				.parse::<EndpointId>()
+			{
+				self.node_to_device.insert(node_id, device_id);
+				self.logger
+					.debug(&format!(
+						"Restored node-to-device mapping for {}: {} -> {}",
+						persisted_device.device_info.device_name, node_id, device_id
+					))
+					.await;
+			} else {
+				self.logger
+					.warn(&format!(
+						"Failed to parse node ID for device {} during load",
+						persisted_device.device_info.device_name
+					))
+					.await;
+			}
+
+			// Cache the paired device slug for pre-library address resolution
+			if let Err(e) = self
+				.device_manager
+				.cache_paired_device(persisted_device.device_info.device_slug.clone(), device_id)
+			{
+				self.logger
+					.warn(&format!(
+						"Failed to cache paired device slug for {}: {}",
+						persisted_device.device_info.device_name, e
+					))
+					.await;
+			}
+		}
+
+		Ok(loaded_device_ids)
+	}
+
+	/// Get devices that should auto-reconnect
+	pub async fn get_auto_reconnect_devices(&self) -> Result<Vec<(Uuid, PersistedPairedDevice)>> {
+		self.persistence.get_auto_reconnect_devices().await
+	}
+
+	/// Add a discovered node
+	pub fn add_discovered_node(
+		&mut self,
+		device_id: Uuid,
+		node_id: EndpointId,
+		node_addr: EndpointAddr,
+	) {
+		let state = DeviceState::Discovered {
+			node_id,
+			node_addr,
+			discovered_at: Utc::now(),
+		};
+
+		self.devices.insert(device_id, state);
+		self.node_to_device.insert(node_id, device_id);
+	}
+
+	/// Start pairing process for a device
+	pub fn start_pairing(
+		&mut self,
+		device_id: Uuid,
+		node_id: EndpointId,
+		session_id: Uuid,
+		node_addr: EndpointAddr,
+	) -> Result<()> {
+		let state = DeviceState::Pairing {
+			node_id,
+			session_id,
+			node_addr,
+			started_at: Utc::now(),
+		};
+
+		self.devices.insert(device_id, state);
+		self.node_to_device.insert(node_id, device_id);
+		self.session_to_device.insert(session_id, device_id);
+
+		Ok(())
+	}
+
+	pub fn get_device_name(&self) -> Result<String> {
+		let config = self.device_manager.config().map_err(|e| {
+			NetworkingError::Protocol(format!("Failed to get device config: {}", e))
+		})?;
+		Ok(config.name)
+	}
+
+	/// Complete pairing for a device
+	pub async fn complete_pairing(
+		&mut self,
+		device_id: Uuid,
+		info: DeviceInfo,
+		session_keys: SessionKeys,
+		relay_url: Option<String>,
+		pairing_type: super::PairingType,
+		vouched_by: Option<Uuid>,
+		vouched_at: Option<DateTime<Utc>>,
+	) -> Result<()> {
+		// Parse node ID from network fingerprint
+		let node_id = info
+			.network_fingerprint
+			.node_id
+			.parse::<EndpointId>()
+			.map_err(|e| {
+				NetworkingError::Protocol(format!("Invalid node ID in network fingerprint: {}", e))
+			})?;
+
+		// Add node-to-device mapping so device can be found for messaging
+		self.node_to_device.insert(node_id, device_id);
+		self.logger
+			.debug(&format!(
+				"Added node-to-device mapping: {} -> {}",
+				node_id, device_id
+			))
+			.await;
+
+		let state = DeviceState::Paired {
+			info: info.clone(),
+			session_keys: session_keys.clone(),
+			paired_at: Utc::now(),
+		};
+
+		self.devices.insert(device_id, state);
+
+		// Cache the paired device slug for pre-library address resolution
+		if let Err(e) = self
+			.device_manager
+			.cache_paired_device(info.device_slug.clone(), device_id)
+		{
+			self.logger
+				.warn(&format!(
+					"Failed to cache paired device slug for {}: {}",
+					info.device_name, e
+				))
+				.await;
+		} else {
+			self.logger
+				.debug(&format!(
+					"Cached device slug: {} -> {}",
+					info.device_slug, device_id
+				))
+				.await;
+		}
+
+		// Persist the paired device for future reconnection (with relay_url for optimization)
+		if let Err(e) = self
+			.persistence
+			.add_paired_device(
+				device_id,
+				info.clone(),
+				session_keys.clone(),
+				relay_url,
+				pairing_type,
+				vouched_by,
+				vouched_at,
+			)
+			.await
+		{
+			self.logger
+				.warn(&format!(
+					"Failed to persist paired device {}: {}",
+					device_id, e
+				))
+				.await;
+			// Continue anyway - pairing succeeded even if persistence failed
+		} else {
+			self.logger
+				.debug(&format!("Persisted paired device: {}", device_id))
+				.await;
+		}
+
+		self.logger
+			.info(&format!(
+				"Paired device {} (slug: {}, id: {})",
+				info.device_name, info.device_slug, device_id
+			))
+			.await;
+
+		// Emit ResourceChanged event for UI reactivity
+		self.emit_device_changed(device_id, &info, false);
+
+		Ok(())
+	}
+
+	/// Mark device as connected
+	pub async fn mark_connected(
+		&mut self,
+		device_id: Uuid,
+		connection: ConnectionInfo,
+	) -> Result<()> {
+		let current_state = self
+			.devices
+			.get(&device_id)
+			.ok_or_else(|| NetworkingError::DeviceNotFound(device_id))?;
+
+		let (info, session_keys): (DeviceInfo, super::SessionKeys) = match current_state {
+			DeviceState::Paired {
+				info, session_keys, ..
+			} => (info.clone(), session_keys.clone()),
+			DeviceState::Disconnected {
+				info, session_keys, ..
+			} => (info.clone(), session_keys.clone()),
+			DeviceState::Discovered { node_id, .. } => {
+				// Need device info - this shouldn't happen normally
+				return Err(NetworkingError::Protocol(
+					"Cannot connect to unpaired device".to_string(),
+				));
+			}
+			DeviceState::Connected { .. } => {
+				return Err(NetworkingError::Protocol(
+					"Device already connected".to_string(),
+				));
+			}
+			DeviceState::Pairing { .. } => {
+				return Err(NetworkingError::Protocol(
+					"Device still pairing".to_string(),
+				));
+			}
+		};
+
+		let state = DeviceState::Connected {
+			info: info.clone(),
+			connection,
+			session_keys,
+			connected_at: Utc::now(),
+		};
+
+		self.devices.insert(device_id, state);
+
+		// Update persistence - device connected successfully
+		if let Err(e) = self
+			.persistence
+			.update_device_connection(device_id, true, None)
+			.await
+		{
+			self.logger
+				.warn(&format!(
+					"Failed to update device connection status {}: {}",
+					device_id, e
+				))
+				.await;
+		}
+
+		// Update device online status in library database
+		self.update_device_online_status(device_id, true).await;
+
+		// Emit ResourceChanged event for UI reactivity
+		self.emit_device_changed(device_id, &info, true);
+
+		Ok(())
+	}
+
+	/// Mark device as disconnected
+	pub async fn mark_disconnected(
+		&mut self,
+		device_id: Uuid,
+		reason: super::DisconnectionReason,
+	) -> Result<()> {
+		let current_state = self
+			.devices
+			.get(&device_id)
+			.ok_or_else(|| NetworkingError::DeviceNotFound(device_id))?;
+
+		let (info, session_keys) = match current_state {
+			DeviceState::Connected {
+				info, session_keys, ..
+			} => (info.clone(), session_keys.clone()),
+			DeviceState::Paired {
+				info, session_keys, ..
+			} => (info.clone(), session_keys.clone()),
+			_ => {
+				return Err(NetworkingError::Protocol(
+					"Cannot disconnect device that isn't connected".to_string(),
+				));
+			}
+		};
+
+		let state = DeviceState::Disconnected {
+			info: info.clone(),
+			session_keys,
+			last_seen: Utc::now(),
+			reason,
+		};
+
+		self.devices.insert(device_id, state);
+
+		// Update persistence - device disconnected
+		if let Err(e) = self
+			.persistence
+			.update_device_connection(device_id, false, None)
+			.await
+		{
+			self.logger
+				.warn(&format!(
+					"Failed to update device disconnection status {}: {}",
+					device_id, e
+				))
+				.await;
+		}
+
+		// Update device online status in library database
+		self.update_device_online_status(device_id, false).await;
+
+		// Emit ResourceChanged event for UI reactivity
+		self.emit_device_changed(device_id, &info, false);
+
+		Ok(())
+	}
+
+	/// Get device state by device ID
+	pub fn get_device_state(&self, device_id: Uuid) -> Option<&DeviceState> {
+		self.devices.get(&device_id)
+	}
+
+	/// Get device ID by peer ID
+	pub fn get_device_by_node(&self, node_id: EndpointId) -> Option<Uuid> {
+		self.node_to_device.get(&node_id).copied()
+	}
+
+	/// Get device ID by session ID
+	pub fn get_device_by_session(&self, session_id: Uuid) -> Option<Uuid> {
+		self.session_to_device.get(&session_id).copied()
+	}
+
+	/// Get all devices with their IDs and states
+	pub fn get_all_devices(&self) -> Vec<(Uuid, DeviceState)> {
+		self.devices
+			.iter()
+			.map(|(id, state)| (*id, state.clone()))
+			.collect()
+	}
+
+	/// Get all connected devices
+	pub fn get_connected_devices(&self) -> Vec<DeviceInfo> {
+		self.devices
+			.values()
+			.filter_map(|state| match state {
+				DeviceState::Connected { info, .. } => Some(info.clone()),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Get all paired devices (including disconnected)
+	pub fn get_paired_devices(&self) -> Vec<DeviceInfo> {
+		self.devices
+			.values()
+			.filter_map(|state| match state {
+				DeviceState::Paired { info, .. } => Some(info.clone()),
+				DeviceState::Connected { info, .. } => Some(info.clone()),
+				DeviceState::Disconnected { info, .. } => Some(info.clone()),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Remove a device from the registry
+	pub fn remove_device(&mut self, device_id: Uuid) -> Result<()> {
+		if let Some(state) = self.devices.remove(&device_id) {
+			// Clean up node-to-device mappings for all states
+			match &state {
+				DeviceState::Discovered { node_id, .. } | DeviceState::Pairing { node_id, .. } => {
+					self.node_to_device.remove(node_id);
+				}
+				DeviceState::Paired { info, .. }
+				| DeviceState::Connected { info, .. }
+				| DeviceState::Disconnected { info, .. } => {
+					// Extract node ID from network fingerprint and clean up mapping
+					if let Ok(node_id) =
+						info.network_fingerprint.node_id.parse::<iroh::EndpointId>()
+					{
+						self.node_to_device.remove(&node_id);
+					}
+				}
+			}
+
+			// Clean up session-to-device mapping for pairing state
+			if let DeviceState::Pairing { session_id, .. } = &state {
+				self.session_to_device.remove(session_id);
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Remove a paired device from persistence
+	pub async fn remove_paired_device(&self, device_id: Uuid) -> Result<bool> {
+		self.persistence.remove_paired_device(device_id).await
+	}
+
+	/// Get persisted paired device info
+	pub async fn get_persisted_device(
+		&self,
+		device_id: Uuid,
+	) -> Result<Option<PersistedPairedDevice>> {
+		self.persistence.get_paired_device(device_id).await
+	}
+
+	/// Get peer ID for a device
+	pub fn get_node_by_device(&self, device_id: Uuid) -> Option<EndpointId> {
+		// Look through node_to_device map in reverse
+		for (node_id, &dev_id) in &self.node_to_device {
+			if dev_id == device_id {
+				// Found node for device
+				return Some(*node_id);
+			}
+		}
+		// No peer found for device - check node_to_device mappings
+		None
+	}
+
+	/// Get node ID for a device (alias for get_node_by_device)
+	pub fn get_node_id_for_device(&self, device_id: Uuid) -> Option<EndpointId> {
+		self.get_node_by_device(device_id)
+	}
+
+	/// Check if a device is currently connected according to Iroh
+	///
+	/// This is the canonical way to check device connectivity. It queries Iroh's endpoint
+	/// directly to get real-time connection state, rather than relying on cached state.
+	///
+	/// Returns true if:
+	/// - Device UUID is mapped to an EndpointId
+	/// - Iroh reports latency for the connection (indicating active connection)
+	pub fn is_node_connected(&self, endpoint: &iroh::Endpoint, device_id: Uuid) -> bool {
+		// Get EndpointId for this device
+		let node_id = match self.get_node_id_for_device(device_id) {
+			Some(id) => id,
+			None => return false,
+		};
+
+		// Query Iroh for current connection state via latency
+		// latency() returns Some if there's an active connection
+		endpoint.latency(node_id).is_some()
+	}
+
+	/// Get device UUID from node ID
+	pub fn get_device_by_node_id(&self, node_id: EndpointId) -> Option<Uuid> {
+		self.node_to_device.get(&node_id).copied()
+	}
+
+	/// Update device connection state based on connection status
+	///
+	/// This is called by the connection monitor to update DeviceRegistry state
+	/// based on Iroh's actual connection state. This is cosmetic only - sync
+	/// routing uses is_node_connected() which queries Iroh directly.
+	pub async fn update_device_from_connection(
+		&mut self,
+		device_id: Uuid,
+		node_id: EndpointId,
+		is_connected: bool,
+		latency: Option<std::time::Duration>,
+	) -> Result<()> {
+		// Update node-to-device mapping
+		self.node_to_device.insert(node_id, device_id);
+
+		// Get current device state
+		let current_state = match self.devices.get(&device_id) {
+			Some(state) => state.clone(),
+			None => return Ok(()), // Device not in registry
+		};
+
+		// Determine if we should be in Connected state
+		let should_be_connected = is_connected;
+
+		match current_state {
+			DeviceState::Paired {
+				info, session_keys, ..
+			} if should_be_connected => {
+				// Transition from Paired to Connected
+				let state = DeviceState::Connected {
+					info: info.clone(),
+					session_keys,
+					connected_at: Utc::now(),
+					connection: ConnectionInfo {
+						latency_ms: latency.map(|d| d.as_millis() as u32),
+						rx_bytes: 0,
+						tx_bytes: 0,
+					},
+				};
+				self.devices.insert(device_id, state);
+
+				// Update persistence
+				self.persistence
+					.update_device_connection(device_id, true, None)
+					.await
+					.ok();
+
+				// Update device online status in library database
+				self.update_device_online_status(device_id, true).await;
+
+				// Emit ResourceChanged event for UI reactivity
+				self.emit_device_changed(device_id, &info, true);
+			}
+			DeviceState::Connected {
+				info,
+				session_keys,
+				connected_at,
+				mut connection,
+			} if should_be_connected => {
+				// Already connected, just update latency
+				connection.latency_ms = latency.map(|d| d.as_millis() as u32);
+				let state = DeviceState::Connected {
+					info,
+					session_keys,
+					connected_at,
+					connection,
+				};
+				self.devices.insert(device_id, state);
+				// No event emission for latency-only updates
+			}
+			DeviceState::Connected {
+				info, session_keys, ..
+			} if !should_be_connected => {
+				// Transition from Connected to Paired (connection lost)
+				let state = DeviceState::Paired {
+					info: info.clone(),
+					session_keys,
+					paired_at: Utc::now(),
+				};
+				self.devices.insert(device_id, state);
+
+				// Update persistence
+				self.persistence
+					.update_device_connection(device_id, false, None)
+					.await
+					.ok();
+
+				// Update device online status in library database
+				self.update_device_online_status(device_id, false).await;
+
+				// Emit ResourceChanged event for UI reactivity
+				self.emit_device_changed(device_id, &info, false);
+			}
+			_ => {
+				// No state change needed
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Get session keys for a device
+	pub fn get_session_keys(&self, device_id: Uuid) -> Option<super::SessionKeys> {
+		match self.devices.get(&device_id) {
+			Some(DeviceState::Paired { session_keys, .. }) => {
+				// Found session keys for paired device
+				Some(session_keys.clone())
+			}
+			Some(DeviceState::Connected { session_keys, .. }) => {
+				// Found session keys for connected device
+				Some(session_keys.clone())
+			}
+			Some(DeviceState::Disconnected { session_keys, .. }) => {
+				// Found session keys for disconnected device (session keys are preserved after disconnect)
+				Some(session_keys.clone())
+			}
+			_ => {
+				// Device not found or in a state without session keys (Discovered, Pairing)
+				None
+			}
+		}
+	}
+
+	/// Get all currently connected peer IDs
+	pub fn get_connected_nodes(&self) -> Vec<EndpointId> {
+		self.node_to_device.keys().cloned().collect()
+	}
+
+	/// Get our local device info
+	pub fn get_local_device_info(&self) -> Result<DeviceInfo> {
+		let device_id = self
+			.device_manager
+			.device_id()
+			.map_err(|e| NetworkingError::Protocol(format!("Failed to get device ID: {}", e)))?;
+
+		let config = self.device_manager.config().map_err(|e| {
+			NetworkingError::Protocol(format!("Failed to get device config: {}", e))
+		})?;
+		let device_name = config.name;
+		let device_slug = config.slug;
+
+		// TODO: Get actual values from device manager or system
+		Ok(DeviceInfo {
+			device_id,
+			device_name,
+			device_slug,
+			device_type: super::DeviceType::Desktop, // TODO: Detect actual device type
+			os_version: std::env::consts::OS.to_string(),
+			app_version: env!("CARGO_PKG_VERSION").to_string(),
+			network_fingerprint: crate::service::network::utils::identity::NetworkFingerprint {
+				node_id: "placeholder".to_string(), // Will be filled in by caller
+				public_key_hash: "placeholder".to_string(),
+			},
+			last_seen: Utc::now(),
+		})
+	}
+
+	/// Clean up expired sessions and old disconnected devices
+	pub fn cleanup_expired(&mut self) {
+		let now = Utc::now();
+		let mut to_remove = Vec::new();
+		let mut session_mappings_to_remove = Vec::new();
+
+		for (device_id, state) in &self.devices {
+			match state {
+				DeviceState::Pairing {
+					started_at,
+					session_id,
+					..
+				} => {
+					// Remove pairing sessions older than 10 minutes
+					if now.signed_duration_since(*started_at).num_minutes() > 10 {
+						to_remove.push(*device_id);
+						session_mappings_to_remove.push(*session_id);
+					}
+				}
+				DeviceState::Paired { paired_at, .. } => {
+					// Remove session mappings for paired devices older than 1 hour
+					// (pairing completed successfully, no need to keep session mapping)
+					if now.signed_duration_since(*paired_at).num_hours() > 1 {
+						// Find session ID to remove
+						for (session_id, &dev_id) in &self.session_to_device {
+							if dev_id == *device_id {
+								session_mappings_to_remove.push(*session_id);
+							}
+						}
+					}
+				}
+				DeviceState::Connected { .. } => {
+					// Remove session mappings for connected devices
+					// (no longer needed for active connections)
+					for (session_id, &dev_id) in &self.session_to_device {
+						if dev_id == *device_id {
+							session_mappings_to_remove.push(*session_id);
+						}
+					}
+				}
+				DeviceState::Disconnected { last_seen, .. } => {
+					// Remove disconnected devices older than 7 days
+					if now.signed_duration_since(*last_seen).num_days() > 7 {
+						to_remove.push(*device_id);
+					}
+				}
+				_ => {}
+			}
+		}
+
+		// Remove expired devices
+		for device_id in to_remove {
+			let _ = self.remove_device(device_id);
+		}
+
+		// Remove expired session mappings
+		for session_id in session_mappings_to_remove {
+			self.session_to_device.remove(&session_id);
+		}
+	}
+
+	/// Set a device as connected with its node ID
+	pub async fn set_device_connected(
+		&mut self,
+		device_id: Uuid,
+		node_id: EndpointId,
+	) -> Result<()> {
+		// Update the node_to_device mapping
+		self.node_to_device.insert(node_id, device_id);
+
+		// Extract info from current state for event emission
+		let info_for_event: Option<DeviceInfo> = {
+			let current_state = self
+				.devices
+				.get(&device_id)
+				.ok_or_else(|| NetworkingError::DeviceNotFound(device_id))?;
+
+			match current_state {
+				DeviceState::Paired {
+					info, session_keys, ..
+				} => {
+					let info_clone = info.clone();
+					let state = DeviceState::Connected {
+						info: info.clone(),
+						session_keys: session_keys.clone(),
+						connected_at: Utc::now(),
+						connection: ConnectionInfo {
+							latency_ms: None,
+							rx_bytes: 0,
+							tx_bytes: 0,
+						},
+					};
+					self.devices.insert(device_id, state);
+
+					if let Err(e) = self
+						.persistence
+						.update_device_connection(device_id, true, None)
+						.await
+					{
+						self.logger
+							.warn(&format!("Failed to update device connection info: {}", e))
+							.await;
+					}
+
+					Some(info_clone)
+				}
+				DeviceState::Connected { .. } => {
+					None // No state change
+				}
+				DeviceState::Disconnected {
+					info, session_keys, ..
+				} => {
+					let info_clone = info.clone();
+					let state = DeviceState::Connected {
+						info: info.clone(),
+						session_keys: session_keys.clone(),
+						connected_at: Utc::now(),
+						connection: ConnectionInfo {
+							latency_ms: None,
+							rx_bytes: 0,
+							tx_bytes: 0,
+						},
+					};
+					self.devices.insert(device_id, state);
+
+					if let Err(e) = self
+						.persistence
+						.update_device_connection(device_id, true, None)
+						.await
+					{
+						self.logger
+							.warn(&format!("Failed to update device connection info: {}", e))
+							.await;
+					}
+
+					Some(info_clone)
+				}
+				_ => {
+					return Err(NetworkingError::Protocol(
+						"Device must be paired before connecting".to_string(),
+					));
+				}
+			}
+		};
+
+		// Emit ResourceChanged event for UI reactivity (after releasing borrow)
+		if let Some(info) = info_for_event {
+			self.emit_device_changed(device_id, &info, true);
+		}
+
+		Ok(())
+	}
+}

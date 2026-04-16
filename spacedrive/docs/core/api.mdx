@@ -1,0 +1,308 @@
+---
+title: API
+sidebarTitle: API
+---
+
+<Note type="warning">
+  The API infrastructure is under active development. Some features described here are planned but not yet fully implemented. This document reflects both current implementation and planned architecture.
+</Note>
+
+The API infrastructure provides a secure, unified entry point for all Spacedrive operations. It handles authentication, authorization, session management, and request routing across CLI, Tauri desktop app, and native applications.
+
+## Architecture Overview
+
+All API requests flow through a common pipeline:
+
+```
+Application → SessionContext → ApiDispatcher → PermissionLayer → Operation
+```
+
+This design enforces security policies consistently while providing rich context to operations.
+
+## Session Management
+
+Sessions encapsulate all request context, replacing simple parameter passing with structured metadata:
+
+```rust
+// Create a device session (current implementation)
+let session = SessionContext::device_session(device_uuid, device_name)
+    .with_library(library_uuid);
+
+// Session includes pre-configured permissions and metadata
+```
+
+Sessions include:
+
+**Authentication Info**: Device or user credentials and authorization level.
+
+**Library Context**: Currently selected library for scoped operations.
+
+**Permission Set**: Granular permissions for the session.
+
+**Request Metadata**: Tracking information for auditing and debugging.
+
+## API Dispatcher
+
+The dispatcher provides a unified interface for all operations:
+
+```rust
+// Execute a library action
+let result = api.execute_library_action(
+    CreateLocationAction { path: "/Users/data" },
+    session
+).await?;
+
+// Execute a core query
+let libraries = api.execute_core_query(
+    ListLibrariesQuery {},
+    session
+).await?;
+```
+
+The dispatcher automatically:
+
+- Validates session permissions
+- Ensures library context for library operations
+- Tracks request metadata
+- Converts errors to API errors
+
+## Permission System
+
+Permissions control access to specific operations:
+
+```rust
+#[derive(Debug, Clone)]
+pub struct PermissionSet {
+    pub core: CorePermissions,
+    pub library: LibraryPermissions,
+    pub network: NetworkPermissions,
+    pub jobs: JobPermissions,
+}
+```
+
+Each category has granular permissions:
+
+```rust
+pub struct LibraryPermissions {
+    pub read_entries: bool,
+    pub write_entries: bool,
+    pub manage_locations: bool,
+    pub manage_tags: bool,
+    pub execute_jobs: bool,
+}
+```
+
+### Permission Enforcement
+
+Configure enforcement behavior:
+
+```rust
+// Development: Permissive mode (allows all operations)
+let api = ApiDispatcher::permissive(core_context);
+
+// Production: Enforce permissions
+let api = ApiDispatcher::new(core_context);
+```
+
+### Authorization Levels
+
+Four hierarchical levels provide increasing access:
+
+**None**: No authentication required (public operations only).
+
+**Device**: Authenticated device with basic permissions.
+
+**User**: Authenticated user with full library access.
+
+**Admin**: System administrator with all permissions.
+
+Higher levels inherit permissions from lower levels.
+
+## Error Handling
+
+API errors provide structured information for clients:
+
+```rust
+pub enum ApiError {
+    // Authentication/authorization failures
+    Unauthorized { required_level: AuthLevel },
+    PermissionDenied { operation: String, permission: String },
+
+    // Validation errors
+    ValidationError { field: String, message: String },
+    InvalidInput { details: String },
+
+    // Execution errors
+    OperationFailed { operation: String, error: String },
+    ResourceNotFound { resource: String, id: String },
+
+    // System errors
+    DatabaseError(String),
+    InternalError(String),
+}
+```
+
+Errors automatically map to HTTP status codes for REST endpoints.
+
+## Middleware Pipeline
+
+<Note type="warning">
+  Middleware pipeline is partially implemented. The infrastructure exists but middleware chaining is not yet active.
+</Note>
+
+Cross-cutting concerns are handled through composable middleware:
+
+```rust
+let pipeline = MiddlewarePipeline::new()
+    .with_logging()
+    .with_metrics()
+    .with_rate_limiting();
+```
+
+### Logging Middleware
+
+Tracks all requests with timing information:
+
+```
+[API] files.copy started (request_id: 7f3a2b1c)
+[API] files.copy completed in 145ms (request_id: 7f3a2b1c)
+```
+
+### Metrics Middleware
+
+Records operation metrics for monitoring:
+
+- Request count by operation
+- Response times (p50, p90, p99)
+- Error rates by type
+- Active request count
+
+## Request Sources
+
+Track where API calls originate:
+
+```rust
+pub enum RequestSource {
+    Cli,          // Command-line interface
+    Swift,        // iOS/macOS native application
+    Internal,     // Internal system calls
+    Other(String), // Other sources (including Tauri desktop app)
+}
+```
+
+<Note>
+  Tauri desktop app currently uses `Other("tauri")` or `Internal`. A dedicated `Tauri` variant is planned.
+</Note>
+
+This enables source-specific behavior like CLI-friendly error messages.
+
+## API Discovery
+
+<Note type="warning">
+  API discovery is a planned feature, not yet implemented.
+</Note>
+
+Applications will be able to query available operations:
+
+```rust
+// Planned feature
+let surface = api.describe_api();
+
+for op in surface.operations {
+    println!("{} - {}", op.name, op.description);
+    println!("  Permissions: {:?}", op.required_permissions);
+    println!("  Auth Level: {:?}", op.required_auth_level);
+}
+```
+
+This will power dynamic UI generation and permission checking.
+
+## Integration Examples
+
+### CLI Integration
+
+```rust
+// Create session from CLI context
+let session = api.create_base_session()?
+    .with_library(current_library_id());
+
+// Execute operation
+match api.execute_library_action(action, session).await {
+    Ok(result) => println!("Success: {:?}", result),
+    Err(ApiError::InsufficientPermissions { reason }) => {
+        eprintln!("Permission denied: {}", reason);
+    }
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+### Tauri Integration
+
+The Tauri desktop app integrates with the core through Rust FFI:
+
+```rust
+// Tauri command handlers call the API dispatcher
+#[tauri::command]
+async fn create_location(
+    path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Location, String> {
+    let session = state.api.create_base_session()
+        .map_err(|e| e.to_string())?
+        .with_library(state.current_library_id);
+
+    state.api.execute_library_action(
+        CreateLocationAction { path },
+        session
+    ).await.map_err(|e| e.to_string())
+}
+```
+
+The Tauri app can run the daemon in two modes:
+- **In-Process**: Daemon runs within the Tauri app process
+- **Background Process**: Daemon runs as a separate system process (requires macOS entitlements)
+
+See [apps/tauri/DAEMON_SETUP.md](../../apps/tauri/DAEMON_SETUP.md) for configuration details.
+
+### Swift Integration
+
+```swift
+// Swift SDK uses generated types with session management
+let session = SessionContext(
+    auth: deviceAuth,
+    library: currentLibrary.id,
+    source: .swift
+)
+
+let location = try await api.libraries.createLocation(
+    CreateLocationInput(path: "/Users/data"),
+    session: session
+)
+```
+
+## Security Best Practices
+
+**Always use strict permissions in production**: Development warnings help identify missing permissions during development.
+
+**Validate library context**: Library operations must have `current_library_id` set in the session.
+
+**Track request metadata**: Use request IDs for debugging distributed operations.
+
+**Handle errors appropriately**: Convert internal errors to user-friendly messages at the boundary.
+
+## Future Enhancements
+
+Planned improvements include:
+
+**User Authentication**: OAuth and session token support.
+
+**Rate Limiting**: Per-user and per-operation limits.
+
+**Request Caching**: Smart caching for read operations.
+
+**WebSocket Support**: Real-time operation subscriptions.
+
+<Note>
+	The API infrastructure is designed to be transport-agnostic. While examples
+	show Rust usage, the same patterns apply to REST endpoints and FFI boundaries.
+</Note>

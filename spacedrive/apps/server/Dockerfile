@@ -1,0 +1,95 @@
+# Spacedrive Server Docker Image
+# Builds sd-server with the apps/web bundle embedded via rust-embed.
+#
+# Prerequisite: `apps/web/dist/` must exist in the build context — run
+# `bun install && bun run build` in `apps/web/` before `docker build`.
+# CI workflows and the unified spacedrive+spacebot image handle this
+# automatically; this Dockerfile assumes the dist directory is ready.
+
+FROM debian:bookworm-slim AS builder
+
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/apt --mount=type=cache,target=/var/lib/apt \
+	apt-get update && apt-get install -y \
+	build-essential \
+	curl \
+	git \
+	pkg-config \
+	libssl-dev \
+	ca-certificates \
+	cmake \
+	nasm \
+	libavcodec-dev \
+	libavformat-dev \
+	libavutil-dev \
+	libswscale-dev \
+	libheif-dev
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:$PATH"
+
+WORKDIR /build
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+
+# Copy source code
+COPY core ./core
+COPY crates ./crates
+COPY apps/server ./apps/server
+
+# Embedded web UI assets — must be pre-built before `docker build` runs.
+COPY apps/web/dist ./apps/web/dist
+
+# Build server with media processing features
+RUN --mount=type=cache,target=/root/.cargo/registry \
+	--mount=type=cache,target=/root/.cargo/git \
+	--mount=type=cache,target=/build/target \
+	cargo build --release -p sd-server --features sd-core/heif,sd-core/ffmpeg && \
+	cp target/release/sd-server /usr/local/bin/sd-server
+
+#--
+# Runtime image
+#--
+FROM debian:bookworm-slim
+
+# Install runtime dependencies only
+RUN --mount=type=cache,target=/var/cache/apt --mount=type=cache,target=/var/lib/apt \
+	apt-get update && apt-get install -y \
+	libssl3 \
+	ca-certificates \
+	libavcodec59 \
+	libavformat59 \
+	libavutil57 \
+	libswscale6 \
+	libheif1 \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 spacedrive
+
+# Copy binary
+COPY --from=builder /usr/local/bin/sd-server /usr/bin/sd-server
+
+# Environment
+ENV DATA_DIR=/data \
+	PORT=8080 \
+	RUST_LOG=info,sd_core=debug
+
+# Expose HTTP port
+EXPOSE 8080
+
+# Expose P2P port
+EXPOSE 7373
+
+# Volume for persistent data
+VOLUME ["/data"]
+
+# Run as non-root user
+USER spacedrive:spacedrive
+
+# Start server
+ENTRYPOINT ["/usr/bin/sd-server"]
+CMD ["--data-dir", "/data"]

@@ -1,0 +1,54 @@
+//! Application configuration management
+
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+
+pub mod app_config;
+pub mod migration;
+
+pub use app_config::{
+	AppConfig, JobLoggingConfig, LogStreamConfig, LoggingConfig, ServiceConfig, SpacebotConfig,
+};
+pub use migration::Migrate;
+
+/// Default data directory: `~/.spacedrive` on desktop, platform data dir on mobile.
+pub fn default_data_dir() -> Result<PathBuf> {
+	#[cfg(not(any(target_os = "ios", target_os = "android")))]
+	let dir = dirs::home_dir()
+		.ok_or_else(|| anyhow!("Could not determine home directory"))?
+		.join(".spacedrive");
+
+	#[cfg(target_os = "ios")]
+	let dir = dirs::data_dir()
+		.ok_or_else(|| anyhow!("Could not determine data directory"))?
+		.join("spacedrive");
+
+	#[cfg(target_os = "android")]
+	let dir = dirs::data_dir()
+		.ok_or_else(|| anyhow!("Could not determine data directory"))?
+		.join("spacedrive");
+
+	// Create directory if it doesn't exist
+	fs::create_dir_all(&dir)?;
+
+	Ok(dir)
+}
+
+/// User preferences
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Preferences {
+	pub theme: String,    // "light", "dark", "system"
+	pub language: String, // ISO 639-1 code
+}
+
+impl Default for Preferences {
+	fn default() -> Self {
+		Self {
+			theme: "system".to_string(),
+			language: "en".to_string(),
+		}
+	}
+}

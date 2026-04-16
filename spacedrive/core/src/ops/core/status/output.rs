@@ -1,0 +1,62 @@
+use chrono::{DateTime, Utc};
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use uuid::Uuid;
+
+use crate::ops::libraries::list::output::LibraryInfo;
+use crate::ops::network::status::output::NetworkStatus;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct CoreStatus {
+	pub version: String,
+	pub built_at: String,
+	pub library_count: usize,
+	pub device_info: DeviceInfo,
+	pub libraries: Vec<LibraryInfo>,
+	pub services: ServiceStatus,
+	pub network: NetworkStatus,
+	pub system: SystemInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DeviceInfo {
+	pub id: Uuid,
+	pub name: String,
+	pub slug: String,
+	pub os: String,
+	pub hardware_model: Option<String>,
+	pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ServiceStatus {
+	pub location_watcher: ServiceState,
+	pub networking: ServiceState,
+	pub volume_monitor: ServiceState,
+	pub file_sharing: ServiceState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ServiceState {
+	pub running: bool,
+	pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct PairedDeviceInfo {
+	pub id: Uuid,
+	pub name: String,
+	pub os: String,
+	pub is_online: bool,
+	pub last_seen: DateTime<Utc>,
+	pub paired_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct SystemInfo {
+	pub uptime: Option<u64>, // seconds
+	pub data_directory: String,
+	pub instance_name: Option<String>,
+	pub current_library: Option<String>,
+}

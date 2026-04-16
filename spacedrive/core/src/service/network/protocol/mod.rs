@@ -1,0 +1,79 @@
+//! Protocol handling system for different message types
+
+pub mod file_delete;
+pub mod file_transfer;
+pub mod job_activity;
+pub mod library_messages;
+pub mod messaging;
+pub mod pairing;
+pub mod registry;
+pub mod sync;
+
+use crate::service::network::{NetworkingError, Result};
+use async_trait::async_trait;
+use iroh::EndpointId;
+use std::collections::HashMap;
+use uuid::Uuid;
+
+pub use file_delete::FileDeleteProtocolHandler;
+pub use file_transfer::{
+	FileMetadata, FileTransferMessage, FileTransferProtocolHandler, TransferDirection,
+	TransferMode, TransferSession,
+};
+pub use job_activity::{JobActivityMessage, JobActivityProtocolHandler, RemoteJobEvent};
+pub use library_messages::{LibraryDiscoveryInfo, LibraryMessage};
+pub use messaging::MessagingProtocolHandler;
+pub use pairing::{PairingMessage, PairingProtocolHandler, PairingSession, PairingState};
+pub use registry::ProtocolRegistry;
+pub use sync::{SyncMessage, SyncProtocolHandler};
+
+/// Trait for handling specific protocols over Iroh streams
+#[async_trait]
+pub trait ProtocolHandler: Send + Sync {
+	/// Get the protocol name
+	fn protocol_name(&self) -> &str;
+
+	/// Handle an incoming stream (bidirectional or unidirectional)
+	async fn handle_stream(
+		&self,
+		send: Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
+		recv: Box<dyn tokio::io::AsyncRead + Send + Unpin>,
+		remote_node_id: EndpointId,
+	);
+
+	/// Allow downcasting to concrete type for specialized methods
+	fn as_any(&self) -> &dyn std::any::Any;
+
+	/// Handle an incoming request (legacy compatibility)
+	async fn handle_request(&self, from_device: Uuid, request_data: Vec<u8>) -> Result<Vec<u8>>;
+
+	/// Handle an incoming response (legacy compatibility)
+	async fn handle_response(
+		&self,
+		from_device: Uuid,
+		from_node: EndpointId,
+		response_data: Vec<u8>,
+	) -> Result<()>;
+
+	/// Handle protocol-specific events
+	async fn handle_event(&self, event: ProtocolEvent) -> Result<()>;
+}
+
+/// Events that protocols can receive
+#[derive(Debug, Clone)]
+pub enum ProtocolEvent {
+	/// Device connected
+	DeviceConnected { device_id: Uuid },
+
+	/// Device disconnected
+	DeviceDisconnected { device_id: Uuid },
+
+	/// Connection failed
+	ConnectionFailed { device_id: Uuid, reason: String },
+
+	/// Custom protocol event
+	Custom {
+		protocol: String,
+		data: HashMap<String, serde_json::Value>,
+	},
+}
