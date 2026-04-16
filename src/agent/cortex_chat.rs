@@ -728,7 +728,7 @@ impl CortexChatSession {
                 agent
                     .prompt(&user_text)
                     .with_hook(hook.clone())
-                    .with_history(&mut history),
+                    .with_history(&history),
             )
             .await;
 

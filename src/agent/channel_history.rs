@@ -585,7 +585,7 @@ mod tests {
         let len_before = initial.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -631,7 +631,7 @@ mod tests {
         let len_before = initial.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -667,7 +667,7 @@ mod tests {
         let len_before = initial.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -705,7 +705,7 @@ mod tests {
         let len_before = guard.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -740,7 +740,7 @@ mod tests {
         let len_before = guard.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -807,7 +807,7 @@ mod tests {
         let len_before = 0;
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "reply delivered".to_string(),
         });
 
@@ -829,7 +829,7 @@ mod tests {
         let len_before = initial.len();
 
         let err = Err(PromptError::PromptCancelled {
-            chat_history: Box::new(history.clone()),
+            chat_history: history.clone(),
             reason: "skip delivered".to_string(),
         });
 
@@ -863,7 +863,7 @@ mod tests {
         // First turn: cancelled (reply tool fired) — not a retrigger
         apply_history_after_turn(
             &Err(PromptError::PromptCancelled {
-                chat_history: Box::new(poisoned_history.clone()),
+                chat_history: poisoned_history.clone(),
                 reason: "reply delivered".to_string(),
             }),
             &mut guard,

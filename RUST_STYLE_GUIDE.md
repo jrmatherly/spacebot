@@ -718,7 +718,7 @@ let agent = AgentBuilder::new(model.clone())
 ```rust
 // Non-streaming: borrows history mutably, appends in-place
 let response = agent.prompt(&user_message)
-    .with_history(&mut history)
+    .with_history(&history)
     .max_turns(5)
     .await?;
 
