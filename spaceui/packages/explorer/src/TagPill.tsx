@@ -32,7 +32,7 @@ export function TagPill({
 		>
 			<span
 				className={clsx(
-					"flex-shrink-0 rounded-full",
+					"shrink-0 rounded-full",
 					size === "xs" && "size-1",
 					size === "sm" && "size-1.5",
 					size === "md" && "size-2",

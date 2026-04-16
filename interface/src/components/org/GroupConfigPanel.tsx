@@ -79,7 +79,7 @@ export function GroupConfigPanel({
 							}`}
 						>
 							<span
-								className={`h-2 w-2 rounded-full flex-shrink-0 ${
+								className={`h-2 w-2 rounded-full shrink-0 ${
 									agentIds.has(id) ? "bg-accent" : "bg-app-line"
 								}`}
 							/>

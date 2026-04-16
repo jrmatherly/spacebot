@@ -209,7 +209,7 @@ export function AgentWorkers({agentId}: {agentId: string}) {
 	return (
 		<div className="flex h-full">
 			{/* Left column: worker list */}
-			<div className="flex w-[360px] flex-shrink-0 flex-col border-r border-app-line/50">
+			<div className="flex w-[360px] shrink-0 flex-col border-r border-app-line/50">
 				{/* Toolbar */}
 				<div className="flex items-center gap-3 border-b border-app-line/50 bg-app-dark-box/20 px-4 py-2.5">
 					<input

@@ -121,7 +121,7 @@ export function PortalComposer({
 							<button
 								type="button"
 								onClick={() => onRemoveFile(i)}
-								className="text-ink-faint hover:text-ink ml-0.5 flex-shrink-0 transition-colors"
+								className="text-ink-faint hover:text-ink ml-0.5 shrink-0 transition-colors"
 							>
 								<X size={12} weight="bold" />
 							</button>

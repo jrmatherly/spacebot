@@ -205,7 +205,7 @@ export function AgentCortex({agentId}: AgentCortexProps) {
 										onClick={() => setExpandedId(isExpanded ? null : event.id)}
 										className="flex w-full items-center gap-4 px-6 py-3 text-left transition-colors hover:bg-app-dark-box/30"
 									>
-										<span className="w-20 flex-shrink-0 text-tiny text-ink-faint">
+										<span className="w-20 shrink-0 text-tiny text-ink-faint">
 											{formatTimeAgo(event.created_at)}
 										</span>
 										<EventTypeBadge eventType={event.event_type} />
@@ -213,7 +213,7 @@ export function AgentCortex({agentId}: AgentCortexProps) {
 											{event.summary}
 										</span>
 										{event.details && (
-											<span className="flex-shrink-0 text-tiny text-ink-faint">
+											<span className="shrink-0 text-tiny text-ink-faint">
 												{isExpanded ? "v" : ">"}
 											</span>
 										)}

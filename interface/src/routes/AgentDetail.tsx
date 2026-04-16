@@ -972,7 +972,7 @@ function CortexEventsSection({
 							<span className="min-w-0 flex-1 truncate text-ink-dull">
 								{event.summary}
 							</span>
-							<span className="flex-shrink-0 text-tiny tabular-nums text-ink-faint">
+							<span className="shrink-0 text-tiny tabular-nums text-ink-faint">
 								{formatTimeAgo(event.created_at)}
 							</span>
 						</div>
@@ -987,7 +987,7 @@ function CortexEventBadge({type}: {type: string}) {
 	const color = CORTEX_EVENT_COLORS[type] ?? "bg-gray-500/20 text-gray-400";
 	const label = type.replace(/_/g, " ");
 	return (
-		<span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-tiny ${color}`}>
+		<span className={`shrink-0 rounded px-1.5 py-0.5 text-tiny ${color}`}>
 			{label}
 		</span>
 	);

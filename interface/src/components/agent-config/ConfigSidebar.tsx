@@ -15,7 +15,7 @@ export function ConfigSidebar({
 	identityData,
 }: ConfigSidebarProps) {
 	return (
-		<div className="flex w-52 flex-shrink-0 flex-col border-r border-app-line/50 bg-app-dark-box/20 overflow-y-auto">
+		<div className="flex w-52 shrink-0 flex-col border-r border-app-line/50 bg-app-dark-box/20 overflow-y-auto">
 			{/* General Group */}
 			<div className="flex flex-col gap-0.5 px-2 pt-3">
 				{SECTIONS.filter((s) => s.group === "general").map((section) => (

@@ -260,7 +260,7 @@ function FileRow({
 	return (
 		<div className="group flex items-center gap-4 rounded-lg border border-app-line bg-app-dark-box/30 px-4 py-3">
 			{/* File icon */}
-			<div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-app-box text-xs text-ink-faint">
+			<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-app-box text-xs text-ink-faint">
 				{file.filename.split(".").pop()?.toUpperCase() ?? "TXT"}
 			</div>
 
@@ -296,7 +296,7 @@ function FileRow({
 			</div>
 
 			{/* Status badge - centered on the right */}
-			<div className="flex-shrink-0">
+			<div className="shrink-0">
 				<StatusBadge status={file.status} />
 			</div>
 
@@ -305,7 +305,7 @@ function FileRow({
 				<button
 					onClick={onDelete}
 					disabled={isDeleting}
-					className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint hover:bg-app-box transition-colors disabled:opacity-50"
+					className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint hover:bg-app-box transition-colors disabled:opacity-50"
 					title="Delete file"
 				>
 					{isDeleting ? (
