@@ -27,7 +27,7 @@
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.0",
     "react-loader-spinner": "^8.0.2",
-    "react-markdown": "^9.0.0",
+    "react-markdown": "^10.1.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0"
   },
@@ -48,7 +48,7 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.0.0",
     "@react-sigma/core": "^4.0.0",
-    "graphology": "^0.25.0",
+    "graphology": "^0.26.0",
     "sigma": "^3.0.0"
   }
 }
