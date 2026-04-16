@@ -21,20 +21,20 @@ Six packages, all published at the same version (currently `0.2.3`):
 | `@spacedrive/ai` | AI agent interaction components |
 | `@spacedrive/explorer` | File management components |
 
-`primitives`, `forms`, `ai`, `explorer` are **linked** in `.changeset/config.json` — a version bump to one bumps all four in lockstep. `tokens` and `icons` version independently.
+`primitives`, `forms`, `ai`, `explorer` are **linked** in `.changeset/config.json`. A version bump to one bumps all four in lockstep. `tokens` and `icons` version independently.
 
 ## Release Workflow (Changesets)
 
 1. Make code changes.
-2. `bun run changeset` — creates `spaceui/.changeset/<random>.md` capturing the change.
-3. PR merges the changeset. Never hand-edit `CHANGELOG.md` — changesets drive it.
+2. `bun run changeset` creates `spaceui/.changeset/<random>.md` capturing the change.
+3. PR merges the changeset. Never hand-edit `CHANGELOG.md`. Changesets drive it.
 4. Release workflow runs `bun run version-packages` (consumes changesets, bumps versions, rewrites CHANGELOGs) then `bun run publish`.
 
 If you see an unreleased `.changeset/*.md` file queued, the next release will consume it. Don't delete queued changesets.
 
 ## Tailwind v4
 
-All packages target Tailwind v4. **No `tailwind.config.js`** — config lives in CSS via `@theme` blocks (see `packages/tokens/src/css/theme.css`). Consumer apps `@import "@spacedrive/tokens/theme.css"` to get the design tokens as auto-generated utilities.
+All packages target Tailwind v4. **No `tailwind.config.js`**. Config lives in CSS via `@theme` blocks (see `packages/tokens/src/css/theme.css`). Consumer apps `@import "@spacedrive/tokens/theme.css"` to get the design tokens as auto-generated utilities.
 
 Canonical v4 class syntax (adopted in PR #45): `class!` not `!class`, `data-X:` not `data-[X]:`, `z-N` not `z-[N]`, `*-(--X)` not `*-[var(--X)]`, numeric spacing.
 

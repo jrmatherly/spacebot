@@ -12,8 +12,8 @@ Tools are the agent's interface to side effects. Every LLM-callable capability l
 
 Every tool has **two** files:
 
-1. `src/tools/<name>.rs` — the Rust implementation
-2. `prompts/en/tools/<name>_description.md.j2` — the description the LLM sees (Jinja2 template, 49 tool descriptions currently exist)
+1. `src/tools/<name>.rs`: the Rust implementation
+2. `prompts/en/tools/<name>_description.md.j2`: the description the LLM sees (Jinja2 template, 49 tool descriptions currently exist)
 
 If one is present and the other isn't, something is wrong.
 
@@ -57,7 +57,7 @@ impl Tool for <Name>Tool {
 The `.md.j2` file is the first thing the LLM reads about the tool. It shapes tool-call behavior more than the Rust code does.
 
 - **First line = one-sentence purpose.** Concrete, action-oriented. "Manage scheduled tasks (cron jobs). Actions: `create`, `list`, `delete`."
-- **Parameter semantics next.** Anything the JSON schema alone doesn't convey — units, defaults, legacy fields, delivery formats.
+- **Parameter semantics next.** Anything the JSON schema alone doesn't convey: units, defaults, legacy fields, delivery formats.
 - **Worked examples.** At least one, often several. Agents pattern-match on these more than on the schema.
 - **Failure modes.** When will this tool refuse? What errors can the model recover from?
 
@@ -71,16 +71,16 @@ Jinja2 variables (`{{ channel_id }}`, `{{ agent_name }}`) must match the `Prompt
 
 ## Sandbox Discipline
 
-If the tool reads or writes files on disk, route through `src/sandbox/`. Never `tokio::fs::read(path)` directly — the sandbox enforces the permission model and resolves paths relative to the agent's data directory.
+If the tool reads or writes files on disk, route through `src/sandbox/`. Never `tokio::fs::read(path)` directly. The sandbox enforces the permission model and resolves paths relative to the agent's data directory.
 
 ## Cross-Cutting Rules That Apply Here
 
-- Async / state safety: see `.claude/rules/async-state-safety.md` — applies because `src/tools/**/*.rs` interacts with agent state.
+- Async / state safety: see `.claude/rules/async-state-safety.md`. Applies because `src/tools/**/*.rs` interacts with agent state.
 - Error handling + `tracing` + naming: see `.claude/rules/rust-essentials.md` and `rust-patterns.md`.
 
 ## Verification Before Calling It Done
 
-- `cargo check --all-targets` — the `Tool` trait impl is strict about associated types
-- `cargo test --lib` — any tests in the tool module pass
+- `cargo check --all-targets`: the `Tool` trait impl is strict about associated types
+- `cargo test --lib`: any tests in the tool module pass
 - Grep `src/tools.rs` to confirm the module is declared
-- Open the `.md.j2` file and read the first 20 lines out loud — if the purpose isn't obvious to you, it won't be obvious to the LLM
+- Open the `.md.j2` file and read the first 20 lines out loud. If the purpose isn't obvious to you, it won't be obvious to the LLM.

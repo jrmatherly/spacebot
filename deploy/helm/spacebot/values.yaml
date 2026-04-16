@@ -114,7 +114,7 @@ service:
         port: 19898
         protocol: HTTP
       # Prometheus metrics (feature-gated in the binary; leave the port open
-      # in the Service — ServiceMonitor won't scrape if metrics are disabled)
+      # in the Service. ServiceMonitor won't scrape if metrics are disabled.)
       metrics:
         port: 9090
         protocol: HTTP
@@ -131,7 +131,7 @@ persistence:
     globalMounts:
       - path: /data
 
-# Prometheus Operator ServiceMonitor — only meaningful if the binary is
+# Prometheus Operator ServiceMonitor. Only meaningful if the binary is
 # built with the `metrics` feature. app-template renders this into the
 # monitoring namespace only when the CRD is present.
 serviceMonitor:

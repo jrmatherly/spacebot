@@ -1,6 +1,6 @@
 # Spacebot Helm Values
 
-Kubernetes deployment values for Spacebot. This directory does **not** ship a Helm chart — it ships values for the upstream `bjw-s-labs/app-template` chart, which every app in the target cluster uses.
+Kubernetes deployment values for Spacebot. This directory does **not** ship a Helm chart. It ships values for the upstream `bjw-s-labs/app-template` chart, which every app in the target cluster uses.
 
 ## Why values-only (not a wrapper chart)
 
@@ -69,7 +69,7 @@ helm template ... | kubeconform -strict -summary
 **In scope** (lives here):
 
 - Image: `ghcr.io/jrmatherly/spacebot:v0.4.1` (override via cluster `HelmRelease` per release).
-- Controller: `Deployment`, `replicas: 1`, `strategy: Recreate`. Embedded databases (SQLite, LanceDB, redb) use file-level locking; multi-replica isn't supported, and `RollingUpdate` would deadlock on the RWO PVC.
+- Controller: `Deployment`, `replicas: 1`, `strategy: Recreate`. Embedded databases (SQLite, LanceDB, redb) use file-level locking, so multi-replica isn't supported and `RollingUpdate` would deadlock on the RWO PVC.
 - Ports: `19898` (HTTP API + UI), `9090` (Prometheus metrics, feature-gated).
 - Volume: single `persistentVolumeClaim` at `/data` holding all three databases.
 - Probes: liveness / readiness / startup all hit `/api/health`. Startup gives 150 s grace for SQLite migrations.
@@ -100,7 +100,7 @@ templates/config/kubernetes/apps/ai/spacebot/app/
 └── kustomization.yaml
 ```
 
-The `HelmRelease`'s `spec.values:` block is populated from `deploy/helm/spacebot/values.yaml` in this repo — either copied inline or referenced via a Flux `valuesFrom`/ConfigMap pattern. Cluster additions (ingress, secrets, network policy) live only in the cluster repo.
+The `HelmRelease`'s `spec.values:` block is populated from `deploy/helm/spacebot/values.yaml` in this repo, either copied inline or referenced via a Flux `valuesFrom`/ConfigMap pattern. Cluster additions (ingress, secrets, network policy) live only in the cluster repo.
 
 ## When to revisit this approach
 
@@ -109,6 +109,6 @@ The values-only approach is right while Spacebot deploys to a single cluster wit
 ## References
 
 - Decision record: `.scratchpad/k8s-helm-scaffold.md`
-- Upstream chart: [bjw-s-labs/helm-charts](https://github.com/bjw-s-labs/helm-charts) — `app-template`
+- Upstream chart: [bjw-s-labs/helm-charts](https://github.com/bjw-s-labs/helm-charts), `app-template`
 - Cluster repo pattern: `/Users/jason/dev/ai-k8s/talos-ai-cluster/templates/config/kubernetes/apps/ai/` (litellm, langfuse)
 - Cluster deploy workflow: `/cluster-deploy` skill

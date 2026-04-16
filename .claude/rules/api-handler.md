@@ -9,9 +9,9 @@ HTTP handlers for the daemon's REST API. Served by Axum on port 19898, consumed 
 
 ## File Layout
 
-- One file per resource under `src/api/<resource>.rs` (agents, channels, cron, memories, tasks, etc. — 32 handler files currently).
+- One file per resource under `src/api/<resource>.rs` (agents, channels, cron, memories, tasks, etc.). 32 handler files currently.
 - `src/api/server.rs` assembles the router.
-- `src/api/state.rs` defines `ApiState` — the shared Arc-bundled dependencies every handler can extract.
+- `src/api/state.rs` defines `ApiState`, the shared Arc-bundled dependencies every handler can extract.
 
 ## Handler Signature Shape
 
@@ -31,9 +31,9 @@ pub(super) async fn get_agent_overview(
 }
 ```
 
-- Return type is `Result<Json<T>, StatusCode>`. There is no custom `ApiError` enum in this codebase — errors are mapped to `StatusCode` inline and logged via `tracing::warn!` / `tracing::error!`.
+- Return type is `Result<Json<T>, StatusCode>`. There is no custom `ApiError` enum in this codebase. Errors are mapped to `StatusCode` inline and logged via `tracing::warn!` / `tracing::error!`.
 - Use `StatusCode::NOT_FOUND` for missing resources, `StatusCode::INTERNAL_SERVER_ERROR` for unexpected failures. Never leak internal error strings in the HTTP response body.
-- Handlers are `pub(super)` unless there's a reason to expose them further — the router in `server.rs` imports them via `super::`.
+- Handlers are `pub(super)` unless there's a reason to expose them further. The router in `server.rs` imports them via `super::`.
 
 ## OpenAPI Generation (utoipa)
 
@@ -59,7 +59,7 @@ CI runs `just check-typegen` which diffs regenerated schema against committed. A
 
 ## State Access
 
-`ApiState` is the single source of truth for shared handles. Don't reach into globals or process-level statics — pull what you need out of `State(state): State<Arc<ApiState>>`. If you need a new handle, add it to `ApiState` in `src/api/state.rs` rather than threading it as a separate extractor.
+`ApiState` is the single source of truth for shared handles. Don't reach into globals or process-level statics. Pull what you need out of `State(state): State<Arc<ApiState>>`. If you need a new handle, add it to `ApiState` in `src/api/state.rs` rather than threading it as a separate extractor.
 
 ## Data Layer
 
@@ -69,7 +69,7 @@ CI runs `just check-typegen` which diffs regenerated schema against committed. A
 
 ## Auth
 
-Routes that require authentication take the auth extractor as the second argument (between `State` and the path/query/body extractors). If you're adding an authenticated route, grep existing handlers for the pattern — consistency matters more than cleverness.
+Routes that require authentication take the auth extractor as the second argument (between `State` and the path/query/body extractors). If you're adding an authenticated route, grep existing handlers for the pattern. Consistency matters more than cleverness.
 
 ## Hosted-Deployment Considerations
 
@@ -78,6 +78,6 @@ Some handlers check `SPACEBOT_DEPLOYMENT=hosted` and apply limits (e.g. `hosted_
 ## Verification Before Calling It Done
 
 - `cargo check --all-targets`
-- `just typegen` then check `git status` — if `interface/src/api/schema.d.ts` changed, commit it
-- `just check-typegen` — must pass
-- Hit the endpoint manually against a running daemon (curl to `http://localhost:19898/api/<route>`) to confirm the status codes and shape
+- `just typegen` then check `git status`. If `interface/src/api/schema.d.ts` changed, commit it.
+- `just check-typegen` must pass.
+- Hit the endpoint manually against a running daemon (curl to `http://localhost:19898/api/<route>`) to confirm the status codes and shape.
