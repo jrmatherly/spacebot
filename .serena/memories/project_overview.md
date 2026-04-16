@@ -7,7 +7,7 @@
 ## Tech Stack
 - **Runtime:** Tokio async
 - **HTTP Framework:** Axum 0.8
-- **Database:** SQLite via sqlx 0.8 (42 agent + 6 global migrations)
+- **Database:** SQLite via sqlx 0.8 (42 migrations in flat `migrations/` directory, 2026-02 → 2026-04)
 - **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb 4.0 (embedded)
 - **LLM Framework:** Rig v0.35 (agentic loop framework)
@@ -15,7 +15,8 @@
 - **Serialization:** serde/serde_json 1.0
 - **Logging:** tracing 0.1
 - **Error Handling:** thiserror + anyhow
-- **Discord:** Serenity (git next branch, uses tokio-tungstenite 0.28 + rustls 0.23)\n- **WebSocket:** tokio-tungstenite 0.28
+- **Discord:** Serenity (git `next` branch — pulls rustls 0.23 + tokio-tungstenite 0.28 to resolve rustls-webpki audit advisories)
+- **WebSocket:** tokio-tungstenite 0.28
 - **Metrics:** Prometheus (feature-gated behind `metrics` feature)
 - **macOS Keychain:** security-framework 3
 
