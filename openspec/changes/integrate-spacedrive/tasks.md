@@ -40,12 +40,12 @@
 
 ## 8. Commit and Verify
 
-- [ ] 8.1 Run `openspec validate integrate-spacedrive` to verify change artifact structure
-- [ ] 8.2 Run `cargo fmt --all -- --check` to verify no formatting drift (Spacedrive's `.rustfmt.toml` must not apply at root)
-- [ ] 8.3 Run `cargo check` to verify Spacebot still compiles with workspace exclude
-- [ ] 8.4 Verify Docker context excludes Spacedrive: `docker build --target builder -t spacebot-test . 2>&1 | tee /tmp/docker-build.log && ! grep -qi 'spacedrive' /tmp/docker-build.log` (should produce no matches)
-- [ ] 8.5 Stage all changes: `git add spacedrive/ Cargo.toml .gitignore .dockerignore .github/CODEOWNERS CLAUDE.md CONTRIBUTING.md README.md`
-- [ ] 8.6 Review staged diff: `git diff --cached --stat`
-- [ ] 8.7 Commit: `feat: add Spacedrive platform to repository`
-- [ ] 8.8 Verify clean state: `git status`
-- [ ] 8.9 (Optional cleanup) Remove duplicate source: `rm -rf .scratchpad/spacedrive` once in-tree copy is verified working
+- [x] 8.1 Run `openspec validate integrate-spacedrive` to verify change artifact structure → "Change 'integrate-spacedrive' is valid"
+- [x] 8.2 Run `cargo fmt --all -- --check` to verify no formatting drift (Spacedrive's `.rustfmt.toml` must not apply at root) → exit 0
+- [x] 8.3 Run `cargo check` to verify Spacebot still compiles with workspace exclude → exit 0
+- [x] 8.4 Verify Docker context excludes Spacedrive: build started, log grepped, **0 matches** for `spacedrive` in build log. Build was stopped after exclusion was confirmed (the test is exclusion of context, not a full Docker build of Spacebot which is already covered by CI).
+- [~] 8.5 ~~Single staged commit~~ — implementation produced 3 reviewable commits instead of one monolith: `chore: vendor Spacedrive platform under spacedrive/` (the 50MB copy), `chore(cargo): add workspace exclude guard for spacedrive/`, and `chore: wire spacedrive/ into ignores, codeowners, and docs`. Bisect-friendly.
+- [~] 8.6 ~~Review staged diff~~ — superseded by per-commit `git log --shortstat` review.
+- [~] 8.7 ~~Single feat commit~~ — see 8.5.
+- [ ] 8.8 Verify clean state: `git status` (will run after final tasks.md update)
+- [ ] 8.9 (Optional cleanup) Remove duplicate source: `rm -rf .scratchpad/spacedrive` once in-tree copy is verified working — deferred to a follow-up; touches the main worktree, not this branch's responsibility.
