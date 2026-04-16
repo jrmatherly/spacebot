@@ -322,14 +322,14 @@ export function Dialog<S extends FieldValues>({
 				show ? (
 					<RDialog.Portal forceMount>
 						<AnimatedDialogOverlay
-							className="fixed inset-0 z-[102] m-px grid place-items-center overflow-y-auto rounded-xl bg-app/50"
+							className="fixed inset-0 z-102 m-px grid place-items-center overflow-y-auto rounded-xl bg-app/50"
 							style={{
 								opacity: styles.opacity,
 							}}
 						/>
 
 						<AnimatedDialogContent
-							className="!pointer-events-none fixed inset-0 z-[103] grid place-items-center overflow-y-auto"
+							className="pointer-events-none! fixed inset-0 z-103 grid place-items-center overflow-y-auto"
 							style={styles}
 							onInteractOutside={(e) =>
 								props.ignoreClickOutside && e.preventDefault()
@@ -344,14 +344,14 @@ export function Dialog<S extends FieldValues>({
 									}
 								}}
 								className={clsx(
-									"!pointer-events-auto my-8 min-w-[300px] max-w-[400px] rounded-xl",
+									"pointer-events-auto! my-8 min-w-[300px] max-w-[400px] rounded-xl",
 									"border border-app-line bg-app-box text-ink shadow-app-shade",
 									props.formClassName,
 								)}
 							>
 								{!props.hideHeader && (
 									<RDialog.Title className="flex items-center gap-2.5 border-b border-app-line bg-app-input/60 p-3 font-bold">
-										{props.icon && props.icon}
+										{props.icon}
 										{props.title}
 									</RDialog.Title>
 								)}

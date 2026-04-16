@@ -113,11 +113,11 @@ const NumberStepper = forwardRef<HTMLDivElement, NumberStepperProps>(
 								if (e.key === "Enter") commitInput();
 								if (e.key === "Escape") setEditing(false);
 							}}
-							className="min-w-[3rem] w-[4rem] bg-transparent text-center text-sm font-medium text-ink outline-none"
+							className="min-w-12 w-16 bg-transparent text-center text-sm font-medium text-ink outline-none"
 						/>
 					) : (
 						<span
-							className="min-w-[3rem] text-center text-sm font-medium text-ink cursor-text select-none"
+							className="min-w-12 text-center text-sm font-medium text-ink cursor-text select-none"
 							onDoubleClick={() => {
 								if (!disabled) {
 									setInputValue(String(allowFloat ? value.toFixed(1) : value));

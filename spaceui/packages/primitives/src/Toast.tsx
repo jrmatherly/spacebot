@@ -23,7 +23,7 @@ import {Loader} from "./Loader";
 
 export const TOAST_TIMEOUT = 4000;
 
-const actionButtonClassName = "!rounded !px-1.5 !py-0.5 !font-normal";
+const actionButtonClassName = "rounded! px-1.5! py-0.5! font-normal!";
 
 const toastClassName = clsx(
 	"w-full overflow-hidden rounded-md p-3 shadow-lg",
@@ -298,7 +298,7 @@ const PromiseToast = <T extends ToastPromiseData>({
 			icon={
 				!type &&
 				showLoader &&
-				(props.loader ?? <Loader className="!h-4 !w-4" />)
+				(props.loader ?? <Loader className="h-4! w-4!" />)
 			}
 			closable={!!type}
 			onDismiss={props.onDismiss}

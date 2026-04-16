@@ -32,7 +32,7 @@ const itemStyles = cva(
 	{
 		variants: {
 			selected: {
-				true: "bg-accent text-white hover:!bg-accent",
+				true: "bg-accent text-white hover:bg-accent!",
 				undefined: "hover:bg-sidebar-selected/40",
 				false: "hover:bg-sidebar-selected/40",
 			},
@@ -108,7 +108,7 @@ export const Button = forwardRef<HTMLButtonElement, UIButtonProps>(
 				{children}
 				<span className="grow" />
 				<CaretDown
-					className="ml-2 w-[12px] shrink-0 translate-y-px text-ink-dull transition-transform group-data-[open]:-translate-y-px group-data-[open]:rotate-180 group-radix-state-open:-translate-y-px group-radix-state-open:rotate-180"
+					className="ml-2 w-[12px] shrink-0 translate-y-px text-ink-dull transition-transform group-data-open:-translate-y-px group-data-open:rotate-180 group-radix-state-open:-translate-y-px group-radix-state-open:rotate-180"
 					aria-hidden="true"
 				/>
 			</UIButton>
