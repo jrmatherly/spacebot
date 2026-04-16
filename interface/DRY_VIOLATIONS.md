@@ -1,8 +1,8 @@
 # Interface DRY Violations & Hardcoded Patterns
 
-A comprehensive audit of ugly hardcoded stuff and DRY violations in the interface codebase.
+A comprehensive audit of hardcoded patterns and DRY violations in the interface codebase.
 
-**Last updated:** After round 2 of fixes
+**Last snapshot:** Round 2 of fixes (pre-2026-04). Several of the items below predate the `@spacedrive/primitives` migration and may no longer exist after the interface was retargeted onto the spaceui design system. Before fixing any entry, verify the pattern still appears in the current code.
 
 ---
 

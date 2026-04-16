@@ -1,5 +1,7 @@
 # @spacedrive/explorer
 
+> Changelog entries between 0.1.1 and the current `package.json` version were not authored via changesets; see `git log packages/explorer` for the detail. The 0.1.0 "Packages Included" bullet list below predates the addition of `@spacedrive/icons` — spaceui now ships 6 packages. The explorer package itself now exports only self-contained primitives (FileThumb, GridItem, RenameInput, TagPill); see `packages/explorer/README.md` and `docs/COMPONENT-AUDIT.md`.
+
 ## 0.1.1
 
 ### Patch Changes

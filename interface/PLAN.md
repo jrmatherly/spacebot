@@ -1,4 +1,6 @@
-# Spacebot Control UI
+# Spacebot Control UI — Original Bootstrap Plan (Historical)
+
+> **Status:** This document captures the original Phase 1–5 bootstrap plan for `interface/`. Phases 1–3 are complete: the axum HTTP server, Vite + React + TypeScript scaffolding, and the UI component set now live in the tree (the UI set migrated from an inline `src/ui/` tree to `@spacedrive/primitives` + siblings from the `spaceui/` workspace). Tailwind is on v4, not v3 as this document originally specified. Use it for historical context only; for current-state conventions, see `CLAUDE.md`, `spaceui/README.md`, and `spaceui/INTEGRATION.md`.
 
 A self-contained React web app living at `interface/` in the Spacebot repo, served by the Rust daemon via an embedded axum HTTP server. Copies Spacedrive's UI component library and color system. Uses spec-first OpenAPI with `openapi-fetch` + `openapi-typescript` for the data layer, TanStack Query for caching, and `rust-embed` to bake the built assets into the single binary.
 

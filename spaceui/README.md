@@ -11,11 +11,12 @@ SpaceUI is a standalone repository that houses all shared UI components, design 
 ```
 spaceui/
 ├── packages/
-│   ├── tokens/         # @spacedrive/tokens - CSS design tokens + raw colors
-│   ├── primitives/     # @spacedrive/primitives - Base UI components (40+)
-│   ├── forms/          # @spacedrive/forms - react-hook-form wrappers
-│   ├── ai/             # @spacedrive/ai - AI agent components (18)
-│   └── explorer/       # @spacedrive/explorer - File management (14)
+│   ├── tokens/         # @spacedrive/tokens - CSS-first design tokens (Tailwind v4)
+│   ├── primitives/     # @spacedrive/primitives - Base UI components (41)
+│   ├── forms/          # @spacedrive/forms - react-hook-form wrappers (7)
+│   ├── icons/          # @spacedrive/icons - file-type icons + extension badges (SVG)
+│   ├── ai/             # @spacedrive/ai - AI agent components (12)
+│   └── explorer/       # @spacedrive/explorer - File management (3)
 ├── examples/
 │   └── showcase/       # Interactive demo app
 ├── .storybook/         # Component documentation
@@ -88,11 +89,14 @@ import { Button, Card, Dialog } from '@spacedrive/primitives';
 // Import form fields
 import { InputField, SelectField } from '@spacedrive/forms';
 
+// Import file-type icons and resolution helpers
+import { getIcon } from '@spacedrive/icons/util';
+
 // Import AI components
 import { ToolCall, ChatComposer, Markdown } from '@spacedrive/ai';
 
 // Import explorer components
-import { FileGrid, PathBar, Inspector } from '@spacedrive/explorer';
+import { FileThumb, RenameInput, TagPill } from '@spacedrive/explorer';
 ```
 
 ### Tailwind Configuration
@@ -148,6 +152,15 @@ Form field wrappers built on react-hook-form.
 
 [Read more →](./packages/forms/README.md)
 
+### @spacedrive/icons
+
+File-type icons, extension badges, and icon resolution utilities. Ships raw SVG assets plus a `getIcon` resolver keyed on kind/extension. No React components — consumers render the SVGs themselves.
+
+**Exports:**
+- `@spacedrive/icons/icons` - React icon index
+- `@spacedrive/icons/svgs/*` - raw SVG assets
+- `@spacedrive/icons/util` - `getIcon(name, kind?)` resolver
+
 ### @spacedrive/ai
 
 AI agent interaction components.
@@ -155,36 +168,24 @@ AI agent interaction components.
 **Components:**
 - `ToolCall` - Tool invocation display
 - `Markdown` - Agent response renderer
-- `InlineWorkerCard` - Worker task card with transcript
+- `InlineWorkerCard`, `InlineBranchCard` - Worker/branch task cards with transcript
 - `ChatComposer` - Message input with model selection
-- `ModelSelect` - LLM model picker
-- `ProfileAvatar` - Deterministic avatar from seed
-- `AgentSelector` - Agent switching dropdown
-- `ConnectionStatus` - Connection state indicator
-- `TaskBoard`, `TaskCard` - Kanban task management
-- `MemoryGraph`, `MemoryList` - Memory visualization and list
-- `CronJobList` - Cron job management
-- `AutonomyPanel` - Autonomy level control
+- `ModelSelector` - LLM model picker
+- `MessageBubble` - Agent/user message shell
+- `TaskList`, `TaskRow`, `TaskDetail`, `TaskCreateForm` - Task surface
+- `TaskStatusIcon`, `TaskPriorityIcon` - Task metadata glyphs
 
 [Read more →](./packages/ai/README.md)
 
 ### @spacedrive/explorer
 
-File management and explorer components.
+File-surface primitives. Larger explorer views (FileGrid/FileList/PathBar/Inspector/QuickPreview) live in each consuming app — the UI library keeps only the self-contained pieces.
 
 **Components:**
-- `KindIcon` - File type icons
 - `FileThumb` - File thumbnail renderer
-- `TagPill` - Colored tag pill
-- `RenameInput` - Inline rename field
-- `FileRow` - Single row in list view
-- `FileGrid` - Grid layout of files
-- `FileList` - Table/list layout
-- `PathBar` - Breadcrumb navigation
-- `Inspector` - File metadata panel
-- `InspectorPanel` - Collapsible inspector section
-- `DragOverlay` - Drag and drop visual feedback
-- `QuickPreview` - Spacebar preview modal
+- `GridItem` - Grid cell shell
+- `RenameInput` - Inline rename field with extension awareness
+- `TagPill` - Colored tag pill with optional remove button
 
 [Read more →](./packages/explorer/README.md)
 
@@ -243,7 +244,7 @@ bun run publish
 
 ## Migration Guide
 
-See [SHARED-UI-STRATEGY.md](./SHARED-UI-STRATEGY.md) for the complete migration plan from existing Spacedrive and Spacebot UI codebases.
+See [docs/SHARED-UI-STRATEGY.md](./docs/SHARED-UI-STRATEGY.md) for the complete migration plan from existing Spacedrive and Spacebot UI codebases, and [docs/TAILWIND-V4-MIGRATION.md](./docs/TAILWIND-V4-MIGRATION.md) for the Tailwind v3→v4 migration spec.
 
 Quick start for migration:
 
@@ -286,8 +287,12 @@ Quick contributing workflow:
 
 ## Resources
 
-- [Design Strategy](./SHARED-UI-STRATEGY.md) - Migration plan & architecture
+- [Design Strategy](./docs/SHARED-UI-STRATEGY.md) - Migration plan & architecture
+- [Tailwind v4 Migration](./docs/TAILWIND-V4-MIGRATION.md) - v3→v4 migration spec
+- [Component Audit](./docs/COMPONENT-AUDIT.md) - Fidelity check vs real Spacedrive
+- [Repository Summary](./docs/REPO_SUMMARY.md) - Monorepo stats & tooling
 - [Contributing Guide](./CONTRIBUTING.md) - Development setup & guidelines
+- [Integration Guide](./INTEGRATION.md) - Consuming SpaceUI from an external project
 - [Package READMEs](./packages/) - Individual package documentation
 - [Radix UI](https://www.radix-ui.com/) - Primitives we build on
 - [Tailwind CSS](https://tailwindcss.com/) - Styling system

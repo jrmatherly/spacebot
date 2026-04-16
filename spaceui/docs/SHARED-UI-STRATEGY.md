@@ -29,7 +29,7 @@ A standalone repo — `spacedriveapp/spaceui` — that owns the entire shared de
 
 ### Package Structure
 
-The repo publishes multiple packages from a single monorepo. Domain-specific composites live in scoped packages under `packages/` — `ai/` for agent and AI interaction components, `explorer/` for file management components, with room for more as product surfaces grow.
+The repo publishes multiple packages from a single monorepo. Domain-specific composites live in scoped packages under `packages/` — `ai/` for agent and AI interaction components, `explorer/` for file-surface primitives, `icons/` for the Spacedrive file-type icon set, with room for more as product surfaces grow.
 
 ```
 spacedriveapp/spaceui/
@@ -119,23 +119,33 @@ spacedriveapp/spaceui/
 │   │   │   └── index.ts
 │   │   └── package.json         # peer deps: @spacedrive/primitives
 │   │
-│   └── tokens/                  # @spacedrive/tokens
+│   ├── icons/                   # @spacedrive/icons
+│   │   ├── svgs/                # raw SVG assets (kinds + extension badges)
+│   │   ├── icons/               # React icon index
+│   │   ├── util/                # getIcon resolver
+│   │   └── package.json
+│   │
+│   └── tokens/                  # @spacedrive/tokens (CSS-first, Tailwind v4)
 │       ├── src/
-│       │   ├── colors.ts        # semantic color definitions
-│       │   ├── tailwind-preset.ts
-│       │   ├── css/
-│       │   │   ├── base.css     # CSS custom properties
-│       │   │   └── themes/
-│       │   │       ├── dark.css
-│       │   │       └── light.css
-│       │   └── index.ts
+│       │   └── css/
+│       │       ├── theme.css    # @theme block — generates utilities
+│       │       ├── base.css     # base layer + default theme
+│       │       └── themes/
+│       │           ├── dark.css
+│       │           ├── light.css
+│       │           ├── midnight.css
+│       │           ├── noir.css
+│       │           ├── slate.css
+│       │           ├── nord.css
+│       │           └── mocha.css
 │       └── package.json
 │
 ├── turbo.json                   # or bun workspace config
 ├── tsconfig.base.json
-├── tailwind.config.ts           # base config using @spacedrive/tokens
 └── package.json                 # workspace root
 ```
+
+Tailwind is configured CSS-first (no `tailwind.config.ts` at root). See [TAILWIND-V4-MIGRATION.md](./TAILWIND-V4-MIGRATION.md) for the full migration spec.
 
 ### Package Responsibilities
 
