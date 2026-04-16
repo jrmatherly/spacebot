@@ -28,6 +28,13 @@
 - **Spacedrive:** Vendored upstream platform at `spacedrive/` — independent Cargo workspace with its own toolchain (`stable`), excluded via `[workspace] exclude = ["spacedrive"]` in root `Cargo.toml`. HTTP integration is planned but not yet wired.
 - **Desktop App:** Tauri (`desktop/`)
 
+## Security
+
+- Dependabot alerts in spacebot-owned code that are blocked on upstream crate updates are tracked in-repo at `docs/security/deferred-advisories.md` (GHSA, severity, blocker, unblock trigger)
+- Non-dismissal policy: deferred advisories stay `open` on the Security dashboard; do NOT dismiss via the GitHub API
+- Spacedrive-scoped Dependabot alerts (under `spacedrive/**`) remain open until the planned runtime integration; re-triaged at integration time
+- `.github/dependabot.yml` covers all shipped-code manifests (root cargo, desktop/src-tauri, interface, packages/api-client, spaceui and its sub-manifests, docs); it controls update-PR scoping only, not security-alert visibility
+
 ## Deployment
 - Docker images published to GHCR (ghcr.io/jrmatherly/spacebot)
 - Single binary, no server dependencies

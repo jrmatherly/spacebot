@@ -62,5 +62,6 @@ unimplemented = "deny"
 ```
 
 ## Migration Safety
-- NEVER edit existing migration files — treat as immutable
-- Always create new migration with new timestamp for schema changes
+- Prefer creating a new timestamped migration for schema changes
+- Historical migrations may be edited for formatting/clarity when semantics are preserved; SQLx stores checksums in `_sqlx_migrations` at apply time, so editing an already-applied migration will block startup on that database until checksums are repaired or the DB is reset
+- Never change the SQL semantics of a historical migration (causes silent schema drift between deployments)

@@ -6,7 +6,7 @@
 |---------|---------|
 | `just` | List all available recipes |
 | `just preflight` | Validate git/remote/auth state before pushing |
-| `just gate-pr` | Full PR gate: formatting, compile, migration safety, tests |
+| `just gate-pr` | Full PR gate: formatting, compile, clippy, unit tests, integration compile (migration-safety check disabled 2026-04-16; see CLAUDE.md Database Migrations section) |
 | `just fmt-check` | Check Rust formatting (`cargo fmt --all -- --check`) |
 | `just check-all` | `cargo check --all-targets` |
 | `just clippy-all` | `cargo clippy --all-targets` |
@@ -26,7 +26,7 @@
 
 ## Delivery Gates (Mandatory before push/PR)
 1. `just preflight` — validate git/remote/auth state
-2. `just gate-pr` — formatting, compile, migration safety, tests
+2. `just gate-pr` — formatting, compile, clippy, unit tests, integration compile
 
 ## Rust Commands
 | Command | Purpose |
