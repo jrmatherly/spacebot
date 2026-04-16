@@ -36,14 +36,14 @@
 
 ## 4. Deferred-Advisories Documentation
 
-- [ ] 4.1 Create `docs/security/deferred-advisories.md` with a header explaining the doc's purpose (in-repo tracking of upstream-blocked Dependabot alerts)
-- [ ] 4.2 Add an entry for alert #1 (lexical-core 0.7.6, GHSA-2326-pfpj-vx3h): severity low, current 0.7.6, patched 1.0.0, blocker `imap` 3.x migration (async-only API change), unblock trigger = `imap` crate publishes a stable 3.x
-- [ ] 4.3 Add an entry for alert #3 (lru 0.12.5 in root `Cargo.lock`, GHSA-rhfx-m35p-ff5j): severity low, current 0.12.5, patched 0.16.3, blocker `lancedb`→`tantivy` 0.24→0.25+ bump, unblock trigger = lancedb releases a version depending on tantivy 0.25+
-- [ ] 4.4 Add an entry for alert #15 (rand 0.8.5 in root `Cargo.lock`, GHSA-cq8v-f236-94qc): severity low, current 0.8.5, patched 0.9.3, blocker `rig-core` and `lancedb` transitive pins, unblock trigger = either crate releases using rand 0.9
-- [ ] 4.5 Add an entry for alert #18 (rand 0.8.5 in `desktop/src-tauri/Cargo.lock`, GHSA-cq8v-f236-94qc): severity low, blocker tauri transitive chain, unblock trigger = tauri releases using rand 0.9
-- [ ] 4.6 Add a footer note explaining the non-dismissal policy: these alerts remain open as tracking signal; do NOT dismiss via GitHub API
-- [ ] 4.7 Add a reference to `docs/security/deferred-advisories.md` in `CONTRIBUTING.md` under a security/dependency section (create the section if absent)
-- [ ] 4.8 Commit the new doc and `CONTRIBUTING.md` update together
+- [x] 4.1 Create `docs/security/deferred-advisories.md` with a header explaining the doc's purpose (in-repo tracking of upstream-blocked Dependabot alerts)
+- [x] 4.2 Add an entry for alert #1 (lexical-core 0.7.6, GHSA-2326-pfpj-vx3h): severity low, current 0.7.6, patched 1.0.0, blocker `imap` 3.x migration (async-only API change), unblock trigger = `imap` crate publishes a stable 3.x
+- [x] 4.3 Add an entry for alert #3 (lru 0.12.5 in root `Cargo.lock`, GHSA-rhfx-m35p-ff5j): severity low, current 0.12.5, patched 0.16.3, blocker `lancedb`→`tantivy` 0.24→0.25+ bump, unblock trigger = lancedb releases a version depending on tantivy 0.25+
+- [x] 4.4 Add an entry for alert #15 (rand 0.8.5 in root `Cargo.lock`, GHSA-cq8v-f236-94qc): severity low, current 0.8.5, patched 0.9.3, blocker `rig-core` and `lancedb` transitive pins, unblock trigger = either crate releases using rand 0.9
+- [x] 4.5 Add an entry for alert #18 (rand 0.8.5 in `desktop/src-tauri/Cargo.lock`, GHSA-cq8v-f236-94qc): severity low, blocker tauri transitive chain, unblock trigger = tauri releases using rand 0.9
+- [x] 4.6 Add a footer note explaining the non-dismissal policy: these alerts remain open as tracking signal; do NOT dismiss via GitHub API
+- [x] 4.7 Add a reference to `docs/security/deferred-advisories.md` in `CONTRIBUTING.md` under a security/dependency section (create the section if absent)
+- [x] 4.8 Commit the new doc and `CONTRIBUTING.md` update together
 
 ## 5. Verify and Handoff
 
