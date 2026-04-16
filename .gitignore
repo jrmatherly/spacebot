@@ -45,6 +45,7 @@ result/
 # Claude Code - local/personal files
 .claude/settings.local.json
 .claude/agent-memory*/
+.claude/scheduled_tasks.lock
 
 # Claude Code - legacy auto-generated (safe to ignore)
 .claude-context
