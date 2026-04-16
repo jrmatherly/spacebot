@@ -9,22 +9,60 @@ Systematic audit of Spacebot's project documentation to find drift between what 
 
 ## Scope
 
-This skill covers documentation **outside** session-sync's scope. Explicit targets:
+This skill covers documentation **outside** session-sync's scope. Roughly **505 markdown/MDX files** are tracked in the repo; after the exclusions below, ~210 are in scope for audit. Organized in two tiers.
+
+### Tier 1 — Shipped / User-Facing Documentation (highest drift impact)
 
 | Area | Files |
 |------|-------|
-| Repo root | `README.md`, `AGENTS.md`, `PROJECT_INDEX.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `METRICS.md`, `RUST_STYLE_GUIDE.md`, `SPACEUI_MIGRATION.md` |
-| Interface | `interface/DRY_VIOLATIONS.md`, `interface/PLAN.md` |
+| Repo root | `README.md`, `AGENTS.md`, `PROJECT_INDEX.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `METRICS.md`, `RUST_STYLE_GUIDE.md`, `SPACEUI_MIGRATION.md` (8 files) |
+| Interface | `interface/DRY_VIOLATIONS.md` |
 | SpaceUI root | `spaceui/README.md`, `spaceui/CONTRIBUTING.md`, `spaceui/INTEGRATION.md` |
-| SpaceUI docs | `spaceui/docs/COMPONENT-AUDIT.md`, `REPO_SUMMARY.md`, `SHARED-UI-STRATEGY.md`, `TAILWIND-V4-MIGRATION.md` |
+| SpaceUI internal docs | `spaceui/docs/{COMPONENT-AUDIT,REPO_SUMMARY,SHARED-UI-STRATEGY,TAILWIND-V4-MIGRATION}.md` |
 | SpaceUI changesets | `spaceui/.changeset/README.md` + `config.json` |
-| SpaceUI packages | `spaceui/packages/{tokens,primitives,forms,icons,ai,explorer}/{README.md,CHANGELOG.md}` |
-| Docs site | `docs/` (README, docker.md, mattermost.md, metrics.md, design-docs/*, security/*) |
+| SpaceUI packages | `spaceui/packages/{ai,explorer,forms,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` (`icons/` has no README — flag as 🔵 Missing or document why) |
+| Docs top-level | `docs/README.md`, `docs/docker.md`, `docs/mattermost.md`, `docs/metrics.md` |
+| Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
+| Design docs | `docs/design-docs/*.md` — 47 files; historical record, append-only |
+| Security policy | `docs/security/*.md` (tracked per project_overview memory) |
+| Transient plans | `docs/superpowers/plans/*.md` — completed ones should move to `.scratchpad/completed/` |
 
-**Explicitly out of scope** (delegate):
-- `CLAUDE.md` and Serena/auto-memory → `/session-sync`
-- Dependency version bumps → `/deps-update`
-- OpenSpec proposals → `/openspec-*`
+### Tier 2 — Internal / Operational Documentation
+
+These are lower-visibility but affect agent behavior, coding conventions, and internal state.
+
+| Area | Files |
+|------|-------|
+| Agent personas | `presets/*/{IDENTITY,ROLE,SOUL}.md` — 27 files across 9 presets. Changes here shape runtime agent behavior. |
+| Coding rules | `.claude/rules/*.md` — 7 files. Referenced by CLAUDE.md; drift propagates into every code change. |
+| Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
+| Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (21 top-level skills + 22 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
+| Runtime skills | `skills/builtin/*/SKILL.md` — 1 file (wiki-writing). Skills the daemon ships to agents. |
+| Canonical specs | `openspec/specs/*/spec.md` — 7 files. Source-of-truth for deps/integration. **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
+
+### Explicitly Out of Scope
+
+| Area | Reason | Delegate to |
+|------|--------|-------------|
+| `CLAUDE.md` | Session memory + instruction drift | `/session-sync` |
+| `.serena/memories/*.md` | Project memories | `/session-sync` |
+| `openspec/changes/archive/*` (37 files) | Immutable historical record — never edit archived specs | `/openspec-verify-change` (active only) |
+| `openspec/changes/<active>/*` | Active change artifacts | `/openspec-apply-change`, `/openspec-verify-change` |
+| `.codex/skills/*` (5), `.windsurf/skills/*` (5), `.windsurf/workflows/opsx-*` (5) | Mirror copies of `.claude/skills/openspec-*` for other agent platforms. Windsurf `opsx-*` workflows are thin wrappers that invoke the same skills. | Audit canonical source in `.claude/skills/`; mirrors are derived. |
+| `.full-review/*.md` (14 files) | Code-review framework templates, not project docs | N/A |
+| `spacedrive/` (241 tracked files) | Vendored upstream workspace with its own maintenance | Spacedrive upstream |
+| `.claude/worktrees/*` | Git-worktree checkout on another branch; not authoritative on `main` (not gitignored but 0 files tracked) | N/A — exclude |
+| `vendor/`, `node_modules/`, `target/`, `dist/`, `.next/`, `.source/`, `.turbo/`, `.cargo/`, `.code-review-graph/` | Build artifacts / dependency caches | N/A — ignored |
+| `.scratchpad/`, `.remember/`, `.worktrees/` | Gitignored; not authoritative state | N/A — exclude |
+| `packages/api-client/` | Top-level private workspace package (`"private": true`), no README by design | Document as "intentionally undocumented" |
+| `migrations/`, `prompts/`, `scripts/`, `nix/`, `examples/`, `tests/`, `src/`, `desktop/`, `.archon/`, `.github/`, `.githooks/` | Zero markdown files by design — don't re-investigate | N/A |
+| Dependency version bumps in any doc | | `/deps-update` |
+
+**Approximate scale:**
+- Tier 1 (user-facing): ~120 files
+- Tier 2 (operational): ~90 files
+- Out of scope: ~295 files (including vendored spacedrive and sibling-platform mirrors)
+- Full audit = ~210 files reviewed against ground truth
 
 ## When to Use
 
@@ -213,6 +251,20 @@ Apply only what's approved. For changelog-related fixes in `spaceui/`, remember 
 - `docs/design-docs/` is append-mostly. Don't retro-edit historical design docs; add new ones or append "Status updated" sections.
 - `docs/security/deferred-advisories.md` is policy-tracked (per `project_overview` memory) — changes here need context.
 
+### OpenSpec canonical specs (`openspec/specs/*/spec.md`)
+
+These describe the **current** state of dependency management, integration surfaces, and security posture. After an OpenSpec change is archived, its `specs/*/spec.md` content merges into the canonical `openspec/specs/*/spec.md` — but the spec file can still drift if implementation moves without a formal OpenSpec change. This is a docs-audit-owned slice because no other skill covers it.
+
+- Grep each spec for version strings, package names, file paths, and command examples; verify against actual manifests (`Cargo.toml`, `package.json`) and the tree.
+- If a spec references a file path: check the path exists. If a spec names a crate/package at a version: diff against the manifest.
+- If drift is found: recommend opening a formal OpenSpec change via `/openspec-propose` rather than inline-editing the spec, unless the drift is purely cosmetic (typo, wording).
+- Archived changes (`openspec/changes/archive/*`) are off-limits — never propose edits there.
+
+### Project skills (`.claude/skills/*/SKILL.md`)
+
+- When a new skill is added or renamed, `session-primer/references/skills-catalog.md` must be updated. This is the highest-velocity drift point in the meta-docs — check it every audit.
+- Skill reference files under `.claude/skills/<name>/references/` and `.claude/skills/<name>/guides/` are in scope but often nested deep. Use `find .claude/skills -name "*.md"` to enumerate before auditing.
+
 ## Common Mistakes
 
 | Mistake | Why it's wrong | Do instead |
@@ -223,6 +275,8 @@ Apply only what's approved. For changelog-related fixes in `spaceui/`, remember 
 | Rewriting migration docs to "clean them up" | Destroys historical record | Update status, append, never replace |
 | Fixing everything in one PR | Too big to review | Group by category, propose separate commits |
 | Trusting memory snapshots over live state | Memory is a snapshot, not ground truth | Re-verify every claim from git/files |
+| Auditing archived `openspec/changes/archive/*` files | They're immutable historical record by design | Skip — only audit active changes via `/openspec-verify-change` |
+| Auditing `.claude/worktrees/*` content | That's a different branch's checkout, not authoritative on `main` | Skip — those files belong to another branch's history |
 
 ## Quick Reference — Verification Commands
 
@@ -250,6 +304,20 @@ ls presets/ | wc -l                             # presets
 # Is a migration doc's "as of" date stale?
 git log -1 --format="%cI" -- spaceui/docs/TAILWIND-V4-MIGRATION.md
 git log --since="<that date>" --oneline -- spaceui/
+
+# Does a preset file reference tools/abilities that still exist?
+grep -rE "tool|command" presets/<name>/ROLE.md
+
+# Does a coding rule reference a file path that still exists?
+grep -rE '`src/[a-z]+\.rs`' .claude/rules/
+
+# Is every skill listed in skills-catalog.md?
+diff <(ls .claude/skills/ | grep -v '\.') \
+     <(grep -oE '/[a-z-]+$' .claude/skills/session-primer/references/skills-catalog.md | sort -u)
+
+# Does a canonical openspec spec still match reality?
+grep -oE '`[a-z_-]+`|[0-9]+\.[0-9]+\.[0-9]+' openspec/specs/<name>/spec.md
+# Then cross-check each against Cargo.toml / package.json / the tree
 ```
 
 ## Composition With Other Skills
@@ -259,3 +327,15 @@ git log --since="<that date>" --oneline -- spaceui/
 - Run **alongside** `/session-sync` for a full documentation + memory refresh
 - If findings touch CLAUDE.md → hand off to `/session-sync`
 - If findings require new doc files or heavy rewrites → propose via `/openspec-propose` first
+
+## When to Update THIS Skill
+
+This skill is itself Tier 2 documentation — it goes stale as the repo evolves. Revisit the scope tables above when any of these happen:
+
+- A new top-level directory is added (check for new docs in it; add to Tier 1 or explicit out-of-scope)
+- A new directory appears under `.claude/` (agents, rules, skills, or something new)
+- A new package is added to `spaceui/packages/` (update the package row)
+- A new agent-platform mirror is added (`.codex/`, `.windsurf/`, `.cursor/`, etc.) — add to out-of-scope
+- A new route group is added under `docs/content/docs/(...)/`
+- The `packages/api-client/` policy changes (currently private, no README — if it gains a README, move to Tier 1)
+- A new skill is created or an existing one is renamed — update `session-primer/references/skills-catalog.md` and verify this skill's scope still matches reality
