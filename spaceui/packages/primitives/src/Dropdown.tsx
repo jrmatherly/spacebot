@@ -102,13 +102,13 @@ export const Button = forwardRef<HTMLButtonElement, UIButtonProps>(
 			<UIButton
 				size="sm"
 				ref={ref as any}
-				className={clsx("group flex text-left", className)}
+				className={clsx("flex text-left", className)}
 				{...props}
 			>
 				{children}
 				<span className="grow" />
 				<CaretDown
-					className="ml-2 w-[12px] shrink-0 translate-y-px text-ink-dull transition-transform ui-open:-translate-y-px ui-open:rotate-180 group-radix-state-open:-translate-y-px group-radix-state-open:rotate-180"
+					className="ml-2 w-[12px] shrink-0 translate-y-px text-ink-dull transition-transform group-data-[open]:-translate-y-px group-data-[open]:rotate-180 group-radix-state-open:-translate-y-px group-radix-state-open:rotate-180"
 					aria-hidden="true"
 				/>
 			</UIButton>
@@ -134,7 +134,7 @@ export const Root = (props: PropsWithChildren<DropdownRootProps>) => {
 					"relative flex w-full justify-end text-left",
 				)}
 			>
-				<Menu.Button role="button" as="div" className="outline-none">
+				<Menu.Button role="button" as="div" className="group outline-none">
 					{props.button}
 				</Menu.Button>
 				<Transition
