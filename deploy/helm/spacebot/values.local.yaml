@@ -1,0 +1,49 @@
+# Local-development overrides for Spacebot Helm values.
+#
+# Layered on top of values.yaml for single-node clusters (minikube, kind,
+# k3d, Talos-in-Docker). Replaces the PVC with an emptyDir so you don't
+# need a StorageClass, disables the ServiceMonitor (no Prometheus Operator
+# in most local setups), and relaxes probes for slower boot on laptops.
+#
+# Install:
+#   helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
+#     --version 4.6.2 \
+#     -f deploy/helm/spacebot/values.yaml \
+#     -f deploy/helm/spacebot/values.local.yaml
+#
+# Port-forward to test the UI:
+#   kubectl port-forward svc/spacebot 19898:19898
+
+defaultPodOptions:
+  # Reloader annotations target secrets/configmaps that don't exist locally;
+  # overriding with an empty map clears them and avoids noise in kubectl describe.
+  annotations: {}
+
+controllers:
+  spacebot:
+    containers:
+      app:
+        # Local dev runs without the secret-backed API keys; keep only
+        # the baseline environment. Remove envFrom so the pod doesn't wait
+        # for a secret that was never created.
+        envFrom: []
+        env:
+          SPACEBOT_DIR: /data
+          SPACEBOT_DEPLOYMENT: docker
+          RUST_LOG: debug
+        # More forgiving startup probe for laptop-class compute.
+        probes:
+          startup:
+            spec:
+              failureThreshold: 60  # 305s headroom
+
+persistence:
+  data:
+    # Swap PVC for emptyDir: no StorageClass required, state lost on pod
+    # restart. Fine for smoke tests; use PVC values for anything persistent.
+    enabled: true
+    type: emptyDir
+
+serviceMonitor:
+  app:
+    enabled: false

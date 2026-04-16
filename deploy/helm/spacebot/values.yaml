@@ -1,0 +1,145 @@
+# Spacebot values for the bjw-s-labs/app-template Helm chart.
+#
+# This file is the authoritative source of Spacebot's Kubernetes deployment
+# configuration. The Talos cluster repo (ai-k8s/talos-ai-cluster) consumes
+# it via a Flux HelmRelease that points at app-template and references these
+# values. Ingress (HTTPRoute), secrets (SOPS-encrypted), and network policies
+# (CiliumNetworkPolicy) are cluster-repo concerns and live there, not here.
+#
+# To install against a running cluster (local or otherwise):
+#   helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
+#     --version 4.6.2 --values deploy/helm/spacebot/values.yaml
+#
+# For local single-node testing (minikube/kind), layer in values.local.yaml
+# which swaps the PVC for an emptyDir:
+#   helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
+#     --version 4.6.2 \
+#     -f deploy/helm/spacebot/values.yaml \
+#     -f deploy/helm/spacebot/values.local.yaml
+
+defaultPodOptions:
+  annotations:
+    secret.reloader.stakater.com/reload: spacebot-secret
+    configmap.reloader.stakater.com/reload: spacebot-config
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  # Uncomment if the GHCR image becomes private. The `ghcr-pull-secret`
+  # already exists in the cluster's `ai` namespace (see cluster repo:
+  # templates/config/kubernetes/apps/ai/ghcr-pull-secret.sops.yaml.j2).
+  # The current ghcr.io/jrmatherly/spacebot image is public, so this is
+  # not needed today. apollos-portal in the same namespace uses this pattern.
+  # imagePullSecrets:
+  #   - name: ghcr-pull-secret
+
+controllers:
+  spacebot:
+    # Single replica only: Spacebot uses embedded databases (SQLite, LanceDB,
+    # redb) with file-level locking. Multi-replica is not supported.
+    type: deployment
+    replicas: 1
+    # Recreate, not RollingUpdate: a new pod cannot mount the RWO PVC while
+    # the old pod holds it, so RollingUpdate would deadlock. Recreate
+    # guarantees clean handoff at the cost of brief downtime during pod swap.
+    strategy: Recreate
+    pod:
+      terminationGracePeriodSeconds: 30
+    containers:
+      app:
+        image:
+          repository: ghcr.io/jrmatherly/spacebot
+          tag: v0.4.1  # Overridden per release by cluster repo's HelmRelease
+          pullPolicy: IfNotPresent
+        env:
+          SPACEBOT_DIR: /data
+          SPACEBOT_DEPLOYMENT: docker
+          RUST_LOG: info
+        # API keys and messaging adapter credentials come from SOPS-encrypted
+        # secret in the cluster repo. The name here must match what the
+        # cluster repo's secret.sops.yaml.j2 creates.
+        envFrom:
+          - secretRef:
+              name: spacebot-secret
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/health
+                port: 19898
+              periodSeconds: 30
+              failureThreshold: 3
+              timeoutSeconds: 5
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/health
+                port: 19898
+              periodSeconds: 10
+              failureThreshold: 3
+              timeoutSeconds: 5
+          # Startup probe gives generous headroom for SQLite migrations
+          # at first boot. 30 failures × 5s period = 150s grace.
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/health
+                port: 19898
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              failureThreshold: 30
+              timeoutSeconds: 5
+        # Conservative sizing matching fly.io profile (shared-cpu-2x / 1gb).
+        # Adjust up if the agent count grows or autonomous workers multiply.
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
+service:
+  app:
+    controller: spacebot
+    ports:
+      # HTTP API + embedded web UI (interface/)
+      http:
+        port: 19898
+        protocol: HTTP
+      # Prometheus metrics (feature-gated in the binary; leave the port open
+      # in the Service — ServiceMonitor won't scrape if metrics are disabled)
+      metrics:
+        port: 9090
+        protocol: HTTP
+
+persistence:
+  # Single PVC at /data holds all three embedded databases:
+  #   spacebot.db (SQLite), lancedb/ (vector store), config.redb
+  # 5Gi is a comfortable default; memory growth is dominated by LanceDB.
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    globalMounts:
+      - path: /data
+
+# Prometheus Operator ServiceMonitor — only meaningful if the binary is
+# built with the `metrics` feature. app-template renders this into the
+# monitoring namespace only when the CRD is present.
+serviceMonitor:
+  app:
+    enabled: true
+    serviceName: spacebot
+    endpoints:
+      - port: metrics
+        scheme: http
+        path: /metrics
+        interval: 30s

@@ -26,6 +26,7 @@ This skill covers documentation **outside** session-sync's scope. Roughly **505 
 | Design docs | `docs/design-docs/*.md` — 47 files; historical record, append-only |
 | Security policy | `docs/security/*.md` (tracked per project_overview memory) |
 | Transient plans | `docs/superpowers/plans/*.md` — completed ones should move to `.scratchpad/completed/` |
+| Deployment values | `deploy/helm/spacebot/{values.yaml,values.local.yaml,README.md}` — Kubernetes/Helm values for the Talos cluster. Consumes `bjw-s-labs/app-template` (not a wrapper chart). Drift risk: image tag vs actual release, port/env mismatches against `src/config/`, probe paths against API handlers. |
 
 ### Tier 2 — Internal / Operational Documentation
 
@@ -56,7 +57,8 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | `vendor/`, `node_modules/`, `target/`, `dist/`, `.next/`, `.source/`, `.turbo/`, `.cargo/`, `.code-review-graph/` | Build artifacts / dependency caches | N/A — ignored |
 | `.scratchpad/`, `.remember/`, `.worktrees/` | Gitignored; not authoritative state | N/A — exclude |
 | `packages/api-client/` | Top-level private workspace package (`"private": true`), no README by design | Document as "intentionally undocumented" |
-| `migrations/`, `prompts/`, `scripts/`, `nix/`, `examples/`, `tests/`, `src/`, `desktop/`, `.archon/`, `.github/`, `.githooks/` | Zero markdown files by design — don't re-investigate | N/A |
+| `migrations/`, `prompts/`, `scripts/`, `nix/`, `examples/`, `tests/`, `src/`, `.archon/`, `.github/`, `.githooks/` | Zero markdown files by design — don't re-investigate | N/A |
+| `desktop/` top-level | Has `desktop/CLAUDE.md` (covered by the "Nested CLAUDE.md" Tier 2 row) — no other docs | N/A |
 | Dependency version bumps in any doc | | `/deps-update` |
 
 **Approximate scale:**

@@ -1,0 +1,28 @@
+# Patterns to ignore when building Helm packages or running `helm lint` /
+# `helm template` from this directory. This directory does not ship a
+# publishable chart — it ships values — but keeping a standard .helmignore
+# avoids surprises if anyone ever wraps this into a wrapper chart later.
+
+# Version control
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# CI
+.github/
+.circleci/
+
+# Local dev artifacts
+*.log
+*.tmp
+*.bak
