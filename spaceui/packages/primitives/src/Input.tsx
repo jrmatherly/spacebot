@@ -114,10 +114,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 
 				<input
 					className={clsx(
-						"flex-1 truncate border-none bg-transparent px-3 text-sm outline-none placeholder:text-ink-faint focus:!ring-0",
+						"flex-1 truncate border-none bg-transparent px-3 text-sm outline-none placeholder:text-ink-faint focus:ring-0!",
 						(right || (icon && iconPosition === "right")) && "pr-0",
 						icon && iconPosition === "left" && "pl-0",
-						size === "xs" && "!py-0",
+						size === "xs" && "py-0!",
 						inputElementClassName,
 					)}
 					onKeyDown={(e) => {
@@ -216,7 +216,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
 						aria-label={showPassword ? "Hide Password" : "Show Password"}
 						className={clsx(props.buttonClassnames)}
 					>
-						<CurrentEyeIcon className="!pointer-events-none size-4" />
+						<CurrentEyeIcon className="pointer-events-none! size-4" />
 					</Button>
 				}
 			/>

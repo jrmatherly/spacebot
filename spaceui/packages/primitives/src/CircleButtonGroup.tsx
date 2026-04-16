@@ -29,8 +29,8 @@ export function CircleButtonGroup({
 						{cloneElement(child as React.ReactElement<any>, {
 							className: clsx(
 								(child as any).props.className,
-								"!rounded-none !border-0 !backdrop-blur-none !bg-transparent",
-								"hover:!bg-app-box",
+								"rounded-none! border-0! backdrop-blur-none! bg-transparent!",
+								"hover:bg-app-box!",
 							),
 						})}
 						{index < childArray.length - 1 && (

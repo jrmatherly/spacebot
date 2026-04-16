@@ -26,7 +26,7 @@ const Content = forwardRef<
 			sideOffset={sideOffset}
 			onOpenAutoFocus={(event) => event.preventDefault()}
 			onCloseAutoFocus={(event) => event.preventDefault()}
-			className="z-[9999]"
+			className="z-9999"
 			{...props}
 		>
 			<div

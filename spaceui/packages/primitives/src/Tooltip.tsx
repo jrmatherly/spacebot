@@ -73,7 +73,7 @@ export const Tooltip = ({ position = "bottom", ...props }: TooltipProps) => {
 					sideOffset={props.sideOffset}
 					alignOffset={props.alignOffset}
 					className={clsx(
-						"TooltipContent z-[101] m-2 mt-1 flex max-w-[200px] select-text items-center gap-2 break-words rounded border border-app-line bg-app-box px-2 py-1 text-center text-xs text-ink",
+						"TooltipContent z-101 m-2 mt-1 flex max-w-[200px] select-text items-center gap-2 break-words rounded border border-app-line bg-app-box px-2 py-1 text-center text-xs text-ink",
 						props.tooltipClassName,
 						!props.label && "hidden",
 					)}

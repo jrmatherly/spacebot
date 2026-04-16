@@ -21,7 +21,7 @@ const Content = forwardRef<
 			ref={ref}
 			sideOffset={sideOffset}
 			className={clsx(
-				"z-50 min-w-[8rem] overflow-hidden rounded-md p-1",
+				"z-50 min-w-32 overflow-hidden rounded-md p-1",
 				"border border-menu-line bg-menu/95 backdrop-blur-lg",
 				"text-sm text-menu-ink shadow-xl shadow-menu-shade/30",
 				"animate-in fade-in-0 zoom-in-95",
@@ -46,7 +46,7 @@ const Item = forwardRef<
 			"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
 			"text-menu-ink transition-colors",
 			"focus:bg-accent focus:text-white",
-			"data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+			"data-disabled:pointer-events-none data-disabled:opacity-50",
 			inset && "pl-8",
 			className,
 		)}
@@ -66,7 +66,7 @@ const CheckboxItem = forwardRef<
 			"relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
 			"text-menu-ink transition-colors",
 			"focus:bg-accent focus:text-white",
-			"data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+			"data-disabled:pointer-events-none data-disabled:opacity-50",
 			className,
 		)}
 		checked={checked}
@@ -93,7 +93,7 @@ const RadioItem = forwardRef<
 			"relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
 			"text-menu-ink transition-colors",
 			"focus:bg-accent focus:text-white",
-			"data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+			"data-disabled:pointer-events-none data-disabled:opacity-50",
 			className,
 		)}
 		{...props}
@@ -172,7 +172,7 @@ const SubContent = forwardRef<
 	<DropdownMenuPrimitive.SubContent
 		ref={ref}
 		className={clsx(
-			"z-50 min-w-[8rem] overflow-hidden rounded-md p-1",
+			"z-50 min-w-32 overflow-hidden rounded-md p-1",
 			"border border-menu-line bg-menu/95 backdrop-blur-lg",
 			"text-sm text-menu-ink shadow-xl shadow-menu-shade/30",
 			"animate-in fade-in-0 zoom-in-95",

@@ -97,14 +97,14 @@ export function RenameInput({
 			<Input
 				ref={inputRef}
 				value={value}
-				onChange={(e) => setValue(e.target.value)}
+				onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
 				onKeyDown={handleKeyDown}
 				onBlur={handleBlur}
 				variant="transparent"
 				size="xs"
 				disabled={isSaving}
 				className={clsx(
-					"min-w-[60px] !h-auto !py-0.5 !px-1 text-center",
+					"min-w-[60px] h-auto! py-0.5! px-1! text-center",
 					isSaving && "opacity-50",
 				)}
 				inputElementClassName="text-center"
