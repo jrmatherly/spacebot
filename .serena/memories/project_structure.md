@@ -33,7 +33,7 @@ spacebot/
 ├── spaceui/              # SpaceUI design system (5 packages: tokens, primitives, forms, ai, explorer)
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
-├── migrations/           # 48 SQLite migrations: 42 agent + 6 global (2026-02 → 2026-04)
+├── migrations/           # 48 SQLite migrations: 41 agent + 6 global (2026-02 → 2026-04)
 ├── presets/              # 9 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 ├── scripts/              # Build & release scripts
 ├── tests/                # 11 integration test files
