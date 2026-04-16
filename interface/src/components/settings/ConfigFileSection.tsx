@@ -174,7 +174,7 @@ export function ConfigFileSection() {
 					Edit the raw configuration file. Changes are validated as TOML before
 					saving.
 				</p>
-				<div className="flex items-center gap-2 flex-shrink-0 ml-4">
+				<div className="flex items-center gap-2 shrink-0 ml-4">
 					{isDirty && (
 						<Button onClick={handleRevert} variant="outline" size="md">
 							Revert

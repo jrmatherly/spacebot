@@ -528,7 +528,7 @@ export function Settings() {
 	return (
 		<div className="flex h-full min-h-0 overflow-hidden">
 			{/* Sidebar */}
-			<div className="flex min-h-0 w-52 flex-shrink-0 flex-col overflow-y-auto border-r border-app-line/50 bg-app-dark-box/20">
+			<div className="flex min-h-0 w-52 shrink-0 flex-col overflow-y-auto border-r border-app-line/50 bg-app-dark-box/20">
 				<div className="px-3 pb-1 pt-4">
 					<span className="text-tiny font-medium uppercase tracking-wider text-ink-faint">
 						Settings

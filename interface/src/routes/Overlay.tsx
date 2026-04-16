@@ -465,7 +465,7 @@ export function Overlay() {
 					style={haloStyle}
 				/>
 
-				<div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center">
+				<div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
 					<div
 						className={cx(
 							"absolute inset-0 transition-all duration-150",
@@ -531,7 +531,7 @@ export function Overlay() {
 						else if (voiceState === "speaking") stopTts();
 					}}
 					className={cx(
-						"relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
+						"relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors",
 						voiceState === "idle" &&
 							"border-white/10 bg-white/5 text-ink-faint hover:bg-white/10 hover:text-ink",
 						voiceState === "processing" &&
@@ -552,7 +552,7 @@ export function Overlay() {
 							event.stopPropagation();
 							handleStopRecording();
 						}}
-						className="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-sky-300/30 bg-sky-400/15 text-sky-100 transition-colors hover:bg-sky-400/20"
+						className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-sky-300/30 bg-sky-400/15 text-sky-100 transition-colors hover:bg-sky-400/20"
 					>
 						<StopIcon />
 					</button>

@@ -26,9 +26,6 @@ jobs:
     name: Interface Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: interface
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -36,8 +33,38 @@ jobs:
         with:
           bun-version: "1.3"
 
-      - name: Install dependencies
+      # Build spaceui first so the latest source — including exports not yet
+      # published to npm — lands in `spaceui/packages/*/dist/`. Without this
+      # step, `interface/` resolves `@spacedrive/*` to whichever version npm
+      # has published, which lags behind HEAD whenever a local PR adds a new
+      # export (the failure mode seen in Interface CI run 24538318930, where
+      # LoadingDot was added in PR #48 but not yet on npm).
+      - name: Install spaceui dependencies
+        working-directory: spaceui
         run: bun install --frozen-lockfile
 
+      - name: Build spaceui packages
+        working-directory: spaceui
+        run: bun run build
+
+      - name: Install interface dependencies
+        working-directory: interface
+        run: bun install --frozen-lockfile
+
+      # Sync the freshly-built spaceui dists into interface/node_modules so
+      # `tsc --noEmit` resolves to HEAD's exports. Vite's dev-server aliases
+      # handle this at runtime; this step is the build-time equivalent.
+      - name: Sync spaceui dists into interface
+        run: |
+          for pkg in primitives ai forms explorer; do
+            src="spaceui/packages/$pkg/dist"
+            dst="interface/node_modules/@spacedrive/$pkg/dist"
+            if [ -d "$src" ] && [ -d "$dst" ]; then
+              cp -R "$src/." "$dst/"
+              echo "Synced $pkg"
+            fi
+          done
+
       - name: Typecheck
+        working-directory: interface
         run: bunx tsc --noEmit

@@ -51,7 +51,7 @@ function CancelButton({
 				setCancelling(true);
 				onClick();
 			}}
-			className={`h-7 w-7 flex-shrink-0 text-ink-faint/50 hover:bg-status-error/15 hover:text-status-error ${className ?? ""}`}
+			className={`h-7 w-7 shrink-0 text-ink-faint/50 hover:bg-status-error/15 hover:text-status-error ${className ?? ""}`}
 			title="Cancel"
 		>
 			<X className="h-3.5 w-3.5" />
@@ -125,7 +125,7 @@ function LiveBranchRunItem({
 	const displayTool = live.currentTool ?? live.lastTool;
 	return (
 		<div className="flex gap-3 px-3 py-2">
-			<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+			<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 				{formatTimestamp(new Date(item.started_at).getTime())}
 			</span>
 			<div className="min-w-0 flex-1">
@@ -181,7 +181,7 @@ function LiveWorkerRunItem({
 
 	return (
 		<div className="flex gap-3 px-3 py-2">
-			<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+			<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 				{formatTimestamp(new Date(item.started_at).getTime())}
 			</span>
 			<div className="min-w-0 flex-1">
@@ -214,7 +214,7 @@ function LiveWorkerRunItem({
 								>
 									{item.task}
 								</span>
-								<span className="flex-shrink-0 text-tiny leading-5 text-ink-faint">
+								<span className="shrink-0 text-tiny leading-5 text-ink-faint">
 									{expanded ? "▾" : "▸"}
 								</span>
 							</div>
@@ -223,7 +223,7 @@ function LiveWorkerRunItem({
 							to="/agents/$agentId/workers"
 							params={{agentId}}
 							search={{worker: item.id}}
-							className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-tiny font-medium transition-colors ${
+							className={`shrink-0 rounded border px-1.5 py-0.5 text-tiny font-medium transition-colors ${
 								oc
 									? "border-ink-faint/30 text-ink-dull hover:border-ink-faint/60 hover:bg-ink-faint/15"
 									: "border-status-warning/30 text-status-warning hover:border-status-warning/60 hover:bg-status-warning/15"
@@ -272,7 +272,7 @@ function BranchRunItem({item}: {item: TimelineBranchRun}) {
 
 	return (
 		<div className="flex gap-3 px-3 py-2">
-			<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+			<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 				{formatTimestamp(new Date(item.started_at).getTime())}
 			</span>
 			<div className="min-w-0 flex-1">
@@ -282,7 +282,7 @@ function BranchRunItem({item}: {item: TimelineBranchRun}) {
 					className="w-full rounded-md bg-accent/10 px-3 py-2 text-left hover:bg-accent/15"
 				>
 					<div className="flex min-w-0 items-start gap-2">
-						<span className="inline-flex flex-shrink-0 items-center gap-2 self-start">
+						<span className="inline-flex shrink-0 items-center gap-2 self-start">
 							<span className="h-2 w-2 rounded-full bg-accent/50" />
 							<span className="text-sm font-medium text-accent-faint">
 								Branch
@@ -296,7 +296,7 @@ function BranchRunItem({item}: {item: TimelineBranchRun}) {
 							{item.description}
 						</span>
 						{item.conclusion && (
-							<span className="flex-shrink-0 self-start text-tiny leading-5 text-ink-faint">
+							<span className="shrink-0 self-start text-tiny leading-5 text-ink-faint">
 								{expanded ? "▾" : "▸"}
 							</span>
 						)}
@@ -328,7 +328,7 @@ function WorkerRunItem({
 
 	return (
 		<div className="flex gap-3 px-3 py-2">
-			<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+			<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 				{formatTimestamp(new Date(item.started_at).getTime())}
 			</span>
 			<div className="min-w-0 flex-1">
@@ -361,7 +361,7 @@ function WorkerRunItem({
 								>
 									{item.task}
 								</span>
-								<span className="flex-shrink-0 text-tiny leading-5 text-ink-faint">
+								<span className="shrink-0 text-tiny leading-5 text-ink-faint">
 									{expanded ? "▾" : "▸"}
 								</span>
 							</div>
@@ -370,7 +370,7 @@ function WorkerRunItem({
 							to="/agents/$agentId/workers"
 							params={{agentId}}
 							search={{worker: item.id}}
-							className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-tiny font-medium transition-colors ${
+							className={`shrink-0 rounded border px-1.5 py-0.5 text-tiny font-medium transition-colors ${
 								oc
 									? "border-ink-faint/30 text-ink-dull hover:border-ink-faint/60 hover:bg-ink-faint/15"
 									: "border-status-warning/30 text-status-warning hover:border-status-warning/60 hover:bg-status-warning/15"
@@ -430,7 +430,7 @@ function TimelineEntry({
 						item.role === "user" ? "bg-app-dark-box/30" : ""
 					}`}
 				>
-					<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+					<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 						{formatTimestamp(new Date(item.created_at).getTime())}
 					</span>
 					<div className="min-w-0 flex-1">
@@ -643,7 +643,7 @@ export function ChannelDetail({
 						)}
 						{isTyping && (
 							<div className="flex gap-3 px-3 py-2">
-								<span className="flex-shrink-0 pt-0.5 text-tiny text-ink-faint">
+								<span className="shrink-0 pt-0.5 text-tiny text-ink-faint">
 									{formatTimestamp(Date.now())}
 								</span>
 								<div className="flex items-center gap-1.5">

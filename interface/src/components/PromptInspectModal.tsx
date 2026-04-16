@@ -86,7 +86,7 @@ export function PromptInspectModal({
 	return (
 		<DialogRoot open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="!flex h-[85vh] w-[80vw] !max-w-[80vw] !flex-col !gap-0 overflow-hidden !p-0">
-				<DialogHeader className="flex-shrink-0 border-b border-app-line/50 px-6 pt-6 pb-4">
+				<DialogHeader className="shrink-0 border-b border-app-line/50 px-6 pt-6 pb-4">
 					<DialogTitle>Prompt Inspector</DialogTitle>
 					{showContent && !contentLoading && systemPrompt != null && (
 						<div className="mt-1 flex items-center gap-4 text-tiny text-ink-faint">
@@ -103,7 +103,7 @@ export function PromptInspectModal({
 
 				<div className="flex min-h-0 flex-1">
 					{/* Sidebar */}
-					<div className="flex w-48 flex-shrink-0 flex-col border-r border-app-line/50 bg-app-dark-box/30">
+					<div className="flex w-48 shrink-0 flex-col border-r border-app-line/50 bg-app-dark-box/30">
 						<div className="flex flex-col gap-0.5 p-2">
 							<SidebarButton
 								active={view === "current"}
@@ -209,7 +209,7 @@ export function PromptInspectModal({
 					</div>
 				</div>
 
-				<div className="flex flex-shrink-0 items-center justify-end border-t border-app-line/50 px-6 py-3">
+				<div className="flex shrink-0 items-center justify-end border-t border-app-line/50 px-6 py-3">
 					<Button variant="bare" size="sm" onClick={() => onOpenChange(false)}>
 						Close
 					</Button>

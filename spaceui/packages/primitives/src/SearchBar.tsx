@@ -50,7 +50,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
 				)}
 			>
 				<MagnifyingGlass
-					className="size-[18px] flex-shrink-0 text-ink-faint"
+					className="size-[18px] shrink-0 text-ink-faint"
 					weight="bold"
 				/>
 				<input
@@ -71,7 +71,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
 						type="button"
 						onClick={handleClear}
 						aria-label="Clear Search"
-						className="flex-shrink-0 rounded-full p-0.5 transition-colors hover:bg-sidebar-selected/40"
+						className="shrink-0 rounded-full p-0.5 transition-colors hover:bg-sidebar-selected/40"
 					>
 						<X className="size-3 text-sidebar-inkDull" weight="bold" />
 					</button>

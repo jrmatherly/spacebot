@@ -91,7 +91,7 @@ export function ApprovalModal({notification, onClose}: ApprovalModalProps) {
 		<DialogRoot open={open} onOpenChange={(v) => {if (!v) onClose();}}>
 			<DialogContent className="!flex max-h-[80vh] w-full max-w-xl !flex-col !gap-0 overflow-hidden !p-0">
 				{/* Header */}
-				<DialogHeader className="flex-shrink-0 border-b border-app-line/50 px-5 pt-5 pb-4">
+				<DialogHeader className="shrink-0 border-b border-app-line/50 px-5 pt-5 pb-4">
 					<div className="flex items-center gap-2.5">
 						<Icon className={`size-5 shrink-0 ${config.iconClass}`} weight="fill" />
 						<div className="min-w-0 flex-1">
@@ -134,7 +134,7 @@ export function ApprovalModal({notification, onClose}: ApprovalModalProps) {
 				</div>
 
 				{/* Footer */}
-				<DialogFooter className="flex-shrink-0 border-t border-app-line/50 px-5 py-3">
+				<DialogFooter className="shrink-0 border-t border-app-line/50 px-5 py-3">
 					<div className="flex w-full items-center justify-end gap-2">
 						<Button
 							variant="subtle"

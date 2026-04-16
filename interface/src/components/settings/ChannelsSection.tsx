@@ -50,7 +50,7 @@ export function ChannelsSection() {
 			) : (
 				<div className="grid grid-cols-[200px_1fr] gap-6">
 					{/* Left column: Platform catalog */}
-					<div className="flex-shrink-0">
+					<div className="shrink-0">
 						<PlatformCatalog onAddInstance={handleAddInstance} />
 					</div>
 

@@ -181,7 +181,7 @@ export function Workbench() {
 								ref={(el) => {
 									columnRefs.current[worker.id] = el;
 								}}
-								className="flex h-full flex-shrink-0"
+								className="flex h-full shrink-0"
 							>
 								<WorkerColumn worker={worker} />
 							</div>

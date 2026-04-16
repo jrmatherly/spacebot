@@ -57,7 +57,7 @@ function UserMessageWithAttachments({
 								download={att.filename}
 								className="flex items-center gap-1.5 rounded-md bg-white/20 px-2 py-1 text-xs transition-colors hover:bg-white/30"
 							>
-								<FileIcon size={12} className="flex-shrink-0" />
+								<FileIcon size={12} className="shrink-0" />
 								<span className="max-w-[160px] truncate">{att.filename}</span>
 								<span className="opacity-70">{formatFileSize(att.size_bytes)}</span>
 							</a>
@@ -123,7 +123,7 @@ function AssistantAttachments({
 							download={att.filename}
 							className="border-app-line bg-app-box hover:bg-app-box/80 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
 						>
-							<FileIcon size={16} className="text-ink-faint flex-shrink-0" />
+							<FileIcon size={16} className="text-ink-faint shrink-0" />
 							<div className="min-w-0">
 								<div className="text-ink max-w-[200px] truncate">{att.filename}</div>
 								<div className="text-ink-faint text-xs">{formatFileSize(att.size_bytes)}</div>
