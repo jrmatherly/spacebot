@@ -50,39 +50,28 @@ Archive a completed change in the experimental workflow.
 
    **If no tasks file exists:** Proceed without task-related warning.
 
-4. **Assess delta spec sync state**
+4. **Archive via CLI (merges delta specs and moves to archive)**
 
-   Check for delta specs at `openspec/changes/<name>/specs/`. If none exist, proceed without sync prompt.
+   The `openspec archive` CLI command handles both spec syncing and archiving in one step.
 
-   **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at `openspec/specs/<capability>/spec.md`
-   - Determine what changes would be applied (adds, modifications, removals, renames)
-   - Show a combined summary before prompting
-
-   **Prompt options:**
-   - If changes needed: "Sync now (recommended)", "Archive without syncing"
-   - If already synced: "Archive now", "Sync anyway", "Cancel"
-
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
-
-5. **Perform the archive**
-
-   Create the archive directory if it doesn't exist:
+   **If the change has no delta specs** (empty or missing `specs/` directory), skip the sync:
    ```bash
-   mkdir -p openspec/changes/archive
+   openspec archive "<name>" --skip-specs -y
    ```
 
-   Generate target name using current date: `YYYY-MM-DD-<change-name>`
-
-   **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move the change directory to archive
-
+   **If delta specs exist**, let the CLI merge them into `openspec/specs/`:
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   openspec archive "<name>" -y
    ```
 
-6. **Display summary**
+   The CLI will:
+   - Parse ADDED/MODIFIED/REMOVED sections from each delta spec
+   - Merge changes into the corresponding main spec at `openspec/specs/<domain>/spec.md`
+   - Move the change folder to `openspec/changes/archive/YYYY-MM-DD-<name>/`
+
+   **If the CLI fails**, report the error and stop. Do not attempt a manual move.
+
+5. **Display summary**
 
    Show archive completion summary including:
    - Change name
@@ -108,7 +97,6 @@ All artifacts complete. All tasks complete.
 - Always prompt for change selection if not provided
 - Use artifact graph (openspec status --json) for completion checking
 - Don't block archive on warnings - just inform and confirm
-- Preserve .openspec.yaml when moving to archive (it moves with the directory)
+- Always use the `openspec archive` CLI command (never manual `mv`)
+- The CLI handles spec merging, date-prefixed naming, and directory structure
 - Show clear summary of what happened
-- If sync is requested, use openspec-sync-specs approach (agent-driven)
-- If delta specs exist, always run the sync assessment and show the combined summary before prompting
