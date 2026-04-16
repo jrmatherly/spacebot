@@ -17,6 +17,7 @@ cargo run -- start       # Start the daemon (port 19898)
 - `cargo test --lib` for unit tests
 - `cargo test --tests --no-run` to compile integration tests
 - `cargo fmt --all` to format, `cargo clippy --all-targets` to lint
+- `cargo audit --ignore RUSTSEC-2023-0071` for security audit
 
 ## Architecture
 
@@ -42,7 +43,7 @@ Single binary crate. No workspace. Module files use `src/module.rs` pattern (NEV
 - `migrations/` — SQLite migrations (immutable, append-only)
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
-- `spaceui/` — SpaceUI design system (5 packages: tokens, primitives, forms, ai, explorer)
+- `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 
@@ -65,3 +66,6 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
 - `SPACEUI_MIGRATION.md` — Frontend migration changelog
+- `PROJECT_INDEX.md` — Module index and dependency map
+- `CONTRIBUTING.md` — Contributor guide
+- `CHANGELOG.md` — Release history
