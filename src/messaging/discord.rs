@@ -172,7 +172,7 @@ impl Messaging for DiscordAdapter {
                     }
                     channel_id
                         .widen()
-                        .send_message(&*http, builder)
+                        .send_message(&http, builder)
                         .await
                         .context("failed to send discord message")?;
                 }
@@ -237,7 +237,7 @@ impl Messaging for DiscordAdapter {
 
                     channel_id
                         .widen()
-                        .send_message(&*http, msg)
+                        .send_message(&http, msg)
                         .await
                         .context("failed to send discord rich message")?;
                 }
@@ -258,13 +258,13 @@ impl Messaging for DiscordAdapter {
                         let builder =
                             CreateThread::new(&thread_name).kind(ChannelType::PublicThread);
                         channel_id
-                            .create_thread_from_message(&*http, source_message_id, builder)
+                            .create_thread_from_message(&http, source_message_id, builder)
                             .await
                     }
                     None => {
                         let builder =
                             CreateThread::new(&thread_name).kind(ChannelType::PublicThread);
-                        channel_id.create_thread(&*http, builder).await
+                        channel_id.create_thread(&http, builder).await
                     }
                 };
 
@@ -274,7 +274,7 @@ impl Messaging for DiscordAdapter {
                             thread
                                 .id
                                 .widen()
-                                .say(&*http, &chunk)
+                                .say(&http, &chunk)
                                 .await
                                 .context("failed to send message in new thread")?;
                         }
@@ -290,7 +290,7 @@ impl Messaging for DiscordAdapter {
                         for chunk in split_message(&text, 2000) {
                             channel_id
                                 .widen()
-                                .say(&*http, &chunk)
+                                .say(&http, &chunk)
                                 .await
                                 .context("failed to send discord message")?;
                         }
@@ -323,7 +323,7 @@ impl Messaging for DiscordAdapter {
 
                 channel_id
                     .widen()
-                    .send_message(&*http, builder)
+                    .send_message(&http, builder)
                     .await
                     .context("failed to send file attachment")?;
             }
@@ -337,7 +337,7 @@ impl Messaging for DiscordAdapter {
                 channel_id
                     .widen()
                     .create_reaction(
-                        &*http,
+                        &http,
                         MessageId::new(message_id),
                         ReactionType::Unicode(
                             serenity::small_fixed_array::TruncatingInto::trunc_into(emoji),
@@ -351,7 +351,7 @@ impl Messaging for DiscordAdapter {
 
                 let placeholder = channel_id
                     .widen()
-                    .say(&*http, "\u{200B}")
+                    .say(&http, "\u{200B}")
                     .await
                     .context("failed to send stream placeholder")?;
 
@@ -372,7 +372,7 @@ impl Messaging for DiscordAdapter {
                     let builder = EditMessage::new().content(display_text);
                     if let Err(error) = channel_id
                         .widen()
-                        .edit_message(&*http, message_id, builder)
+                        .edit_message(&http, message_id, builder)
                         .await
                     {
                         tracing::warn!(%error, "failed to edit streaming message");
@@ -393,7 +393,7 @@ impl Messaging for DiscordAdapter {
                     let http = self.get_http().await?;
                     channel_id
                         .widen()
-                        .say(&*http, &text)
+                        .say(&http, &text)
                         .await
                         .context("failed to send ephemeral fallback on discord")?;
                 }
@@ -404,7 +404,7 @@ impl Messaging for DiscordAdapter {
                     let http = self.get_http().await?;
                     channel_id
                         .widen()
-                        .say(&*http, &text)
+                        .say(&http, &text)
                         .await
                         .context("failed to send scheduled message fallback on discord")?;
                 }
@@ -465,7 +465,7 @@ impl Messaging for DiscordAdapter {
             for chunk in split_message(&text, 2000) {
                 channel_id
                     .widen()
-                    .say(&*http, &chunk)
+                    .say(&http, &chunk)
                     .await
                     .context("failed to broadcast discord message")?;
             }
@@ -516,7 +516,7 @@ impl Messaging for DiscordAdapter {
 
                 channel_id
                     .widen()
-                    .send_message(&*http, msg)
+                    .send_message(&http, msg)
                     .await
                     .context("failed to broadcast discord rich message")?;
             }
