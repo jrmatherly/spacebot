@@ -167,6 +167,14 @@ metrics = ["dep:prometheus"]
 [patch.crates-io]
 imap-proto = { path = "vendor/imap-proto-0.10.2" }
 
+# Spacedrive lives at `spacedrive/` as an independent Cargo workspace with its
+# own toolchain, edition, and dependency versions. The exclude prevents Cargo
+# from auto-discovering its Cargo.toml if a [workspace] members section is ever
+# added here. spaceui/ is pure Bun (no Cargo.toml) and desktop/src-tauri/ is
+# nested too deep for auto-discovery, so neither needs an explicit exclude.
+[workspace]
+exclude = ["spacedrive"]
+
 [lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
