@@ -2,6 +2,8 @@
 
 Assessment of spaceui components vs the real Spacedrive implementations. Generated 2026-03-26.
 
+> **Note:** This is a snapshot. Several of the "Explorer — Removed" decisions below have been acted on — see `packages/explorer/README.md`, which now documents only the surviving primitives (FileThumb, GridItem, RenameInput, TagPill). Primitives-side rework is ongoing. Treat percentages as the baseline assessment at the time of generation, not current state.
+
 Use this to track migration progress as components are faithfully rebuilt from the real codebase.
 
 **Real Spacedrive UI source:** `spacedrive/packages/ui/src/`

@@ -17,15 +17,17 @@ Peer dependencies:
 
 ## Setup
 
-1. **Configure your CSS entrypoint**
+1. **Configure your CSS entrypoint (Tailwind v4)**
    ```css
-   @import '@spacedrive/tokens/theme';
+   @import "tailwindcss";
+   @import "@spacedrive/tokens/theme";
+   @import "@spacedrive/tokens/css";
+
+   /* Tell Tailwind to scan primitives for classes */
+   @source "../../node_modules/@spacedrive/primitives/src";
    ```
 
-2. **Import CSS**
-   ```css
-   @import '@spacedrive/tokens/css';
-   ```
+   See [`../../INTEGRATION.md`](../../INTEGRATION.md) for the full consumer-side setup, including Vite aliases for local development.
 
 ## Usage
 
@@ -51,6 +53,7 @@ function MyComponent() {
 
 ### Interactive
 - **Button** - Multiple variants (default, subtle, outline, dotted, gray, accent, colored, bare)
+- **CircleButton**, **CircleButtonGroup** - Icon-only circular buttons
 - **Input** - Form input with error states
 - **Checkbox** - Accessible checkbox with Radix
 - **Switch** - Toggle switch with 3 sizes
@@ -65,34 +68,42 @@ function MyComponent() {
 - **ContextMenu** - Right-click menus
 
 ### Navigation
-- **Tabs** - Tabbed interfaces
-- **Select** - Dropdown selects
+- **Tabs**, **TabBar** - Tabbed interfaces
+- **Select**, **SelectPill**, **SelectTriggerButton** - Dropdown selects
 - **Dropdown** - Simple expanding dropdowns
 
 ### Display
 - **Badge** - Status badges (6 variants, 2 sizes)
 - **Card** - Container with header/content/footer
-- **Banner** - Alert banners (5 variants)
+- **Banner**, **InfoBanner** - Alert banners
 - **Toast** - Notification toasts
 - **Loader** - Loading spinners and dots
 - **Divider** - Horizontal/vertical dividers
 - **Typography** - Text components (6 heading, 3 body)
-- **Shortcut** - Keyboard shortcut display
+- **Shortcut** - Keyboard shortcut display (uses `keys.ts` for key constants)
 
 ### Form
 - **NumberStepper** - Increment/decrement with min/max
 - **FilterButton** - Toggle buttons for filters
 - **ToggleGroup** - Radio-like button groups
 - **SearchBar** - Search inputs with icons
+- **OptionList** - List of selectable options
+- **SpaceItem** - Named item with optional selection
 
 ### Progress
 - **ProgressBar** - Linear progress (with variants)
 - **CircularProgress** - Circular/spinner progress
 
 ### Layout
+- **Layout** - Application layout primitives
 - **Resizable** - Resizable panel groups
 - **Collapsible** - Expand/collapse sections
-- **TopBarButton** - Top bar navigation buttons
+
+### Decorative
+- **ShinyButton**, **ShinyToggle** - Animated accent buttons
+
+### Forms (sub-export)
+The `forms/` subfolder re-exports field primitives consumed by `@spacedrive/forms`. Prefer importing from `@spacedrive/forms` directly for form usage.
 
 ## Component API
 

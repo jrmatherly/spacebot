@@ -2,122 +2,108 @@
 
 ## Overview
 
-A complete monorepo with 5 packages, 100+ components, CI/CD, documentation, and development tooling.
-
-## Repository Statistics
-
-- **Total Files**: 124 source files
-- **Packages**: 5 published packages
-- **Components**: 100+ React components
-- **Lines of Code**: ~15,000+
+A monorepo housing the Spacedrive ecosystem design system: 6 packages covering design tokens, base primitives, form wrappers, file-type icons, AI-agent surfaces, and explorer primitives.
 
 ## Package Structure
 
-### @spacedrive/tokens
-- **Components**: Design tokens, Tailwind preset, CSS themes
-- **Files**: 8
-- **Key Exports**: `spaceUiPreset`, `colors`, CSS themes
+### @spacedrive/tokens (0.2.3)
+- CSS-first design tokens for Tailwind v4 (`@theme` block)
+- Semantic color system, spacing, radii, fonts
+- Themes: dark (default), light, midnight, noir, slate, nord, mocha
+- Key exports: `@spacedrive/tokens/theme`, `@spacedrive/tokens/css`, `@spacedrive/tokens/raw-colors`
 
-### @spacedrive/primitives  
-- **Components**: 41 base UI components
-- **Files**: 34
-- **Key Exports**: Button, Card, Dialog, Input, Select, Tabs, etc.
+### @spacedrive/primitives (0.2.3)
+- 41 base UI components built on Radix + Headless UI
+- Key exports: Button, Input, Dialog, Dropdown, Popover, Select, Tabs, Tooltip, Toast, Card, Badge, and more
 
-### @spacedrive/forms
-- **Components**: 8 form field wrappers
-- **Files**: 10
-- **Key Exports**: InputField, SelectField, CheckboxField, etc.
+### @spacedrive/forms (0.2.3)
+- 7 form field wrappers built on react-hook-form
+- Key exports: Form, InputField, TextAreaField, SelectField, CheckboxField, RadioGroupField, SwitchField
 
-### @spacedrive/ai
-- **Components**: 18 AI/agent components
-- **Files**: 21
-- **Key Exports**: ToolCall, ChatComposer, TaskBoard, MemoryGraph, etc.
+### @spacedrive/icons (0.2.3)
+- Spacedrive file-type icons, extension badges, and icon resolution utilities
+- Ships raw SVG assets (no React components) plus a `getIcon` resolver
+- Key exports: `@spacedrive/icons/icons`, `@spacedrive/icons/svgs/*`, `@spacedrive/icons/util`
 
-### @spacedrive/explorer
-- **Components**: 14 file management components
-- **Files**: 17
-- **Key Exports**: FileGrid, PathBar, Inspector, KindIcon, etc.
+### @spacedrive/ai (0.2.3)
+- 12 AI/agent interaction components
+- Key exports: ToolCall, Markdown, MessageBubble, ChatComposer, ModelSelector, InlineWorkerCard, InlineBranchCard, TaskList, TaskRow, TaskDetail, TaskCreateForm, TaskStatusIcon, TaskPriorityIcon
+
+### @spacedrive/explorer (0.2.3)
+- 3 file-surface primitives (FileThumb, GridItem, RenameInput, TagPill)
+- Larger explorer views (FileGrid/FileList/PathBar/Inspector/QuickPreview) live in each consuming app
 
 ## Development Tooling
 
 ### Build System
-- **Package Manager**: Bun workspaces
-- **Build Tool**: tsup (fast ESM builds)
+- **Package Manager**: Bun workspaces (bun 1.1.0+)
+- **Build Tool**: tsup for JS/TS packages; tokens is CSS-only
 - **Orchestration**: Turbo
-- **TypeScript**: Strict mode, 5.4+
+- **TypeScript**: Strict mode, TypeScript 6
 
 ### Development Environment
-- **Showcase App**: Vite + React demo app (port 19850)
-- **Storybook**: Component documentation (port 6006)
+- **Showcase App**: Vite + React demo app
+- **Storybook**: 10.3.5 (component documentation, port 6006)
 - **Scripts**: link-packages.sh, unlink-packages.sh, build-watch.sh
 
-### CI/CD
-- **GitHub Actions**: CI workflow for PRs
-- **Release**: Automated versioning with Changesets
-- **Publishing**: npm registry integration
+### Styling
+- Tailwind v4 (CSS-first configuration via `@theme`)
+- Consumers `@source` spaceui package source paths
+- `@plugin` directive for Tailwind plugins (consumers decide)
+
+### Release
+- **Changesets**: versioning with linked packages (primitives/forms/ai/explorer/icons release together)
+- **Publishing**: manual `bunx changeset publish` to npm under `@spacedrive` scope
+- **Pre-release**: `bunx changeset pre enter <tag>` for alpha/beta trains
 
 ## Documentation
 
-### Main Docs
-- README.md - Main overview and quick start
-- SHARED-UI-STRATEGY.md - Migration plan from existing codebases
-- CONTRIBUTING.md - Development setup and guidelines
-- LICENSE - MIT license
+### Repo-level
+- `README.md` - overview & quick start
+- `CONTRIBUTING.md` - contributor guide
+- `INTEGRATION.md` - consuming from an external project
+- `LICENSE` - MIT
 
-### Package Docs
-- packages/tokens/README.md
-- packages/primitives/README.md
-- packages/forms/README.md
-- packages/ai/README.md
-- packages/explorer/README.md
+### docs/
+- `SHARED-UI-STRATEGY.md` - migration plan & architecture
+- `TAILWIND-V4-MIGRATION.md` - v3→v4 migration spec
+- `COMPONENT-AUDIT.md` - fidelity audit against real Spacedrive UI
+- `REPO_SUMMARY.md` - this file
 
-### Configuration Files
-- .gitignore
-- turbo.json
-- tailwind.config.ts
-- tsconfig.base.json
-- .changeset/config.json
-- .changeset/initial-release.md
-- .github/workflows/ci.yml
-- .github/workflows/release.yml
-- .storybook/main.ts
-- .storybook/preview.ts
-- .storybook/package.json
+### Package READMEs
+- `packages/tokens/README.md`
+- `packages/primitives/README.md`
+- `packages/forms/README.md`
+- `packages/ai/README.md`
+- `packages/explorer/README.md`
+- (icons has no README — see `packages/icons/package.json` description)
 
-## Next Steps for Phase 1
-
-1. Install dependencies: `bun install`
-2. Build packages: `bun run build`
-3. Copy actual implementations:
-   - `ToolCall.tsx` from spacebot/spacedrive
-   - `Markdown.tsx` from spacebot/spacedrive
-   - Update types if needed
-4. Test in showcase app: `bun run showcase`
-5. Link to consuming apps: `bun run link`
-
-## Repository Ready For
-
-✅ Phase 0 - Bootstrap complete
-✅ Phase 1 - Ready for ToolCall/Markdown migration
-✅ Phase 2+ - All infrastructure in place
+## Key Configuration Files
+- `turbo.json`
+- `tsconfig.base.json`
+- `.changeset/config.json`
+- `.storybook/main.ts`, `.storybook/preview.ts`
+- `.github/workflows/ci.yml` (bot-authored PRs skipped via claude-review config)
 
 ## Quick Commands
 
 ```bash
 # Development
 bun install          # Install dependencies
-bun run build       # Build all packages
-bun run dev         # Watch mode
-bun run showcase    # Run demo app
+bun run build        # Build all packages (turbo)
+bun run dev          # Watch mode
+bun run typecheck    # Type check all packages
+bun run showcase     # Run demo app
+bun run storybook    # Start Storybook
 
-# Local development
-bun run link        # Link packages
-bun run unlink      # Unlink packages
+# Local linking
+bun run link         # Link packages into global registry
+bun run unlink       # Unlink
 
 # Publishing
-bun run changeset          # Create changeset
-bun run version-packages   # Bump versions
-bun run publish           # Publish to npm
+bun run changeset           # Create changeset
+bun run version-packages    # Bump versions
+bun run publish             # Build + publish to npm
 ```
 
 ---

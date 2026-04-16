@@ -4,6 +4,8 @@ Migration spec for upgrading the entire Spacedrive stack from Tailwind CSS v3 to
 
 **Scope:** spaceui, spacedrive (app), spacedrive-web (marketing site)
 
+**Status (as of 2026-04-16):** spaceui migration complete. Canonical v4 class syntax adopted across primitives + explorer (see PR #45: `!class` → `class!`, `data-[X]:` → `data-X:`, `z-[N]` → `z-N`, `*-[var(--X)]` → `*-(--X)`, numeric spacing). spacedrive app and spacedrive-web migrations remain out-of-scope here and may still be in progress.
+
 ---
 
 ## Why

@@ -1,7 +1,6 @@
 # @spacedrive/tokens
 
-Design tokens for SpaceUI.
-This package is CSS-first for Tailwind v4, with optional raw color exports for programmatic consumers.
+Design tokens for SpaceUI. CSS-first for Tailwind v4, with optional raw color exports for programmatic consumers.
 
 ## Installation
 
@@ -13,18 +12,26 @@ npm install @spacedrive/tokens
 
 ## Usage
 
-### Theme Entry Layer
+### Theme Entry Layer (Tailwind v4)
 
 ```css
-/* In your global CSS entrypoint */
-@import '@spacedrive/tokens/theme';
-```
+@import "tailwindcss";
 
-### CSS Import
+/* @theme block — generates all bg-*, text-*, border-*, ring-* utilities */
+@import "@spacedrive/tokens/theme";
 
-```css
-/* In your base CSS file */
-@import '@spacedrive/tokens/css';
+/* Base layer + default (dark) theme variables */
+@import "@spacedrive/tokens/css";
+
+/* Optional additional themes (opt in as needed) */
+@import "@spacedrive/tokens/css/themes/light";
+@import "@spacedrive/tokens/css/themes/midnight";
+@import "@spacedrive/tokens/css/themes/noir";
+@import "@spacedrive/tokens/css/themes/slate";
+@import "@spacedrive/tokens/css/themes/nord";
+@import "@spacedrive/tokens/css/themes/mocha";
+
+@custom-variant dark (&:where(.dark, .dark *));
 ```
 
 ### Programmatic Access
@@ -32,9 +39,9 @@ npm install @spacedrive/tokens
 ```typescript
 import colors from '@spacedrive/tokens/raw-colors';
 
-// Access color values
-console.log(colors.accent.DEFAULT); // "200, 100%, 60%"
-console.log(colors.ink.dull);       // "0, 0%, 70%"
+// Access color values (returned as complete CSS color strings)
+console.log(colors.accent.DEFAULT); // "hsl(208, 100%, 57%)"
+console.log(colors.ink.dull);       // "hsl(235, 10%, 70%)"
 ```
 
 ## Color System
@@ -43,12 +50,12 @@ console.log(colors.ink.dull);       // "0, 0%, 70%"
 
 All colors use semantic names rather than literal colors:
 
-- **accent** - Primary brand color (blue in dark mode)
-- **ink** - Text colors (white → gray scale)
+- **accent** - Primary brand color
+- **ink** - Text colors (foreground)
 - **app** - App backgrounds and surfaces
 - **sidebar** - Sidebar-specific colors
 - **menu** - Dropdown/menu colors
-- **status** - Success, warning, error states
+- **status** - Success, warning, error, info states
 
 ### Color Variants
 
@@ -60,34 +67,33 @@ Each color has variants:
 
 Example:
 ```css
-/* Accent colors */
-accent           /* Primary blue */
-accent-faint     /* Light blue */
-accent-deep      /* Dark blue */
+accent           /* Primary accent */
+accent-faint     /* Lighter */
+accent-deep      /* Darker */
 
-/* Text colors */
-ink              /* Primary text (white in dark) */
+ink              /* Primary text */
 ink-dull         /* Secondary text */
 ink-faint        /* Tertiary text */
 ```
 
 ### CSS Custom Properties
 
-Colors are exposed as CSS custom properties:
+Under Tailwind v4, the `@theme` block defines tokens as full CSS color values:
 
 ```css
---color-accent: 200, 100%, 60%;
---color-accent-faint: 200, 100%, 90%;
---color-ink: 0, 0%, 100%;
---color-ink-dull: 0, 0%, 70%;
-/* etc. */
+@theme {
+  --color-accent: hsl(208, 100%, 57%);
+  --color-ink: hsl(235, 35%, 92%);
+  --color-app: hsl(235, 15%, 13%);
+  /* ... */
+}
 ```
 
-**Note:** Values are bare HSL numbers (not wrapped in `hsl()`) for Tailwind alpha support.
+Opacity modifiers still work: `bg-accent/50`, `border-ink/20`, etc. — Tailwind v4 derives them automatically from `@theme` colors.
 
 ## Tailwind Classes
 
-With the preset installed, use semantic classes directly:
+With `@import "@spacedrive/tokens/theme"` in your CSS, use semantic classes directly:
 
 ```tsx
 <div className="bg-app text-ink">
@@ -102,62 +108,48 @@ With the preset installed, use semantic classes directly:
 
 ### Opacity Modifiers
 
-Works with Tailwind's opacity syntax:
-
 ```tsx
 <div className="bg-accent/10">    {/* 10% opacity */}
-<div className="bg-sidebar/65">    {/* 65% opacity */}
+<div className="bg-sidebar/65">   {/* 65% opacity */}
 ```
 
 ## Themes
 
-### Dark Theme (Default)
-
-```css
-@import '@spacedrive/tokens/css/themes/dark';
-```
-
-### Light Theme
-
-```css
-@import '@spacedrive/tokens/css/themes/light';
-```
-
-Or toggle via class:
+Themes override the base `--color-*` variables via CSS classes. The default theme is `dark` (loaded by `@spacedrive/tokens/css`). Opt in to any additional theme by importing it and toggling the class on `<html>` or any ancestor element.
 
 ```html
-<html class="dark">
-  <!-- Dark mode -->
-</html>
-
-<html class="light">
-  <!-- Light mode -->
+<html class="midnight-theme">
+  <!-- all --color-* vars overridden to midnight values -->
 </html>
 ```
 
-## API
+Available themes: `dark` (default), `light`, `midnight`, `noir`, `slate`, `nord`, `mocha`.
 
-### `raw-colors`
+## Consumer Pattern Summary
 
-An object containing all color definitions:
+```css
+@import "tailwindcss";
+@import "@spacedrive/tokens/theme";         /* @theme block — generates utilities */
+@import "@spacedrive/tokens/css";           /* base + default theme */
+@import "@spacedrive/tokens/css/themes/midnight";  /* optional override */
 
-```typescript
-{
-  accent: { DEFAULT: string, faint: string, deep: string },
-  ink: { DEFAULT: string, dull: string, faint: string },
-  app: { DEFAULT: string, box: string, line: string, hover: string, selected: string },
-  sidebar: { DEFAULT: string, box: string, line: string, ink: string, inkDull: string, ... },
-  menu: { DEFAULT: string, line: string, hover: string, ink: string },
-  status: { success: string, warning: string, error: string, info: string }
-}
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tell Tailwind to scan your SpaceUI packages */
+@source "../node_modules/@spacedrive/primitives/src";
+@source "../node_modules/@spacedrive/ai/src";
+@source "../node_modules/@spacedrive/forms/src";
+@source "../node_modules/@spacedrive/explorer/src";
 ```
+
+No `tailwind.config.js`. No JS preset. No build step for tokens.
 
 ## Design Principles
 
-1. **Semantic naming** - Use purpose-based names, not literal colors
-2. **Theme-agnostic** - Components work in both dark and light modes
-3. **HSL format** - Bare HSL values for Tailwind alpha support
-4. **Consistent scale** - Predictable variants (faint, dull, deep)
+1. **CSS-first** — Tokens live in CSS. No JS build, no preset file.
+2. **Semantic naming** — `ink`, `app-box`, `sidebar-selected`, not `gray-900`.
+3. **Theme-agnostic** — Components use semantic classes; themes remap the variables.
+4. **Native Tailwind v4 integration** — `@theme` drives utility generation; opacity modifiers work automatically.
 
 ## License
 

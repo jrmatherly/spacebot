@@ -99,9 +99,10 @@ spaceui/
 
 ### Code Style
 
-- **TypeScript**: Strict mode enabled. No `any` types.
+- **TypeScript**: Strict mode enabled (TypeScript 6). No `any` types.
 - **Components**: Use `forwardRef` for ref forwarding.
-- **Styling**: Use Tailwind's semantic classes (e.g., `bg-app`, `text-ink`).
+- **Styling**: Tailwind v4. Use semantic classes (e.g., `bg-app`, `text-ink`).
+- **Tailwind v4 syntax**: Use canonical shortcuts — `class!` (not `!class`), `data-disabled:` (not `data-[disabled]:`), `z-100` (not `z-[100]`), `*-(--X)` (not `*-[var(--X)]`).
 - **Colors**: Never use `var()` directly. Use semantic classes only.
 - **Naming**: PascalCase for components, camelCase for utilities.
 
@@ -227,9 +228,11 @@ Ensure peer dependencies are installed:
 
 ## Resources
 
-- [SHARED-UI-STRATEGY.md](./SHARED-UI-STRATEGY.md) - Migration plan
+- [docs/SHARED-UI-STRATEGY.md](./docs/SHARED-UI-STRATEGY.md) - Migration plan
+- [docs/TAILWIND-V4-MIGRATION.md](./docs/TAILWIND-V4-MIGRATION.md) - Tailwind v3→v4 migration spec
+- [docs/COMPONENT-AUDIT.md](./docs/COMPONENT-AUDIT.md) - Fidelity audit vs real Spacedrive
 - [Radix UI docs](https://www.radix-ui.com/) - Primitives we build on
-- [Tailwind docs](https://tailwindcss.com/) - Styling system
+- [Tailwind docs](https://tailwindcss.com/) - Styling system (v4)
 - [CVA docs](https://cva.style/) - Component variants
 
 ## Questions?
