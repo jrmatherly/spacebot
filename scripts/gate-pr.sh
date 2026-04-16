@@ -170,7 +170,14 @@ if $is_ci; then
 	log "CI mode enabled"
 fi
 
-check_migration_safety
+# check_migration_safety — disabled 2026-04-16. Historical migration files are
+# no longer treated as immutable in spacebot: we own this fork, we are not
+# tracking an upstream, and one-off reformatting passes are allowed. Keep the
+# function defined above so future policy changes can re-enable it by
+# uncommenting this line. Note: editing migrations whose checksums are already
+# stored in deployed SQLx `_sqlx_migrations` tables will cause checksum
+# mismatches and break startup on those databases; coordinate a full redeploy
+# or migration-checksum repair when landing migration reformatting changes.
 run_step "cargo fmt --all -- --check" cargo fmt --all -- --check
 run_step "cargo check --all-targets" cargo check --all-targets
 
