@@ -1,10 +1,12 @@
 # Welcome to the Spacedrive Contributing Guide
 
-Thank you for investing your time in contributing to our project!
+> **Vendored upstream guide.** This is upstream Spacedrive's contributor guide, preserved as reference for working in the vendored `spacedrive/` subtree. In this repository, contributions land via the Spacebot PR workflow, not upstream. Clone `https://github.com/jrmatherly/spacebot` and work from `spacebot/spacedrive/`. Issues belong in the Spacebot repo, not the upstream Spacedrive repo.
 
-Please read our [Code of Conduct](./CODE_OF_CONDUCT.md) to keep our community approachable and respectable.
+Thank you for investing your time in contributing to this project!
 
-This guide will provide an overview of the contribution workflow, including opening an issue, creating a pull request (PR), and the review and merge process.
+Please read our [Code of Conduct](./CODE_OF_CONDUCT.md) to keep the community approachable and respectable.
+
+This guide provides an overview of the Spacedrive-side contribution workflow, including opening an issue, creating a pull request (PR), and the review and merge process.
 
 > **Important: Spacedrive V2 Rewrite**
 >
@@ -29,11 +31,11 @@ To familiarize yourself with the project, please read the [README](README.md). H
 
 #### Creating a New Issue
 
-If you come across an issue or have a feature request for Spacedrive, please [search if a related issue has already been reported](https://docs.github.com/en/github/searching-for-information-on-github/searching-on-github/searching-issues-and-pull-requests#search-by-the-title-body-or-comments). If no relevant issue exists, you can open a new issue using the appropriate [issue form](https://github.com/spacedriveapp/spacedrive/issues/new/choose).
+If you come across an issue or have a feature request for the vendored Spacedrive code, please [search if a related issue has already been reported](https://docs.github.com/en/github/searching-for-information-on-github/searching-on-github/searching-issues-and-pull-requests#search-by-the-title-body-or-comments). If no relevant issue exists, open a new one at [github.com/jrmatherly/spacebot/issues](https://github.com/jrmatherly/spacebot/issues/new/choose). Tag the issue with `spacedrive` so it's scoped to this subtree.
 
 #### Solving an Issue
 
-To find an issue that interests you, you can browse through our [existing issues](https://github.com/spacedriveapp/spacedrive/issues) and use the available `labels` to narrow down your search (See [Labels](https://github.com/spacedriveapp/spacedrive/labels) for more information). As a general rule, if you find an issue you want to work on, you are welcome to open a PR with a fix.
+Browse through the [existing issues](https://github.com/jrmatherly/spacebot/issues) and use the available `labels` to narrow down your search. As a general rule, if you find an issue you want to work on, you are welcome to open a PR with a fix.
 
 ## Development Setup
 
@@ -56,18 +58,14 @@ Before you begin, ensure you have the following installed:
 
 ### Clone the Repository
 
-```bash
-git clone https://github.com/spacedriveapp/spacedrive
-cd spacedrive
-```
-
-If you plan to work on GUI applications, initialize the submodules:
-
-Some submodules are private, such as tha landing page and future extensions.
+Spacedrive is vendored inside the Spacebot repository. Clone the parent repo and work from `spacebot/spacedrive/`.
 
 ```bash
-git submodule update --init --recursive
+git clone https://github.com/jrmatherly/spacebot
+cd spacebot/spacedrive
 ```
+
+Upstream's private submodules (landing page, native iOS/macOS apps under `apps/`) are not part of the vendored copy. If you need them, clone them separately against your own fork or contact the repo owner.
 
 ### System Dependencies
 
@@ -489,11 +487,11 @@ Install Bun from [bun.sh](https://bun.sh) if you don't have it.
 From a clean clone, follow these steps in order:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/spacedriveapp/spacedrive
-cd spacedrive
+# 1. Clone the Spacebot repository (Spacedrive is vendored inside)
+git clone https://github.com/jrmatherly/spacebot
+cd spacebot/spacedrive
 
-# 2. Install JavaScript dependencies (from repo root)
+# 2. Install JavaScript dependencies (from spacedrive/ root)
 bun install
 
 # 3. Setup native dependencies and generate cargo config
@@ -578,7 +576,7 @@ The app connects to `sd-daemon` which manages libraries and P2P connections. In 
 
 ## SpaceUI (Design System)
 
-Spacedrive's UI components come from [SpaceUI](https://github.com/spacedriveapp/spaceui), a standalone design system monorepo. SpaceUI provides shared primitives (Button, Input, Dialog, etc.), design tokens, form components, AI agent UI, and explorer components used across Spacedrive and Spacebot.
+Spacedrive's UI components come from SpaceUI, a design system monorepo. In this repository, SpaceUI is co-located at `../spaceui/` (same parent directory as `spacedrive/`) and is consumed by Spacebot's `interface/` via the bun workspace protocol. The Spacedrive-side Tauri app vendored here still contains the original upstream npm-consumer Vite configuration, which has not been rewired to the in-tree layout yet.
 
 ### Packages
 
@@ -590,43 +588,20 @@ Spacedrive's UI components come from [SpaceUI](https://github.com/spacedriveapp/
 | `@spacedrive/ai` | AI agent interaction components |
 | `@spacedrive/explorer` | File management components |
 
-### Working on UI Alongside Spacedrive
+### Working on UI in this repo
 
-If you're contributing to both the UI layer and the app, clone SpaceUI as a sibling directory:
-
-```bash
-# From your workspace root (e.g., ~/Projects)
-git clone https://github.com/spacedriveapp/spacedrive
-git clone https://github.com/spacedriveapp/spaceui
-
-# Your directory should look like:
-# ~/Projects/
-# ├── spacedrive/
-# └── spaceui/
-```
-
-Then link SpaceUI for local development:
+SpaceUI source lives at `../spaceui/packages/*`. To work on both layers at once, edit `spaceui/packages/<pkg>/src/` directly and rebuild from the top of the repo.
 
 ```bash
-# Register SpaceUI packages globally
+# From spacebot repo root
 cd spaceui
 bun install
-bun run link
-
-# Link into Spacedrive
-cd ../spacedrive
-bun link @spacedrive/tokens @spacedrive/primitives @spacedrive/ai
+bun run build
 ```
 
-With linking active, changes you make in `spaceui/` are picked up immediately by Spacedrive's Vite dev server — no rebuild needed. The Vite configs in `apps/tauri/` and `apps/web/` already have the necessary source aliases, `optimizeDeps.exclude`, and `server.fs.allow` settings configured.
+The Spacebot web UI (`interface/`) picks up SpaceUI changes through the bun workspace protocol without any linking step. See `../spaceui/README.md` for the full in-tree workflow.
 
-### If You're Only Working on Spacedrive
-
-If you're not modifying SpaceUI itself, you don't need to clone it. Spacedrive consumes published `@spacedrive/*` packages from npm. Just run `bun install` and everything resolves from the registry.
-
-### SpaceUI Integration Guide
-
-For full details on how SpaceUI is integrated (Vite aliases, Tailwind `@source` scanning, React deduplication, publishing workflow), see the [SpaceUI Integration Guide](https://github.com/spacedriveapp/spaceui/blob/main/INTEGRATION.md).
+If you need to wire SpaceUI source-aliases into Spacedrive's Tauri Vite config for the vendored Tauri app specifically, the `INTEGRATION.md` at `../spaceui/INTEGRATION.md` documents the external-consumer pattern (Vite aliases, Tailwind `@source` scanning, React deduplication). Those instructions assume a sibling-repo layout; adapt relative paths to this repo's structure.
 
 ## Extension Development
 
@@ -709,14 +684,14 @@ Once you have finished making your changes, create a pull request (PR) to submit
 - Fill out the PR template to help reviewers understand your changes
 - [Link your PR to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) if addressing an existing issue
 - Enable the checkbox to [allow maintainer edits](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/allowing-changes-to-a-pull-request-branch-created-from-a-fork)
-- A team member will review your proposal and may request changes
+- A reviewer (the repo owner for this fork) will look at your change and may request changes
 - Mark conversations as [resolved](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/commenting-on-a-pull-request#resolving-conversations) as you address feedback
 
 ## Your PR is Merged!
 
-Congratulations! The Spacedrive team thanks you for your contribution!
+Thanks for contributing.
 
-Once your PR is merged, your changes will be included in the next release of the application.
+Once your PR is merged, your changes ship with the next release of Spacebot (which carries the vendored Spacedrive copy).
 
 ## Troubleshooting
 
@@ -1173,8 +1148,8 @@ packages/
 - [Spacedrive Architecture](docs/core/architecture.mdx) - Deep dive into V2 architecture
 - [Extension Development](docs/extensions/introduction.mdx) - Build WASM extensions
 - [Whitepaper](docs/overview/whitepaper.mdx) - Spacedrive's vision and technical design
-- [Discord Community](https://discord.gg/gTaF2Z44f5) - Get help and discuss development
+- `../openspec/specs/spacedrive-in-tree/spec.md` - Structural rules for the in-tree vendored copy
 
 ## Credits
 
-This CONTRIBUTING.md file was inspired by the [github/docs CONTRIBUTING.md](https://github.com/github/docs/blob/main/.github/CONTRIBUTING.md) file, and we extend our gratitude to the original author.
+This CONTRIBUTING.md file was inspired by the [github/docs CONTRIBUTING.md](https://github.com/github/docs/blob/main/.github/CONTRIBUTING.md) file, and we extend gratitude to the original author.

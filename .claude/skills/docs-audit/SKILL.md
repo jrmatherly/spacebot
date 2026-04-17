@@ -17,7 +17,8 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 |------|-------|
 | Repo root | `README.md`, `AGENTS.md`, `PROJECT_INDEX.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `METRICS.md`, `RUST_STYLE_GUIDE.md`, `SPACEUI_MIGRATION.md` (8 files) |
 | Interface | `interface/DRY_VIOLATIONS.md` |
-| SpaceUI root | `spaceui/README.md`, `spaceui/CONTRIBUTING.md`, `spaceui/INTEGRATION.md` |
+| SpaceUI root | `spaceui/README.md`, `spaceui/CONTRIBUTING.md`, `spaceui/INTEGRATION.md` (the last is a reference for external consumers, not internal workflow — audit as such) |
+| Vendored Spacedrive policy files | `spacedrive/README.md`, `spacedrive/SECURITY.md`, `spacedrive/CONTRIBUTING.md`, `spacedrive/CODE_OF_CONDUCT.md`, `spacedrive/AGENTS.md` — these 5 root-level files are IN scope because they've been reframed as Spacebot-owned policy documents for the vendored subtree (banners, clone URLs, issue/PR routing pointed at `jrmatherly/spacebot`). The rest of `spacedrive/` (crates/, core/, apps/, docs/, extensions/, adapters/, schemas/) remains out of scope as upstream-maintained source. |
 | SpaceUI internal docs | `spaceui/docs/{COMPONENT-AUDIT,REPO_SUMMARY,SHARED-UI-STRATEGY,TAILWIND-V4-MIGRATION}.md` |
 | SpaceUI changesets | `spaceui/.changeset/README.md` + `config.json` |
 | SpaceUI packages | `spaceui/packages/{ai,explorer,forms,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` (`icons/` has no README — flag as 🔵 Missing or document why) |
@@ -52,7 +53,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | `openspec/changes/<active>/*` | Active change artifacts | `/openspec-apply-change`, `/openspec-verify-change` |
 | `.codex/skills/*` (5), `.windsurf/skills/*` (5), `.windsurf/workflows/opsx-*` (5) | Mirror copies of `.claude/skills/openspec-*` for other agent platforms. Windsurf `opsx-*` workflows are thin wrappers that invoke the same skills. | Audit canonical source in `.claude/skills/`; mirrors are derived. |
 | `.full-review/*.md` (14 files) | Code-review framework templates, not project docs | N/A |
-| `spacedrive/` (241 tracked files) | Vendored upstream workspace with its own maintenance | Spacedrive upstream |
+| `spacedrive/` (241 tracked files) **except** the five policy files listed in Tier 1 above | Vendored upstream source (`crates/`, `core/`, `apps/`, `docs/`, `extensions/`, `adapters/`, `schemas/`, `whitepaper/`). Own maintenance lifecycle. | Spacedrive upstream |
 | `.claude/worktrees/*` | Git-worktree checkout on another branch; not authoritative on `main` (not gitignored but 0 files tracked) | N/A — exclude |
 | `vendor/`, `node_modules/`, `target/`, `dist/`, `.next/`, `.source/`, `.turbo/`, `.cargo/`, `.code-review-graph/` | Build artifacts / dependency caches | N/A — ignored |
 | `.scratchpad/`, `.remember/`, `.worktrees/` | Gitignored; not authoritative state | N/A — exclude |
@@ -187,6 +188,18 @@ For each target file, don't just read. Compare against Step 1 evidence. Specific
 **Broken links**
 - Relative links to moved/renamed files (`[X](../old-path/file.md)`)
 - Use `grep -rE '\]\([^)]+\.md\)' <doc>` to list, then verify each target exists
+
+**References to gitignored paths**
+- Tracked files must NOT link into `.scratchpad/`, `.remember/`, `.worktrees/`, `.serena/`, `.claude/worktrees/`, or any other gitignored directory. Those paths are invisible to everyone who clones the repo.
+- Sweep: `grep -rnE "\.scratchpad/|\.remember/|\.worktrees/|\.serena/" --include="*.md" . | grep -v "^\./\.scratchpad" | grep -v "^\./\.claude/" | grep -v "^\./\.serena/" | grep -v "^\./\.codex/" | grep -v "^\./\.windsurf/" | grep -v "^\./\.full-review/" | grep -v "^\./spacedrive/"`
+- When a tracked file needs to reference content that currently lives in `.scratchpad/completed/`, port it to `docs/design-docs/` (for decision records) or another appropriate tracked location before adding the reference.
+- Exceptions: `openspec/changes/archive/*` files are immutable — their `.scratchpad/` references are historical record and must not be edited. Transient plans at `docs/superpowers/plans/*` may reference `.scratchpad/*` source specs; those references describe historical input, not live links.
+
+**Upstream-repo URLs in vendored subtrees**
+- The `spacedrive/` subtree is vendored from `spacedriveapp/spacedrive` and `spaceui/` was imported from `spacedriveapp/spaceui`. Both now belong to this repo. Clone URLs, issue links, and PR workflow prose in their policy files (`spacedrive/README.md`, `spacedrive/CONTRIBUTING.md`, `spacedrive/SECURITY.md`, `spacedrive/CODE_OF_CONDUCT.md`, `spacedrive/AGENTS.md`, `spaceui/README.md`, `spaceui/CONTRIBUTING.md`) must point at `jrmatherly/spacebot`, not `spacedriveapp/*`.
+- Sweep: `grep -rnE "spacedriveapp|v2\.spacedrive\.com|discord\.gg" spacedrive/README.md spacedrive/CONTRIBUTING.md spacedrive/SECURITY.md spacedrive/CODE_OF_CONDUCT.md spacedrive/AGENTS.md spaceui/README.md spaceui/CONTRIBUTING.md`
+- Expected: zero hits in the 5 spacedrive policy files + 2 spaceui policy files. Deeper content (narrative prose describing upstream's architecture) is out of scope.
+- `spaceui/INTEGRATION.md` is a deliberate exception: it documents the external-consumer pattern, so npm-publication and upstream-workflow claims there are correct for its purpose. The file banner must mark it as reference-only, not live-workflow for this fork.
 
 ### Step 3: Categorize Findings
 

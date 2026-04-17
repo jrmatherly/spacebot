@@ -1,24 +1,27 @@
 ---
 name: spaceui-dev
-description: Specialized SpaceUI component library skill for AI coding assistants. Covers the 6-package monorepo (@spacedrive/tokens, primitives, forms, ai, explorer, icons), 41+ UI primitives, 15 AI agent components, design token system (50+ CSS variables), Tailwind v4 configuration, form integration (React Hook Form + Zod), semantic color system, component variants (CVA), and consumer integration patterns. Use when working on UI components, styling with SpaceUI tokens, building AI chat interfaces, task management UI, or integrating SpaceUI into consuming apps.
+description: Specialized SpaceUI component library skill for AI coding assistants. Covers the 6-package in-tree monorepo (@spacedrive/tokens, primitives, forms, ai, explorer, icons), 42 UI primitives, 13 AI agent components, design token system, Tailwind v4 configuration, form integration (React Hook Form + Zod), semantic color system, component variants (CVA), and consumer integration patterns. Use when working on UI components, styling with SpaceUI tokens, building AI chat interfaces, task management UI, or integrating SpaceUI into consuming apps.
 ---
 
 # SpaceUI Development Guide
 
-SpaceUI (`@spacedrive` scope) is the shared design system for the Spacedrive ecosystem. It provides React components consumed by both the Spacedrive app and the Spacebot portal. Source lives in `.scratchpad/spaceui/`.
+SpaceUI (`@spacedrive` scope) is the shared design system for this repository's UI. It provides React components consumed by the Spacebot web interface via the bun workspace protocol. Source lives at `spaceui/` in the project root as an independent bun workspace — not published to npm, not a separate repo.
 
-**Stats:** 124 source files, 100+ React components, 6 npm packages, all at version 0.2.3.
+**Stats:** 6 packages, all at version 0.2.3. Regular packages (primitives/forms/ai/explorer) are linked via changesets; tokens and icons version independently.
 
 ## Monorepo Structure
 
 ```
-packages/
-  tokens/      @spacedrive/tokens      Pure CSS design tokens for Tailwind v4
-  primitives/  @spacedrive/primitives  41+ base UI components
-  forms/       @spacedrive/forms       8 react-hook-form field wrappers
-  ai/          @spacedrive/ai          15 AI agent components
-  explorer/    @spacedrive/explorer    4 file management components
-  icons/       @spacedrive/icons       File type icons + resolution utilities
+spaceui/
+├── packages/
+│   ├── tokens/      @spacedrive/tokens      Pure CSS design tokens for Tailwind v4
+│   ├── primitives/  @spacedrive/primitives  42 base UI components
+│   ├── forms/       @spacedrive/forms       7 react-hook-form field wrappers
+│   ├── ai/          @spacedrive/ai          13 AI agent components
+│   ├── explorer/    @spacedrive/explorer    4 file management components
+│   └── icons/       @spacedrive/icons       File type icons + resolution utilities
+├── examples/showcase/    # Interactive demo app
+└── .storybook/           # Component documentation workspace
 ```
 
 **Tooling:** Bun (never npm/pnpm/yarn), tsup (ESM), Turbo, TypeScript strict, Storybook 8.6, Changesets, React 18/19.

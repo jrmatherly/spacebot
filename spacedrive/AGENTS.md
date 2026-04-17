@@ -1,5 +1,7 @@
 # Spacedrive Core v2 Development Guide
 
+> **Vendored subtree context.** This file is agent-facing development guidance for the Spacedrive codebase. In this repository, Spacedrive is vendored at `spacedrive/` as an independent Cargo workspace (own toolchain, own deps, excluded from the root workspace via `[workspace] exclude = ["spacedrive"]` in the root `Cargo.toml`). All relative paths in this file (`docs/`, `core/`, `apps/`, `packages/`, `.tasks/`, `/docs/core/design/`) are relative to this `spacedrive/` directory, NOT the Spacebot repo root. Always `cd spacedrive` before running any cargo command described below, and refer to the root `CLAUDE.md` for how Spacebot itself is organized.
+
 ## Quick Start
 
 ### Development Workflow

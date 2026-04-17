@@ -13,7 +13,7 @@ Research and recommendations for scaffolding Spacebot's Kubernetes deployment as
 **Out of scope:**
 - Writing the cluster repo's `helmrelease.yaml.j2`, `httproute.yaml.j2`, `secret.sops.yaml.j2` — those belong in the cluster repo, guided by the existing `/cluster-deploy` skill.
 - Actual deployment.
-- Any decision on the three Spacebot-side integration gaps (icons, upstream attribution, Spacedrive runtime) — those are separate docs in `.scratchpad/`.
+- Any decision on the three Spacebot-side integration gaps (icons, upstream attribution, Spacedrive runtime). Those were separate research docs authored in `.scratchpad/` at the time; they remain ungitted scratch.
 
 ## Ground truth researched
 

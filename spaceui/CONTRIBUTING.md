@@ -1,5 +1,7 @@
 # Contributing to SpaceUI
 
+> **Vendored in-tree.** SpaceUI lives inside the Spacebot repository as an independent bun workspace. There is no separate `spaceui` repo to clone or PR against. Work from `spacebot/spaceui/` and land changes via the Spacebot repo's PR workflow. See [`README.md`](./README.md) for the in-tree consumption pattern.
+
 Thank you for your interest in contributing to SpaceUI! This guide will help you get started.
 
 ## Development Setup
@@ -12,10 +14,10 @@ Thank you for your interest in contributing to SpaceUI! This guide will help you
 
 ### Getting Started
 
-1. **Clone the repository**
+1. **Clone the Spacebot repository**
    ```bash
-   git clone https://github.com/spacedriveapp/spaceui.git
-   cd spaceui
+   git clone https://github.com/jrmatherly/spacebot
+   cd spacebot/spaceui
    ```
 
 2. **Install dependencies**
@@ -239,8 +241,7 @@ Ensure peer dependencies are installed:
 
 ## Questions?
 
-- Open an issue for bugs or feature requests
-- Start a discussion for questions
-- Join our Discord for real-time chat
+- Open an issue in the Spacebot repository for bugs or feature requests. Tag with `spaceui` so it's scoped to this subtree.
+- Start a GitHub Discussion on the Spacebot repo for open-ended questions.
 
 Thank you for contributing!

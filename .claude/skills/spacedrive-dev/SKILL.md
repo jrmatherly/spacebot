@@ -1,6 +1,6 @@
 ---
 name: spacedrive-dev
-description: Specialized Spacedrive development skill for AI coding assistants working on Spacedrive integration. Covers the VDFS architecture, CQRS operations, library system, hybrid indexing, P2P sync (HLC/CRDT), Iroh networking, extension system (WASM), virtual sidecars, CLI commands, React hooks, semantic color system, and the Spacebot-Spacedrive integration contract (connection modes, remote execution, file system intelligence, ContextNode). Use when working on Spacedrive integration, the .scratchpad/spacedrive/ codebase, P2P networking, file indexing, sync systems, or the Spacebot-Spacedrive contract.
+description: Specialized Spacedrive development skill for AI coding assistants working on Spacedrive integration. Covers the VDFS architecture, CQRS operations, library system, hybrid indexing, P2P sync (HLC/CRDT), Iroh networking, extension system (WASM), virtual sidecars, CLI commands, React hooks, semantic color system, and the Spacebot-Spacedrive integration contract (connection modes, remote execution, file system intelligence, ContextNode). Use when working on Spacedrive integration, the vendored `spacedrive/` subtree at the repo root, P2P networking, file indexing, sync systems, or the Spacebot-Spacedrive contract.
 ---
 
 # Spacedrive Development Guide

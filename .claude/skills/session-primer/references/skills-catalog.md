@@ -22,7 +22,7 @@ These encode deep domain knowledge. Activate when working on the relevant subsys
 - API server — HTTP endpoints, message serialization
 
 ### spacedrive-dev (352 lines)
-**Trigger:** Spacedrive integration, `.scratchpad/spacedrive/` codebase, P2P networking, file indexing, sync systems, Spacebot-Spacedrive contract.
+**Trigger:** Spacedrive integration, the vendored `spacedrive/` subtree at the repo root, P2P networking, file indexing, sync systems, Spacebot-Spacedrive contract.
 
 **Covers:**
 - VDFS architecture — headless daemon + clients, CQRS pattern
