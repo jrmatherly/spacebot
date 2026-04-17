@@ -1,0 +1,35 @@
+name: Spacebot CodeQL Config
+
+# Shared CodeQL config consumed by .github/workflows/codeql.yml for every
+# language matrix entry. Keep this narrowly focused on SCOPE (what the
+# extractor sees); language-specific TRIGGERS live in the workflow `on:`
+# block.
+#
+# Why paths-ignore matters:
+# - `spacedrive/` is a vendored in-tree Spacedrive fork with its own Cargo
+#   workspace and toolchain. Spacebot's `[workspace] exclude = ["spacedrive"]`
+#   is a Cargo concept; CodeQL's no-build Rust extractor walks the source
+#   tree directly and does NOT honor it. Without paths-ignore here, Rust
+#   analysis on ubuntu-latest runs out of TRAP disk space mid-extraction
+#   (see PR #53 run 24577237194 job 71865635214 — 25 min → ENOSPC).
+# - `vendor/` holds third-party code we don't maintain (imap-proto fork).
+# - Build outputs are never relevant scan targets.
+
+paths-ignore:
+  - "spacedrive/**"
+  - "vendor/**"
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/.next/**"
+  - "**/target/**"
+  - "**/build/**"
+  - "docs/**"
+  - "**/*.md"
+  - "CHANGELOG.md"
+
+# Keep the default query suite. Both security-extended and security-and-quality
+# were explicitly rejected in the 2026-04-17 audit for noise-to-signal reasons
+# on Rust (GA'd Oct 2025, queries still thin) and JS/TS at current maturity.
+# Re-evaluate Q3 2026 per the strategic section of the audit.
+# The `queries:` key is intentionally omitted — CodeQL falls back to the
+# default suite per language.

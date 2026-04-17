@@ -1,0 +1,53 @@
+name: Actions Security (zizmor)
+
+# Sibling Actions-security scanner complementing CodeQL's Actions queries.
+# zizmor catches patterns CodeQL misses: forbidden-uses, KVCW templates,
+# ref-confusion, and stricter pull_request_target heuristics.
+#
+# Motivation: .scratchpad/2026-04-17-codeql-configuration-audit.md (Quick Win #2).
+#
+# SARIF uploaded via the action's own advanced-security integration so
+# findings land in the Code Scanning tab alongside CodeQL.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/codeql/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/codeql/**"
+  schedule:
+    # Weekly baseline against drift in action SHAs and newly-published rules.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          # Strictest persona once we trust the signal; start on regular.
+          persona: regular
+          online-audits: true
+          advanced-security: true
