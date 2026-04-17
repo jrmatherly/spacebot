@@ -1,0 +1,28 @@
+# Spacebot local proxy config.
+# Serves Spacebot at https://spacebot.localhost (with Caddy's local CA).
+# Other hosts only resolve if their profile is active.
+
+{
+	# Admin API is reachable only from inside the Docker network (caddy:2019).
+	# The host port is NOT published in docker-compose.yml, closing the
+	# unauthenticated admin-API hazard.
+	admin :2019
+}
+
+spacebot.localhost {
+	reverse_proxy spacebot:19898
+}
+
+# Requires the spacedrive profile to be active; otherwise resolves to nothing.
+spacedrive.localhost {
+	reverse_proxy spacedrive:8080
+}
+
+# Requires the observability profile.
+metrics.localhost {
+	reverse_proxy prometheus:9090
+}
+
+grafana.localhost {
+	reverse_proxy grafana:3000
+}

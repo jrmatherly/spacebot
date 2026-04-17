@@ -120,6 +120,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # caddy — proxy profile. Reverse proxy with local CA.
+  # Admin port 2019 deliberately NOT exposed to host.
+  # ====================================================================
+  caddy:
+    profiles: [proxy]
+    image: caddy:2
+    container_name: spacebot-caddy
+    restart: unless-stopped
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:80:80"
+      - "${SPACEBOT_BIND:-127.0.0.1}:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - spacebot-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/apps/http/servers"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge
@@ -128,4 +157,8 @@ volumes:
   spacebot-data:
     driver: local
   spacedrive-data:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
     driver: local
