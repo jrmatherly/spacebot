@@ -2,7 +2,7 @@
 
 Tracked hardcoded patterns and duplication in `interface/src/` that are worth consolidating. Every entry is grounded in a grep against the current tree (not historical claims).
 
-**Snapshot:** 2026-04-16 — post `@spacedrive/primitives` migration, Tailwind v4.
+**Snapshot:** 2026-04-17 — post `@spacedrive/primitives` migration, Tailwind v4.
 
 **How to use this doc:**
 - Before "fixing" anything here, re-run the referenced grep. Counts drift quickly.
@@ -11,7 +11,7 @@ Tracked hardcoded patterns and duplication in `interface/src/` that are worth co
 
 ---
 
-## 🔴 Pulse-dot loading indicator (26 occurrences, 24 files)
+## ⚪ Pulse-dot loading indicator — ✅ largely fixed (1 remaining occurrence)
 
 **Pattern:**
 ```tsx
@@ -23,13 +23,11 @@ Tracked hardcoded patterns and duplication in `interface/src/` that are worth co
 grep -rnE 'h-2 w-2 animate-pulse rounded-full bg-accent' interface/src/
 ```
 
-**Top offenders:** `routes/AgentCron.tsx` (2), `components/settings/ChatGptOAuthDialog.tsx` (2). Every other file has exactly 1 occurrence. Spread is wide (most of `components/settings/*`, most `routes/Agent*.tsx`, `routes/Workbench.tsx`, `components/OpenCodeEmbed.tsx`, `components/MemoryGraph.tsx`, `components/org/OrgGraphInner.tsx`).
+**Status (as of 2026-04-17):** 25 of 26 occurrences migrated to `LoadingDot` from `@spacedrive/primitives` (`spaceui/packages/primitives/src/LoadingDot.tsx`). One remaining:
 
-**Fix:** Add a `LoadingDot` component. Two reasonable homes:
-1. `spaceui/packages/primitives/src/LoadingDot.tsx` — reusable across interface and the showcase app. Preferred if `spaceui/` should own generic loading primitives.
-2. `interface/src/components/LoadingDot.tsx` — interface-local if the pattern is specific to daemon control UI idioms.
+- `interface/src/routes/ChannelDetail.tsx:134`
 
-Keep the default markup identical (`flex items-center gap-2 text-ink-dull` wrapper + dot + "Loading..." label) and accept `label?: string` and `className?: string` for variation.
+**Fix:** Swap the last raw div for `<LoadingDot />`. After that, delete this entry from DRY_VIOLATIONS.md.
 
 ---
 
