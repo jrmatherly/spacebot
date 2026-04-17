@@ -121,3 +121,74 @@ update-frontend-hash:
 # Use this when you want to update dependencies like nixpkgs, crane, etc.
 update-flake:
     nix flake update --extra-experimental-features "nix-command flakes"
+
+# ============================================
+# Docker Compose recipes (deploy/docker/)
+# ============================================
+
+# Quick-start Spacebot via published image
+compose-up:
+    docker compose -f deploy/docker/docker-compose.yml --profile default up -d
+
+# Source-rebuild Spacebot (mutually exclusive with default)
+compose-up-build:
+    docker compose -f deploy/docker/docker-compose.yml --profile build up -d --build
+
+# Spacebot + Spacedrive integration harness
+compose-up-spacedrive:
+    docker compose -f deploy/docker/docker-compose.yml --profile default --profile spacedrive up -d --build
+
+# Observability stack (layered on default)
+compose-up-observability:
+    docker compose -f deploy/docker/docker-compose.yml --profile default --profile observability up -d
+
+# Full stack: default + spacedrive + proxy + observability + tooling
+compose-up-all:
+    docker compose -f deploy/docker/docker-compose.yml \
+        --profile default --profile spacedrive --profile proxy --profile observability --profile tooling \
+        up -d --build
+
+# Stop all services across all profiles (requires Compose v2.20+)
+compose-down:
+    docker compose -f deploy/docker/docker-compose.yml --profile '*' down
+
+# Fallback for Compose < 2.20
+compose-down-compat:
+    docker compose -f deploy/docker/docker-compose.yml \
+        --profile default --profile build --profile spacedrive \
+        --profile proxy --profile observability --profile tooling \
+        down
+
+# DESTRUCTIVE: stop + wipe all named volumes. Requires typed WIPE confirmation.
+compose-reset:
+    @printf "This will wipe spacebot-data, spacedrive-data, grafana, prometheus, caddy volumes.\nType 'WIPE' to confirm: " && \
+        read CONFIRM && [ "$$CONFIRM" = "WIPE" ] || (echo "Aborted." && exit 1)
+    docker compose -f deploy/docker/docker-compose.yml --profile '*' down -v
+
+# Tail logs across all running services
+compose-logs:
+    docker compose -f deploy/docker/docker-compose.yml --profile '*' logs -f --tail=100
+
+# Install Caddy's local CA into the host trust store
+compose-proxy-trust:
+    docker compose -f deploy/docker/docker-compose.yml exec caddy caddy trust
+
+# Remove Caddy's local CA from the host trust store
+compose-proxy-untrust:
+    docker compose -f deploy/docker/docker-compose.yml exec caddy caddy untrust
+
+# Validate compose file parses for every profile (CI mirror)
+compose-validate:
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile default config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile build config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile spacedrive config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile proxy config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile observability config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
+        docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
+    @echo "All profile combinations parse cleanly."
