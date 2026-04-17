@@ -179,6 +179,37 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # grafana — observability profile. Requires Prometheus healthy first.
+  # No working credential defaults per spec §4.3 / reviewer sweep Sec-1.
+  # ====================================================================
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana:11.3.0
+    container_name: spacebot-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GF_ANONYMOUS:-false}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - spacebot-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge
@@ -193,4 +224,6 @@ volumes:
   caddy-config:
     driver: local
   prometheus-data:
+    driver: local
+  grafana-data:
     driver: local

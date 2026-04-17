@@ -1,0 +1,86 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Spacebot up?",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "up{job=\"spacebot\"}", "legendFormat": "up"}],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      },
+      "options": {
+        "text": {"titleSize": 16}
+      },
+      "description": "0 = scrape failing. If this is 0 but the container is running, metrics feature is likely missing from image."
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP request rate (req/s)",
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum by (path) (rate(http_requests_total{job=\"spacebot\"}[1m]))", "legendFormat": "{{path}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP request duration p95",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"spacebot\"}[5m])))", "legendFormat": "p95"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Active workers",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "spacebot_workers_active{job=\"spacebot\"}", "legendFormat": "workers"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM tokens (input/output per minute)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum(rate(spacebot_llm_tokens_input_total{job=\"spacebot\"}[1m]))", "legendFormat": "input"},
+        {"expr": "sum(rate(spacebot_llm_tokens_output_total{job=\"spacebot\"}[1m]))", "legendFormat": "output"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory RSS (MB)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "process_resident_memory_bytes{job=\"spacebot\"} / 1024 / 1024", "legendFormat": "RSS"}]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["spacebot"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Spacebot Overview",
+  "uid": "spacebot-overview",
+  "version": 1,
+  "weekStart": ""
+}
