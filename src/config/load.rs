@@ -970,6 +970,7 @@ impl Config {
             bindings: Vec::new(),
             api,
             metrics: MetricsConfig::default(),
+            spacedrive: crate::spacedrive::SpacedriveIntegrationConfig::default(),
             telemetry: TelemetryConfig {
                 otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
                 otlp_headers: parse_otlp_headers(std::env::var("OTEL_EXPORTER_OTLP_HEADERS").ok())?,
@@ -2527,6 +2528,13 @@ impl Config {
             bind: toml.metrics.bind,
         };
 
+        let spacedrive = crate::spacedrive::SpacedriveIntegrationConfig {
+            enabled: toml.spacedrive.enabled,
+            base_url: toml.spacedrive.base_url,
+            library_id: toml.spacedrive.library_id,
+            spacebot_instance_id: toml.spacedrive.spacebot_instance_id,
+        };
+
         let telemetry = {
             // env var takes precedence over config file value
             let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -2640,6 +2648,7 @@ impl Config {
             bindings,
             api,
             metrics,
+            spacedrive,
             telemetry,
         })
     }
@@ -2652,5 +2661,35 @@ fn load_human_md(human_dir: &std::path::Path) -> Option<String> {
     match std::fs::read_to_string(&path) {
         Ok(content) if !content.trim().is_empty() => Some(content),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_round_trips_spacedrive_section() {
+        let toml_src = r#"
+            [spacedrive]
+            enabled = true
+            base_url = "http://127.0.0.1:8080"
+        "#;
+        let toml_config: TomlConfig = toml::from_str(toml_src).unwrap();
+        let instance_dir = std::env::temp_dir().join("spacebot-cfg-test");
+        let cfg = Config::from_toml(toml_config, instance_dir).unwrap();
+        assert!(cfg.spacedrive.enabled);
+        assert_eq!(cfg.spacedrive.base_url, "http://127.0.0.1:8080");
+        assert!(cfg.spacedrive.library_id.is_none());
+    }
+
+    #[test]
+    fn config_omits_spacedrive_section_defaults_disabled() {
+        let toml_src = "";
+        let toml_config: TomlConfig = toml::from_str(toml_src).unwrap();
+        let instance_dir = std::env::temp_dir().join("spacebot-cfg-test");
+        let cfg = Config::from_toml(toml_config, instance_dir).unwrap();
+        assert!(!cfg.spacedrive.enabled);
+        assert_eq!(cfg.spacedrive.base_url, "http://127.0.0.1:8080");
     }
 }

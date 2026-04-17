@@ -28,6 +28,8 @@ pub(super) struct TomlConfig {
     #[serde(default)]
     pub(super) metrics: TomlMetricsConfig,
     #[serde(default)]
+    pub(super) spacedrive: TomlSpacedriveConfig,
+    #[serde(default)]
     pub(super) telemetry: TomlTelemetryConfig,
 }
 
@@ -146,6 +148,33 @@ pub(super) fn default_metrics_port() -> u16 {
 }
 pub(super) fn default_metrics_bind() -> String {
     "0.0.0.0".into()
+}
+
+#[derive(Deserialize)]
+pub(super) struct TomlSpacedriveConfig {
+    #[serde(default)]
+    pub(super) enabled: bool,
+    #[serde(default = "default_spacedrive_base_url")]
+    pub(super) base_url: String,
+    #[serde(default)]
+    pub(super) library_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub(super) spacebot_instance_id: Option<uuid::Uuid>,
+}
+
+impl Default for TomlSpacedriveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: default_spacedrive_base_url(),
+            library_id: None,
+            spacebot_instance_id: None,
+        }
+    }
+}
+
+pub(super) fn default_spacedrive_base_url() -> String {
+    "http://127.0.0.1:8080".into()
 }
 
 #[derive(Deserialize, Debug)]
