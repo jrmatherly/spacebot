@@ -899,6 +899,29 @@ pub fn create_worker_tool_server(
 
     if let Some(store) = runtime_config.secrets.load().as_ref() {
         server = server.tool(SecretSetTool::new(store.clone()));
+
+        // Spacedrive integration — opt-in per config + pairing state.
+        if runtime_config.spacedrive.enabled && runtime_config.spacedrive.library_id.is_some() {
+            match crate::spacedrive::build_client_from_secrets(
+                &runtime_config.spacedrive,
+                store.as_ref(),
+            ) {
+                Ok(client) => {
+                    let lib_id = runtime_config.spacedrive.library_id.unwrap().to_string();
+                    server = crate::tools::spacedrive_list_files::register_spacedrive_tools(
+                        server,
+                        std::sync::Arc::new(client),
+                        lib_id,
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = ?e,
+                        "spacedrive integration enabled but client failed to build; tool not registered"
+                    );
+                }
+            }
+        }
     }
 
     if browser_config.enabled {
@@ -1044,6 +1067,31 @@ pub fn create_cortex_chat_tool_server(
         .tool(ShellTool::new(workspace.clone(), sandbox.clone()));
 
     server = register_file_tools(server, workspace, sandbox);
+
+    // Spacedrive integration — opt-in per config + pairing state.
+    if runtime_config.spacedrive.enabled && runtime_config.spacedrive.library_id.is_some() {
+        if let Some(store) = runtime_config.secrets.load().as_ref() {
+            match crate::spacedrive::build_client_from_secrets(
+                &runtime_config.spacedrive,
+                store.as_ref(),
+            ) {
+                Ok(client) => {
+                    let lib_id = runtime_config.spacedrive.library_id.unwrap().to_string();
+                    server = crate::tools::spacedrive_list_files::register_spacedrive_tools(
+                        server,
+                        std::sync::Arc::new(client),
+                        lib_id,
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = ?e,
+                        "spacedrive integration enabled but client failed to build; tool not registered"
+                    );
+                }
+            }
+        }
+    }
 
     if browser_config.enabled {
         server = register_browser_tools(server, browser_config, screenshot_dir, &runtime_config);

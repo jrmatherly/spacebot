@@ -68,11 +68,8 @@ impl Tool for SpacedriveListFilesTool {
             path: args.path,
             limit: args.limit,
         };
-        let payload: serde_json::Value = self
-            .context
-            .client
-            .rpc("query:media_listing", req)
-            .await?;
+        let payload: serde_json::Value =
+            self.context.client.rpc("query:media_listing", req).await?;
         let raw = serde_json::to_vec(&payload)?;
         Ok(wrap_spacedrive_response(
             &self.context.library_id,
