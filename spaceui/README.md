@@ -12,11 +12,11 @@ SpaceUI is a standalone repository that houses all shared UI components, design 
 spaceui/
 ├── packages/
 │   ├── tokens/         # @spacedrive/tokens - CSS-first design tokens (Tailwind v4)
-│   ├── primitives/     # @spacedrive/primitives - Base UI components (41)
+│   ├── primitives/     # @spacedrive/primitives - Base UI components (42)
 │   ├── forms/          # @spacedrive/forms - react-hook-form wrappers (7)
 │   ├── icons/          # @spacedrive/icons - file-type icons + extension badges (SVG)
-│   ├── ai/             # @spacedrive/ai - AI agent components (12)
-│   └── explorer/       # @spacedrive/explorer - File management (3)
+│   ├── ai/             # @spacedrive/ai - AI agent components (13)
+│   └── explorer/       # @spacedrive/explorer - File management (4)
 ├── examples/
 │   └── showcase/       # Interactive demo app
 ├── .storybook/         # Component documentation

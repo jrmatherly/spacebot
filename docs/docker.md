@@ -2,6 +2,8 @@
 
 Run Spacebot in a container with the unified Spacebot image.
 
+> Prefer a hosted deploy? See [apollosai.dev](https://apollosai.dev) — one-click provisioning with managed updates.
+
 ## Quick Start
 
 ```bash
@@ -10,14 +12,14 @@ docker run -d \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -v spacebot-data:/data \
   -p 19898:19898 \
-  ghcr.io/spacedriveapp/spacebot:latest
+  ghcr.io/jrmatherly/spacebot:latest
 ```
 
 The web UI is available at `http://localhost:19898`.
 
 ## Image Behavior
 
-There is one published image: `ghcr.io/spacedriveapp/spacebot`.
+There is one published image: `ghcr.io/jrmatherly/spacebot`.
 
 - `latest` tracks the rolling release
 - `vX.Y.Z` pins a specific release
@@ -58,7 +60,7 @@ docker run -d \
   -e DISCORD_BOT_TOKEN="..." \
   -v spacebot-data:/data \
   -p 19898:19898 \
-  ghcr.io/spacedriveapp/spacebot:latest
+  ghcr.io/jrmatherly/spacebot:latest
 ```
 
 Available environment variables:
@@ -85,7 +87,7 @@ docker run -d \
   -v spacebot-data:/data \
   -v ./config.toml:/data/config.toml:ro \
   -p 19898:19898 \
-  ghcr.io/spacedriveapp/spacebot:latest
+  ghcr.io/jrmatherly/spacebot:latest
 ```
 
 Config values can reference environment variables with `env:VAR_NAME`:
@@ -102,7 +104,7 @@ See [config.md](config.md) for the full config reference.
 ```yaml
 services:
   spacebot:
-    image: ghcr.io/spacedriveapp/spacebot:latest
+    image: ghcr.io/jrmatherly/spacebot:latest
     container_name: spacebot
     restart: unless-stopped
     ports:
@@ -193,7 +195,7 @@ If Spacebot is installed from source (`cargo install --path .` or a local releas
 
 ## CI / Releases
 
-Images are built and pushed to `ghcr.io/spacedriveapp/spacebot` via GitHub Actions (`.github/workflows/release.yml`).
+Images are built and pushed to `ghcr.io/jrmatherly/spacebot` via GitHub Actions (`.github/workflows/release.yml`).
 
 **Triggers:**
 
