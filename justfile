@@ -224,3 +224,7 @@ spaceui-gate: spaceui-check-workspace spaceui-check-dedupe
     cd interface && bunx tsc --noEmit
     cd interface && bun run build
     @echo "spaceui-gate passed."
+
+# Check that path:line anchors in Spacedrive integration ADRs still resolve.
+check-adr-anchors:
+    bash scripts/check-adr-anchors.sh
