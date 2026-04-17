@@ -13,7 +13,12 @@ spaceui/node_modules/
 spaceui/packages/*/dist/
 spaceui/packages/*/node_modules/
 spaceui/examples/
+# Bun workspace resolver requires every declared member's package.json
+# to exist during install; allow stubs through even though examples/ and
+# .storybook/ are otherwise dev-only.
+!spaceui/examples/*/package.json
 spaceui/.storybook/
+!spaceui/.storybook/package.json
 spaceui/.changeset/
 spaceui/scripts/
 

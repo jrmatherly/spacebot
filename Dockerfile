@@ -49,8 +49,15 @@ COPY spaceui/packages/icons/ spaceui/packages/icons/
 COPY spaceui/package.json spaceui/bun.lock spaceui/
 COPY spaceui/turbo.json spaceui/
 COPY spaceui/tsconfig.base.json spaceui/
+# Bun 1.3 validates that every workspace member declared in
+# spaceui/package.json exists on disk before installing. `.storybook`
+# and `examples/*` are dev-only and excluded by .dockerignore, so stub
+# their package.json files to satisfy workspace resolution. The turbo
+# filter below scopes the actual build to packages/*.
+COPY spaceui/.storybook/package.json spaceui/.storybook/
+COPY spaceui/examples/showcase/package.json spaceui/examples/showcase/
 # hadolint ignore=DL3003
-RUN cd spaceui && bun install --frozen-lockfile && bun run build
+RUN cd spaceui && bun install --frozen-lockfile && bunx turbo run build --filter="./packages/*"
 
 # 3. Install frontend dependencies (resolves @spacedrive/* as workspace
 #    symlinks into the spaceui packages copied above).
