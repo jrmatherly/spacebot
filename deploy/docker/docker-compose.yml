@@ -45,6 +45,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # spacebot-build — build profile. Rebuilds from root Dockerfile.
+  # Mutually exclusive with default: both bind port 19898.
+  # ====================================================================
+  spacebot-build:
+    profiles: [build]
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: spacebot
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SPACEBOT_DIR: /data
+      SPACEBOT_DEPLOYMENT: docker
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:19898:19898"
+      - "${SPACEBOT_BIND:-127.0.0.1}:9090:9090"
+      - "${SPACEBOT_BIND:-127.0.0.1}:18789:18789"
+    volumes:
+      - spacebot-data:/data
+    networks:
+      - spacebot-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19898/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge
