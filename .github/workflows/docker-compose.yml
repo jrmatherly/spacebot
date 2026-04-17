@@ -15,6 +15,16 @@ on:
       - 'spacedrive/.dockerignore'
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
+  # Manual trigger for the smoke job. The smoke job pulls the published
+  # GHCR image, which does not exist in this fork until the first release
+  # is cut. Maintainers invoke this post-release to verify the pull +
+  # /api/health path end-to-end.
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'GHCR image tag to smoke-test (e.g. v0.4.1)'
+        required: true
+        default: 'latest'
 
 jobs:
   validate:
@@ -52,31 +62,50 @@ jobs:
         run: docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
 
   smoke:
-    name: Smoke-run default profile
+    name: Smoke-run default profile (manual)
+    # Only runs on manual invocation. On push/PR, there is no guarantee
+    # a published GHCR image exists at any given tag. Triggered via
+    # `gh workflow run docker-compose.yml -f image_tag=<tag>` or the
+    # Actions UI.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: validate
+    permissions:
+      # Needed if the GHCR package is private; harmless when public.
+      packages: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Determine latest published image digest
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image digest
         id: digest
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          # Use the v0.4.1 tag; digest must match whatever GHCR has pinned.
-          # In production CI, pin to a specific digest to avoid churn.
-          DIGEST=$(docker manifest inspect ghcr.io/jrmatherly/spacebot:v0.4.1 2>/dev/null | jq -r '.config.digest // empty' || true)
+          # Authenticated manifest inspect after docker login above.
+          # Fails the step (no fallback) if the tag does not exist.
+          DIGEST=$(docker manifest inspect "ghcr.io/jrmatherly/spacebot:${IMAGE_TAG}" | jq -r '.config.digest // empty')
           if [ -z "$DIGEST" ]; then
-            echo "Could not fetch digest; using known-good fallback"
-            DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            echo "::error::Could not resolve digest for ghcr.io/jrmatherly/spacebot:${IMAGE_TAG}. Has this tag been published?"
+            exit 1
           fi
+          echo "Resolved digest: $DIGEST"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Create .env for smoke test
         env:
           DIGEST: ${{ steps.digest.outputs.digest }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           cat > deploy/docker/.env <<EOF
           ANTHROPIC_API_KEY=sk-ant-test-not-a-real-key
-          SPACEBOT_IMAGE_TAG=v0.4.1
+          SPACEBOT_IMAGE_TAG=${IMAGE_TAG}
           SPACEBOT_IMAGE_DIGEST=${DIGEST}
           RUST_LOG=info
           EOF
