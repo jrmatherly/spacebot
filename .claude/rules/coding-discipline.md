@@ -54,7 +54,7 @@ Transform tasks into verifiable goals:
 
 For multi-step tasks, state the plan inline:
 
-```
+```markdown
 1. [Step] -> verify: [check]
 2. [Step] -> verify: [check]
 3. [Step] -> verify: [check]
@@ -70,7 +70,7 @@ Escape hatches (every exception must be named in the PR summary):
 
 - Docs-only changes (markdown, prompt templates, reference files).
 - Pure config changes with no behavioral surface (dependency version bumps, CI tweaks, lints).
-- Async or state-path changes where a repro test is genuinely impractical. In that case the existing `async-state-safety.md` rule applies: document terminal states, allowed transitions, race windows, and idempotency reasoning in the PR summary.
+- Async or state-path changes where a targeted repro test is genuinely impractical. The standard here is reasoning, not avoidance: the existing `async-state-safety.md` rule applies, so document terminal states, allowed transitions, race windows, and idempotency reasoning in the PR summary.
 
 ## Tradeoff
 
