@@ -149,6 +149,36 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # prometheus — observability profile. Scrapes spacebot metrics.
+  # ====================================================================
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.0.0
+    container_name: spacebot-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=1GB"
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - spacebot-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge
@@ -161,4 +191,6 @@ volumes:
   caddy-data:
     driver: local
   caddy-config:
+    driver: local
+  prometheus-data:
     driver: local

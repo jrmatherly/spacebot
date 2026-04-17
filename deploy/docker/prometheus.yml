@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: spacebot
+    static_configs:
+      - targets: [spacebot:9090]
+
+  # Spacedrive Prometheus scrape: commented out until sd-server exports
+  # Prometheus metrics. Re-enable when self-reliance doc's "Integration
+  # substrate grows sharply on first call" section ships metric naming.
+  # - job_name: spacedrive
+  #   static_configs:
+  #     - targets: [spacedrive:8080]
