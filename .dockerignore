@@ -26,6 +26,7 @@ spaceui/scripts/
 tests/
 scripts/
 !scripts/build-opencode-embed.sh
+!scripts/check-workspace-protocol.sh
 desktop/
 examples/
 packages/
