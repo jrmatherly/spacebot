@@ -67,6 +67,10 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 
 - `RUST_STYLE_GUIDE.md` — Full Rust coding conventions
 - `.claude/rules/coding-discipline.md` — Surface assumptions, simplicity, surgical edits, goal-driven TDD
+- `docs/design-docs/spacedrive-integration-pairing.md` — Shared-state contract between Spacebot and Spacedrive (blocks Track A and Track B)
+- `docs/design-docs/spacedrive-tool-response-envelope.md` — Prompt-injection defense envelope for Spacedrive-returned tool bytes
+- `spacedrive/SYNC.md` — Cherry-pick discipline for the vendored Spacedrive tree
+- `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
 - `SPACEUI_MIGRATION.md` — Frontend migration changelog
