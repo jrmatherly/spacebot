@@ -1,0 +1,57 @@
+name: SpaceUI typecheck + build
+
+on:
+  push:
+    paths:
+      - 'spaceui/**'
+      - 'interface/package.json'
+      - '.github/workflows/spaceui.yml'
+      - 'scripts/check-workspace-protocol.sh'
+  pull_request:
+    paths:
+      - 'spaceui/**'
+      - 'interface/package.json'
+      - '.github/workflows/spaceui.yml'
+      - 'scripts/check-workspace-protocol.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Typecheck + build spaceui, then interface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Workspace-protocol guard
+        run: bash scripts/check-workspace-protocol.sh
+
+      - name: SpaceUI install
+        working-directory: spaceui
+        run: bun install --frozen-lockfile
+
+      - name: SpaceUI typecheck
+        working-directory: spaceui
+        run: bun run typecheck
+
+      - name: SpaceUI build
+        working-directory: spaceui
+        run: bun run build
+
+      - name: Interface install
+        working-directory: interface
+        run: bun install --frozen-lockfile
+
+      - name: Interface typecheck
+        working-directory: interface
+        run: bunx tsc --noEmit
+
+      - name: Interface build
+        working-directory: interface
+        run: bun run build

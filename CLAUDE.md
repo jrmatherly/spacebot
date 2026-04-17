@@ -27,7 +27,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 - Rust: `cargo`
 - Frontend (`interface/`): `bun` (NEVER npm/pnpm/yarn)
-- SpaceUI (`spaceui/`): `bun` (its own workspace + bun.lock; `interface/` declares `"workspaces": ["../spaceui/packages/*"]` so `bun install` in interface symlinks `@spacedrive/*` to local source)
+- SpaceUI (`spaceui/`): `bun` (its own workspace + bun.lock; `interface/` declares `"workspaces": ["../spaceui/packages/*"]` so `bun install` in interface symlinks `@spacedrive/*` to local source). **Never remove the `workspaces` declaration or change a `workspace:*` dep to a semver range** — bun will silently fall back to the public npm registry and overwrite local customizations. The `scripts/check-workspace-protocol.sh` guard runs on every `interface/` preinstall and in CI (`.github/workflows/spaceui.yml`) to catch this class of regression. See `spaceui/SYNC.md` for the full provenance and drift discipline.
 - Desktop (`desktop/`): `cargo tauri`
 
 ## Database Migrations

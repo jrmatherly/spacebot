@@ -61,6 +61,9 @@ RUN cd spaceui && bun install --frozen-lockfile && bunx turbo run build --filter
 
 # 3. Install frontend dependencies (resolves @spacedrive/* as workspace
 #    symlinks into the spaceui packages copied above).
+#    The preinstall hook in interface/package.json invokes
+#    scripts/check-workspace-protocol.sh, so copy that script first.
+COPY scripts/check-workspace-protocol.sh scripts/
 COPY interface/package.json interface/bun.lock interface/
 # hadolint ignore=DL3003
 RUN cd interface && bun install --frozen-lockfile

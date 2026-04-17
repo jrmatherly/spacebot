@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@spacedrive/primitives": "^0.2.3",
+    "@spacedrive/primitives": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "clsx": "^2.1.1"
   },

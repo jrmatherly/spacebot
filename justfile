@@ -87,13 +87,21 @@ update-frontend-hash:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Building frontend-updater to get new hash..."
-    output=$(nix build .#frontend-updater 2>&1 || true)
+    output=$(nix --extra-experimental-features "nix-command flakes" build .#frontend-updater 2>&1 || true)
     new_hash=$(echo "$output" | awk '/got:/ {print $2}' || true)
 
     if [ -z "$new_hash" ]; then
-        echo "Error: Failed to extract hash from build output"
-        echo "Build output:"
-        echo "$output"
+        echo "Error: Failed to extract hash from build output." >&2
+        if echo "$output" | grep -q "experimental Nix feature"; then
+            echo "" >&2
+            echo "Nix rejected the flake command because experimental features are disabled system-wide." >&2
+            echo "This recipe passes --extra-experimental-features inline, so the failure is likely a different" >&2
+            echo "nix.conf setting. To normalize the environment once per machine:" >&2
+            echo "  mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf" >&2
+        fi
+        echo "" >&2
+        echo "Full build output:" >&2
+        echo "$output" >&2
         exit 1
     fi
 
@@ -114,7 +122,7 @@ update-frontend-hash:
     echo ""
     echo "Next steps:"
     echo "  1. Review the changes: git diff nix/default.nix"
-    echo "  2. Test the build: nix build .#frontend"
+    echo "  2. Test the build: nix --extra-experimental-features 'nix-command flakes' build .#frontend"
     echo "  3. Commit the changes: git add nix/default.nix && git commit -m 'update: frontend node_modules hash'"
 
 # Update all Nix flake inputs (flake.lock).
@@ -192,3 +200,27 @@ compose-validate:
     SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
         docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
     @echo "All profile combinations parse cleanly."
+
+# ============================================
+# SpaceUI hygiene recipes
+# ============================================
+
+# Run the workspace-protocol guard over every package.json in the repo.
+spaceui-check-workspace:
+    bash scripts/check-workspace-protocol.sh
+
+# Audit vite dedupe list against shared spaceui/interface deps.
+spaceui-check-dedupe:
+    bash scripts/check-vite-dedupe.sh
+
+# Typecheck + build spaceui/, then typecheck interface/ (which needs spaceui dist).
+# Add this to the default gate-pr dependency chain if spaceui regressions become
+# common, but the cadence is low today so it stays separate.
+spaceui-gate: spaceui-check-workspace spaceui-check-dedupe
+    cd spaceui && bun install --frozen-lockfile
+    cd spaceui && bun run typecheck
+    cd spaceui && bun run build
+    cd interface && bun install --frozen-lockfile
+    cd interface && bunx tsc --noEmit
+    cd interface && bun run build
+    @echo "spaceui-gate passed."
