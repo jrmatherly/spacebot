@@ -34,33 +34,38 @@ RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
     && cargo build --release --features metrics \
     && rm -rf src
 
-# 2. Install frontend dependencies.
-COPY interface/package.json interface/
+# 2. Stage SpaceUI source and build it first.
+#    interface/ declares `"workspaces": ["../spaceui/packages/*"]`, so
+#    `bun install` in interface/ expects the spaceui packages to exist
+#    on disk as symlink targets. Copy them before the interface install,
+#    and run the spaceui build so each package emits its `dist/` (tsc
+#    types live there).
+COPY spaceui/packages/tokens/ spaceui/packages/tokens/
+COPY spaceui/packages/primitives/ spaceui/packages/primitives/
+COPY spaceui/packages/ai/ spaceui/packages/ai/
+COPY spaceui/packages/forms/ spaceui/packages/forms/
+COPY spaceui/packages/explorer/ spaceui/packages/explorer/
+COPY spaceui/packages/icons/ spaceui/packages/icons/
+COPY spaceui/package.json spaceui/bun.lock spaceui/
+COPY spaceui/turbo.json spaceui/
+COPY spaceui/tsconfig.base.json spaceui/
 # hadolint ignore=DL3003
-RUN cd interface && bun install
+RUN cd spaceui && bun install --frozen-lockfile && bun run build
 
-# 3. Build the OpenCode embed bundle (live coding UI in Workers tab).
+# 3. Install frontend dependencies (resolves @spacedrive/* as workspace
+#    symlinks into the spaceui packages copied above).
+COPY interface/package.json interface/bun.lock interface/
+# hadolint ignore=DL3003
+RUN cd interface && bun install --frozen-lockfile
+
+# 4. Build the OpenCode embed bundle (live coding UI in Workers tab).
 #    Must run before the frontend build so the embed assets in
 #    interface/public/opencode-embed/ are included in the Vite output.
 COPY scripts/build-opencode-embed.sh scripts/
 COPY interface/opencode-embed-src/ interface/opencode-embed-src/
 RUN ./scripts/build-opencode-embed.sh
 
-# 3.5 Copy SpaceUI source (resolved by Vite aliases during frontend build).
-COPY spaceui/packages/tokens/ spaceui/packages/tokens/
-COPY spaceui/packages/primitives/ spaceui/packages/primitives/
-COPY spaceui/packages/ai/ spaceui/packages/ai/
-COPY spaceui/packages/forms/ spaceui/packages/forms/
-COPY spaceui/packages/explorer/ spaceui/packages/explorer/
-COPY spaceui/package.json spaceui/
-COPY spaceui/turbo.json spaceui/
-COPY spaceui/tsconfig.base.json spaceui/
-# Symlink so SpaceUI imports resolve from interface's node_modules.
-# Vite walks up from spaceui/ looking for node_modules; without this,
-# deps like @radix-ui/react-slider are not found in the Docker context.
-RUN ln -s /build/interface/node_modules /build/spaceui/node_modules
-
-# 4. Build the frontend (includes OpenCode embed assets from step 3).
+# 5. Build the frontend (includes OpenCode embed assets from step 4).
 COPY interface/ interface/
 # hadolint ignore=DL3003
 RUN cd interface && bun run build
