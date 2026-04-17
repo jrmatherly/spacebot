@@ -47,6 +47,8 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 - `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Vendored in preparation for the planned HTTP integration; no live runtime coupling exists yet.
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
+- `deploy/docker/` — Docker Compose variant (one file, six profiles: default, build, spacedrive, proxy, observability, tooling). See `deploy/docker/README.md` and `just compose-*` recipes.
+- `deploy/helm/` — Kubernetes Helm chart (production deployment target on Talos)
 
 ## Frontend
 

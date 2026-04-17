@@ -24,6 +24,23 @@
 | `just spaceui-link` | Retired stub. `interface/package.json` declares spaceui as workspaces; `bun install` in interface/ now creates the symlinks directly |
 | `just spaceui-unlink` | Retired stub. Workspace protocol does not need unlinking |
 
+## Docker Compose Recipes (deploy/docker/)
+
+| Command | Purpose |
+|---------|---------|
+| `just compose-up` | Start Spacebot via published image (default profile) |
+| `just compose-up-build` | Rebuild Spacebot from root Dockerfile (build profile; mutually exclusive with default) |
+| `just compose-up-spacedrive` | Spacebot + in-tree Spacedrive integration harness |
+| `just compose-up-observability` | Default + Prometheus + Grafana stack |
+| `just compose-up-all` | Full stack: default + spacedrive + proxy + observability + tooling |
+| `just compose-down` | Stop all services across all profiles (Compose v2.20+) |
+| `just compose-down-compat` | Fallback down for Compose < 2.20 |
+| `just compose-reset` | DESTRUCTIVE: stop + wipe all named volumes (typed WIPE confirmation) |
+| `just compose-logs` | Tail logs across all running services |
+| `just compose-proxy-trust` | Install Caddy's local CA into host trust store |
+| `just compose-proxy-untrust` | Remove Caddy's local CA from host trust store |
+| `just compose-validate` | Validate compose config for every profile (CI mirror) |
+
 ## Delivery Gates (Mandatory before push/PR)
 1. `just preflight` — validate git/remote/auth state
 2. `just gate-pr` — formatting, compile, clippy, unit tests, integration compile
