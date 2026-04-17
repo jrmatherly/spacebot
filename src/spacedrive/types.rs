@@ -58,7 +58,10 @@ mod tests {
             payload: serde_json::json!({"path": "/"}),
         });
         let out = serde_json::to_value(&env).unwrap();
-        assert!(out.get("Query").is_some(), "expected Query key, got {out:?}");
+        assert!(
+            out.get("Query").is_some(),
+            "expected Query key, got {out:?}"
+        );
         assert!(out.get("Action").is_none());
     }
 
