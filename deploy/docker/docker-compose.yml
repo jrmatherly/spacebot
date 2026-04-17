@@ -30,6 +30,7 @@ services:
       - spacebot-data:/data
     networks:
       - spacebot-net
+      - mcp-net
     # /api/health is exempted from bearer auth in src/api/server.rs; no
     # credentials needed. Spacedrive's /health IS behind Basic Auth — that
     # asymmetry is intentional, not a bug.
@@ -71,6 +72,7 @@ services:
       - spacebot-data:/data
     networks:
       - spacebot-net
+      - mcp-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:19898/api/health"]
       interval: 30s
@@ -232,8 +234,32 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # ====================================================================
+  # mcp-stub — tooling profile. Stub MCP server on isolated mcp-net.
+  # Reviewer sweep Sec-11: MCP servers are their own trust domain.
+  # ====================================================================
+  mcp-stub:
+    profiles: [tooling]
+    build:
+      context: ./mcp-stub
+      dockerfile: Dockerfile
+    container_name: spacebot-mcp-stub
+    restart: unless-stopped
+    # No ports: published to host. Reachable only from inside mcp-net.
+    expose:
+      - "3001"
+    networks:
+      - mcp-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 networks:
   spacebot-net:
+    driver: bridge
+  mcp-net:
     driver: bridge
 
 volumes:
