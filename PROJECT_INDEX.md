@@ -85,7 +85,9 @@ spacebot/
 | **rust-toolchain.toml** | Rust 1.85+ version pin |
 | **Dockerfile** | Multi-stage build (Rust + Node) |
 | **fly.toml** | Fly.io production deployment |
-| **justfile** | Task runner recipes (gate-pr, preflight, typegen) |
+| **deploy/docker/** | Docker Compose variant (one file, six profiles: default, build, spacedrive, proxy, observability, tooling) |
+| **deploy/helm/** | Kubernetes Helm chart (bjw-s-labs/app-template wrapper for Talos) |
+| **justfile** | Task runner recipes (gate-pr, preflight, typegen, compose-*) |
 | **interface/package.json** | Frontend deps (bun managed) |
 | **docs/package.json** | Docs site deps (Next.js + Fumadocs) |
 

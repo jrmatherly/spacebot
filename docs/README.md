@@ -6,12 +6,10 @@ This is a Next.js application generated with
 Run development server:
 
 ```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
+bun run dev
 ```
+
+Spacebot uses `bun` for all frontend and docs-site workflows. Do not use `npm`, `pnpm`, or `yarn` — see the root `CLAUDE.md` for the package-manager rule.
 
 Open http://localhost:3000 with your browser to see the result.
 

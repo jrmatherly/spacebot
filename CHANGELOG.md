@@ -4,6 +4,27 @@ This project is a detached fork of [spacedriveapp/spacebot](https://github.com/s
 
 Seeded from GitHub releases; maintained by the release bump workflow.
 
+## Unreleased
+
+Post-v0.4.1 work on the detached fork. Final section content gets generated at release-bump time from `/release-bump-changelog`; this rolling entry exists to surface landed work to contributors.
+
+### Added
+
+- **Docker Compose variant** (`deploy/docker/`) — one file, six profiles: `default`, `build`, `spacedrive`, `proxy`, `observability`, `tooling`. Includes Caddy proxy, Prometheus + Grafana observability, dbtools SQLite shell, mcp-stub test MCP server, and an in-tree Spacedrive integration harness. Twelve new `just compose-*` recipes plus a dedicated CI workflow validate every profile on push.
+- **`spacedrive/Dockerfile`** for `sd-server` built with `--no-default-features` (skips wasmer).
+- **bjw-s-labs/app-template Helm wrapper** at `deploy/helm/spacebot/` for the Talos deployment target (landed across earlier commits).
+
+### Fixed
+
+- **rustls-webpki audit advisories** (RUSTSEC-2026-0049/-0098/-0099) resolved by pinning Serenity to the `next` branch. Required API migration for the Discord adapter across `src/messaging/discord.rs`.
+- **API route mismatches** corrected from the v0.4.0 OpenAPI migration (12 fixes across OAuth, config, channels, updates, links endpoints) — shipped in v0.4.1 release candidates.
+
+### Changed
+
+- **CI audit job** is now a hard gate (removed `continue-on-error`), ignoring `RUSTSEC-2023-0071` (rsa via sqlx-mysql, never compiled).
+- **Documentation drift sweeps** across README, AGENTS, PROJECT_INDEX, CHANGELOG, spaceui/ READMEs, vendored spacedrive/ policy files. Rule/skill/design-doc counts corrected.
+- **bun workspace protocol** adopted for `interface/` → `spaceui/packages/*` linkage; `just spaceui-link` / `just spaceui-unlink` retired as no-op stubs.
+
 ## v0.4.1
 
 ### Release Story

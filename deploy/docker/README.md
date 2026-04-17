@@ -88,6 +88,6 @@ Combining them produces a port collision on 19898 (both services would claim the
 
 ## Related
 
-- `deploy/helm/spacebot/` — Kubernetes deployment (production path on Talos)
-- `docs/docker.md` — single-container quick-start (non-compose)
-- `spacedrive/Dockerfile` — built by the `spacedrive` profile
+- `../helm/spacebot/` — Kubernetes deployment (production path on Talos)
+- `../../docs/content/docs/(getting-started)/docker.mdx` — single-container quick-start (non-compose)
+- `../../spacedrive/Dockerfile` — built by the `spacedrive` profile
