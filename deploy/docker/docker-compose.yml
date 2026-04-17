@@ -83,10 +83,49 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # spacedrive — integration harness. Builds from in-tree spacedrive/.
+  # Per spec §4.3: real env API is single SD_AUTH "user:pass" var.
+  # No fallback; unset SD_AUTH fails the healthcheck and keeps the
+  # container marked unhealthy.
+  # ====================================================================
+  spacedrive:
+    profiles: [spacedrive]
+    build:
+      context: ../../spacedrive
+      dockerfile: Dockerfile
+    container_name: spacedrive
+    restart: unless-stopped
+    environment:
+      SD_DATA_DIR: /data
+      SD_AUTH: ${SD_AUTH}
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:8080:8080"
+    volumes:
+      - spacedrive-data:/data
+    networks:
+      - spacebot-net
+    # When SD_AUTH is "disabled" (documented in spacedrive/apps/server/src/main.rs:269),
+    # sd-server turns auth off entirely. Basic Auth with empty-ish creds still succeeds
+    # against a disabled-auth server, so `curl -u "$$SD_AUTH"` works in both modes.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -u \"$$SD_AUTH\" http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge
 
 volumes:
   spacebot-data:
+    driver: local
+  spacedrive-data:
     driver: local
