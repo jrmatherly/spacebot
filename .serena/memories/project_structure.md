@@ -30,7 +30,7 @@ spacebot/
 ├── interface/            # Web UI (Vite + React + TypeScript)
 │   ├── src/              # React app, components, routes, hooks
 │   └── opencode-embed-src/  # Embeddable widget variant
-├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
+├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer). Consumed by interface/ via bun workspace protocol — interface/package.json declares "workspaces": ["../spaceui/packages/*"] and pins each @spacedrive/* dep to "workspace:*"
 ├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`)
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)

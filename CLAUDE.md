@@ -27,7 +27,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 - Rust: `cargo`
 - Frontend (`interface/`): `bun` (NEVER npm/pnpm/yarn)
-- SpaceUI (`spaceui/`): `bun` (independent workspace, own bun.lock)
+- SpaceUI (`spaceui/`): `bun` (its own workspace + bun.lock; `interface/` declares `"workspaces": ["../spaceui/packages/*"]` so `bun install` in interface symlinks `@spacedrive/*` to local source)
 - Desktop (`desktop/`): `cargo tauri`
 
 ## Database Migrations
