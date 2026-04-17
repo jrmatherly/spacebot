@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+**/target/
+node_modules/
+**/node_modules/
+**/.gradle/
+**/.build/
+**/dist/
+
+# Apps not needed for sd-server
+apps/desktop/
+apps/tauri/
+apps/mobile/
+apps/cloud/
+apps/gpui-photo-grid/
+apps/cli/
+
+# JS monorepo not consumed by sd-server
+packages/
+
+# Docs not needed at build time
+docs/
+whitepaper/
+
+# Lockfiles for JS side only
+bun.lockb
+
+# Note: do NOT exclude apps/web/dist/ — apps/server/src/main.rs:37 uses
+# rust-embed to serve the web UI from that path. If apps/web is not built,
+# the embed is empty and the fallback route returns a helpful error.
