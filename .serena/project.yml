@@ -61,7 +61,17 @@ ls_specific_settings: {}
 # list of additional paths to ignore in this project.
 # Same syntax as gitignore, so you can use * and **.
 # Note: global ignored_paths from serena_config.yml are also applied additively.
-ignored_paths: []
+#
+# These directories are excluded from LSP indexing and semantic search because
+# they are either vendored (not first-party), generated artifacts, or working
+# notes. Keeps rust-analyzer and typescript-language-server from indexing
+# ~130K+ lines of non-Spacebot code.
+ignored_paths:
+  - "spacedrive/**"      # Vendored Spacedrive platform, independent Cargo workspace
+  - "vendor/**"          # Vendored third-party crate (imap-proto)
+  - ".scratchpad/**"     # Session working notes and research docs
+  - "target/**"          # Cargo build artifacts
+  - ".code-review-graph/**"  # Code-review-graph MCP state
 
 # whether the project is in read-only mode
 # If set to true, all editing tools will be disabled and attempts to use them will result in an error
@@ -137,7 +147,13 @@ default_modes:
 
 # initial prompt for the project. It will always be given to the LLM upon activating the project
 # (contrary to the memories, which are loaded on demand).
-initial_prompt: ""
+initial_prompt: |
+  Spacebot is a Rust agentic system (single binary crate, Rig framework, edition 2024).
+  Behavioral rules live in .claude/rules/ (coding-discipline, rust-essentials, rust-patterns,
+  rust-iteration-loop, writing-guide, plus path-scoped api-handler, async-state-safety,
+  messaging-adapter-parity, provider-integration, tool-authoring). Domain skills live in
+  .claude/skills/. Always run just gate-pr before any push. Frontend uses bun (never
+  npm/pnpm/yarn). Migrations in migrations/ are immutable: create a new timestamped file.
 
 # time budget (seconds) per tool call for the retrieval of additional symbol information
 # such as docstrings or parameter information.
