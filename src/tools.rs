@@ -58,6 +58,7 @@ pub mod shell;
 pub mod skills_search;
 pub mod skip;
 pub mod spacebot_docs;
+pub mod spacedrive_list_files;
 pub mod spawn_worker;
 pub mod task_create;
 pub mod task_list;

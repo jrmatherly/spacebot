@@ -27,6 +27,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_RESPONSE_CAP: usize = 10 * 1024 * 1024;
 
+#[derive(Debug)]
 pub struct SpacedriveClient {
     http: Client,
     base_url: Url,
