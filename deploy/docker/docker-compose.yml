@@ -210,6 +210,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ====================================================================
+  # dbtools — tooling profile. Read-only SQLite/redb inspection shell.
+  # :ro is a footgun guard, not a security boundary. Anyone can
+  # docker compose exec --user=root and remount rw.
+  # ====================================================================
+  dbtools:
+    profiles: [tooling]
+    build:
+      context: .
+      dockerfile: dbtools.Dockerfile
+    container_name: spacebot-dbtools
+    restart: unless-stopped
+    volumes:
+      - spacebot-data:/data:ro
+    networks:
+      - spacebot-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 networks:
   spacebot-net:
     driver: bridge
