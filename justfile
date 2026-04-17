@@ -209,10 +209,14 @@ compose-validate:
 spaceui-check-workspace:
     bash scripts/check-workspace-protocol.sh
 
+# Audit vite dedupe list against shared spaceui/interface deps.
+spaceui-check-dedupe:
+    bash scripts/check-vite-dedupe.sh
+
 # Typecheck + build spaceui/, then typecheck interface/ (which needs spaceui dist).
 # Add this to the default gate-pr dependency chain if spaceui regressions become
 # common, but the cadence is low today so it stays separate.
-spaceui-gate: spaceui-check-workspace
+spaceui-gate: spaceui-check-workspace spaceui-check-dedupe
     cd spaceui && bun install --frozen-lockfile
     cd spaceui && bun run typecheck
     cd spaceui && bun run build

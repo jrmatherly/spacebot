@@ -14,6 +14,16 @@ export default defineConfig({
 			"sonner",
 			"clsx",
 			"class-variance-authority",
+			// Shared between interface/ and spaceui/packages/*. Audited by
+			// scripts/check-vite-dedupe.sh (run via `just spaceui-check-dedupe`).
+			"@phosphor-icons/react",
+			"@tanstack/react-query",
+			"@tanstack/react-virtual",
+			"react-hook-form",
+			"react-markdown",
+			"rehype-raw",
+			"remark-gfm",
+			"zod",
 		],
 		alias: [
 			// Pin React to a single copy (prevents "Invalid hook call" when a
