@@ -38,13 +38,17 @@ All packages target Tailwind v4. **No `tailwind.config.js`**. Config lives in CS
 
 Canonical v4 class syntax (adopted in PR #45): `class!` not `!class`, `data-X:` not `data-[X]:`, `z-N` not `z-[N]`, `*-(--X)` not `*-[var(--X)]`, numeric spacing.
 
-## Building & Linking
+## Building
 
 ```bash
 just spaceui-build    # bun install + bun run build via turbo
-just spaceui-link     # link packages into interface/ for live development
-just spaceui-unlink   # restore published versions in interface/
 ```
+
+`interface/` consumes these packages via the bun workspace protocol (`workspace:*` dependencies in `interface/package.json`, with `"workspaces": ["../spaceui/packages/*"]` declared there). Running `bun install` inside `interface/` creates symlinks directly into `spaceui/packages/*`. No `bun link` step is needed.
+
+`just spaceui-link` and `just spaceui-unlink` are retired stubs — kept for discoverability but print a deprecation notice.
+
+Before type-checking `interface/` (`bunx tsc --noEmit`), run `just spaceui-build` so each package's `dist/index.d.ts` is current. Vite dev/build does not need this because Rolldown resolves `.tsx` source directly through the symlinks.
 
 ## Deep Dive
 

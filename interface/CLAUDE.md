@@ -1,6 +1,6 @@
 # Spacebot Control UI
 
-Vite + React + TypeScript web app served by the Rust daemon via an embedded Axum HTTP server. Has its own `bun.lock`, independent of the `spaceui/` workspace even though it consumes `@spacedrive/*` packages.
+Vite + React + TypeScript web app served by the Rust daemon via an embedded Axum HTTP server. Has its own `bun.lock`. Declares `../spaceui/packages/*` as workspace members so `@spacedrive/*` packages resolve to local source via symlink.
 
 ## Package Manager
 
@@ -8,7 +8,9 @@ Vite + React + TypeScript web app served by the Rust daemon via an embedded Axum
 
 ## UI Components
 
-Consumed from the `spaceui/` workspace: `@spacedrive/{ai,explorer,forms,primitives,tokens}` at `^0.2.3`. Import from `@spacedrive/primitives`, not from a local `ui/` tree. The inline tree was retired during the spaceui migration. Only `SettingSidebarButton.tsx` and `Toggle.tsx` remain as interface-specific widgets.
+Consumed from the `spaceui/` packages under the workspace protocol: `@spacedrive/{ai,explorer,forms,primitives,tokens}` at `workspace:*`. `bun install` creates symlinks from `interface/node_modules/@spacedrive/*` into `../spaceui/packages/*`, so changes to spaceui source appear here without a publish step. Import from `@spacedrive/primitives`, not from a local `ui/` tree. The inline tree was retired during the spaceui migration. Only `SettingSidebarButton.tsx` remains as an interface-specific widget.
+
+Before `bunx tsc --noEmit` in this directory, run `cd ../spaceui && bun install && bun run build`. Each spaceui subpackage points its `types` field at `./dist/index.d.ts`, which tsc requires to resolve the symlinked imports. Vite dev/build does not need the prebuild because Rolldown resolves `.tsx` source directly.
 
 For styling and component patterns, invoke `/spaceui-dev`.
 

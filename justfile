@@ -28,27 +28,15 @@ test-integration-compile:
 spaceui-build:
     cd spaceui && bun install && bun run build
 
-# Link SpaceUI packages for development.
-# SpaceUI lives in spaceui/ at the project root.
+# Retired. interface/package.json declares `"workspaces": ["../spaceui/packages/*"]`,
+# so `bun install` in interface/ symlinks @spacedrive/* to local spaceui source
+# without needing `bun link`. Kept as a stub for discoverability.
 spaceui-link:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -d spaceui/packages ]; then
-        echo "Error: spaceui/ directory not found at project root."
-        exit 1
-    fi
-    cd spaceui
-    bun install && bun run build
-    for pkg in primitives ai forms explorer tokens; do
-        cd packages/$pkg && bun link && cd ../..
-    done
-    cd "{{justfile_directory()}}/interface"
-    bun link @spacedrive/primitives @spacedrive/ai @spacedrive/forms @spacedrive/explorer @spacedrive/tokens
-    echo "SpaceUI packages linked."
+    @echo "spaceui-link is retired. Run 'just spaceui-build' then 'cd interface && bun install'."
+    @echo "interface declares spaceui packages as workspaces; symlinks are created by bun install."
 
-# Unlink SpaceUI packages and restore npm versions.
 spaceui-unlink:
-    cd interface && bun unlink @spacedrive/primitives @spacedrive/ai @spacedrive/forms @spacedrive/explorer @spacedrive/tokens && bun install
+    @echo "spaceui-unlink is retired. The workspace protocol does not need unlinking."
 
 gate-pr: preflight
     ./scripts/gate-pr.sh

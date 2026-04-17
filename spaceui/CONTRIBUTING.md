@@ -123,13 +123,15 @@ spaceui/
    cd examples/showcase && bun run dev
    ```
 
-4. **Link to consuming apps** (for testing integration)
+4. **Consume from interface/ (workspace protocol)**
+
+   No linking needed. `interface/package.json` declares `"workspaces": ["../spaceui/packages/*"]`, so `bun install` inside `interface/` symlinks each `@spacedrive/*` package into `interface/node_modules`. Edit a file in `spaceui/packages/primitives/src/` and the Vite dev server (`cd interface && bun run dev`) picks it up via HMR.
+
+   Before running `bunx tsc --noEmit` in `interface/`, rebuild spaceui so each package's `dist/index.d.ts` is current:
+
    ```bash
-   # In package directory
-   bun link
-   
-   # In consuming app
-   bun link @spacedrive/primitives
+   cd spaceui && bun run build
+   cd ../interface && bunx tsc --noEmit
    ```
 
 ## Making Changes
