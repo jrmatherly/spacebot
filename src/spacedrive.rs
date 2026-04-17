@@ -6,5 +6,7 @@
 //! contract with the Spacedrive side.
 
 pub mod config;
+pub mod error;
 
 pub use config::SpacedriveIntegrationConfig;
+pub use error::{Result, SpacedriveError};
