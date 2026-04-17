@@ -2936,6 +2936,7 @@ async fn initialize_agents(
             &config.instance_dir,
             agent_config,
             &config.defaults,
+            config.spacedrive.clone(),
             prompt_engine.clone(),
             identity,
             skills,

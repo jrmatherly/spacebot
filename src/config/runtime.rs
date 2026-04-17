@@ -20,6 +20,11 @@ use crate::tools::browser::SharedBrowserHandle;
 pub struct RuntimeConfig {
     /// Instance root directory (e.g., ~/.spacebot). Immutable after startup.
     pub instance_dir: PathBuf,
+    /// Spacedrive integration config. Instance-wide (pairing is per-instance,
+    /// not per-agent), plain field because the per-agent reload path does not
+    /// touch it. Immutable after startup; a future pairing flow that mutates
+    /// it can wrap it in ArcSwap then.
+    pub spacedrive: crate::spacedrive::SpacedriveIntegrationConfig,
     /// Agent workspace directory (e.g., ~/.spacebot/agents/{id}/workspace). Immutable after startup.
     pub workspace_dir: PathBuf,
     /// Agent identity directory (e.g., ~/.spacebot/agents/{id}/). Identity
@@ -105,6 +110,7 @@ impl RuntimeConfig {
         instance_dir: &Path,
         agent_config: &ResolvedAgentConfig,
         defaults: &DefaultsConfig,
+        spacedrive: crate::spacedrive::SpacedriveIntegrationConfig,
         prompts: crate::prompts::PromptEngine,
         identity: crate::identity::Identity,
         skills: crate::skills::SkillSet,
@@ -118,6 +124,7 @@ impl RuntimeConfig {
 
         Self {
             instance_dir: instance_dir.to_path_buf(),
+            spacedrive,
             workspace_dir: agent_config.workspace.clone(),
             identity_dir: agent_config.identity_dir.clone(),
             routing: ArcSwap::from_pointee(agent_config.routing.clone()),
