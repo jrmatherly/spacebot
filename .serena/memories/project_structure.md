@@ -4,9 +4,9 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 ```
 spacebot/
-├── src/                  # 206 Rust source files
+├── src/                  # 208 Rust source files
 │   ├── main.rs           # CLI entry point (clap subcommands: start, stop, restart, status, skill, auth, secrets)
-│   ├── lib.rs            # Library root — 34 public modules, shared types
+│   ├── lib.rs            # Library root — 35 public modules, shared types
 │   ├── bin/              # Extra binaries: openapi-spec, cargo-bump
 │   ├── agent/            # Agent lifecycle & orchestration (channel, branch, worker, compactor, cortex)
 │   ├── api/              # Axum HTTP router & REST endpoints
@@ -23,6 +23,7 @@ spacebot/
 │   ├── sandbox/          # Tool execution sandboxing
 │   ├── secrets/          # Keystore (macOS Keychain), secret scrubbing
 │   ├── skills/           # Skill installation & registry
+│   ├── spacedrive/       # Spacedrive integration — Track A Phase 1 landed the SpacedriveIntegrationConfig shape. Runtime-gated via `enabled` flag; no HTTP/tool work yet
 │   ├── tasks/            # Task CRUD & migration
 │   ├── telemetry/        # Prometheus metrics (feature-gated)
 │   ├── tools/            # 48 LLM-callable tool files (63 tool implementations)

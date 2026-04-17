@@ -28,6 +28,7 @@ pub mod secrets;
 pub mod self_awareness;
 pub mod settings;
 pub mod skills;
+pub mod spacedrive;
 pub mod tasks;
 #[cfg(feature = "metrics")]
 pub mod telemetry;

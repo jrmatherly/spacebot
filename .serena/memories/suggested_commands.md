@@ -23,6 +23,10 @@
 | `just spaceui-build` | Build SpaceUI packages (turbo-cached; run before `tsc --noEmit` in interface/) |
 | `just spaceui-link` | Retired stub. `interface/package.json` declares spaceui as workspaces; `bun install` in interface/ now creates the symlinks directly |
 | `just spaceui-unlink` | Retired stub. Workspace protocol does not need unlinking |
+| `just spaceui-check-workspace` | Run the workspace-protocol guard over every package.json (PR #52) |
+| `just spaceui-check-dedupe` | Audit vite dedupe list against shared spaceui/interface deps (PR #52) |
+| `just spaceui-gate` | Typecheck + build spaceui, then typecheck + build interface; includes both checks above (PR #52) |
+| `just check-adr-anchors` | Verify path:line anchors in Spacedrive integration ADRs still resolve (PR #53) |
 
 ## Docker Compose Recipes (deploy/docker/)
 

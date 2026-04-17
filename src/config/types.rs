@@ -57,6 +57,8 @@ pub struct Config {
     pub api: ApiConfig,
     /// Prometheus metrics endpoint configuration.
     pub metrics: MetricsConfig,
+    /// Spacedrive integration configuration.
+    pub spacedrive: crate::spacedrive::SpacedriveIntegrationConfig,
     /// OpenTelemetry export configuration.
     pub telemetry: TelemetryConfig,
 }
