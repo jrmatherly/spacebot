@@ -1,10 +1,12 @@
-# SpaceUI
+# SpaceUI (vendored)
 
 A shared design system for Spacedrive and Spacebot applications.
 
+> **Heads up:** You're reading this README from inside the Spacebot repository. SpaceUI originated as a standalone monorepo but lives here in-tree as an independent Bun workspace (own `bun.lock`, own Turborepo config, own changeset flow). The Spacebot web UI (`interface/`) consumes these packages via bun's workspace protocol: `interface/package.json` declares `"workspaces": ["../spaceui/packages/*"]` and pins each dep to `"workspace:*"`. There is no separate `spaceui` repo to clone.
+
 ## Overview
 
-SpaceUI is a standalone repository that houses all shared UI components, design tokens, and styling utilities for the Spacedrive ecosystem. It enables consistent design across multiple applications while maintaining clean dependency boundaries.
+SpaceUI houses all shared UI components, design tokens, and styling utilities for the Spacebot and Spacedrive interfaces. Cloning the Spacebot repo gives you the full source.
 
 ## Package Structure
 
@@ -27,10 +29,11 @@ spaceui/
 
 ### Installation
 
+Clone the Spacebot repo (which contains this directory), then work from `spaceui/`.
+
 ```bash
-# Clone the repository
-git clone https://github.com/spacedriveapp/spaceui.git
-cd spaceui
+git clone https://github.com/jrmatherly/spacebot
+cd spacebot/spaceui
 
 # Install dependencies
 bun install
@@ -61,19 +64,17 @@ bun run typecheck
 bun run clean
 ```
 
-### Local Development with Linked Packages
+### Consuming from `interface/`
+
+The Spacebot web UI resolves `@spacedrive/*` imports via bun's workspace protocol; no manual linking step is required. From the repo root:
 
 ```bash
-# Link all packages for local development
-bun run link
-
-# Then in consuming app:
-cd /path/to/spacedrive
-bun link @spacedrive/primitives @spacedrive/tokens
-
-# When done, unlink:
-bun run unlink
+cd interface
+bun install          # creates symlinks from interface/node_modules/@spacedrive/* into ../spaceui/packages/*
+bun run dev          # Vite dev server; Rolldown resolves source .tsx through the symlinks
 ```
+
+Before running `bunx tsc --noEmit` from `interface/`, run `just spaceui-build` at the repo root so each package's `dist/index.d.ts` is up to date. Vite dev/build does not need the prebuild.
 
 ## Using SpaceUI
 
@@ -211,36 +212,21 @@ bun run dev
 # Opens at http://localhost:6006
 ```
 
-### Local Development
-
-For local development with linked packages:
-
-```bash
-# In spaceui repo
-bun run link
-
-# In consuming app
-cd spacedrive/apps/web
-bun link @spacedrive/primitives
-```
-
 ### Creating a Changeset
 
-We use [Changesets](https://github.com/changesets/changesets) for versioning:
+We use [Changesets](https://github.com/changesets/changesets) for versioning. Changesets drive `CHANGELOG.md`. Never hand-edit those files.
 
 ```bash
 # Create a changeset
 bun run changeset
 
-# Select packages and describe changes
-# This creates a .changeset/*.md file
+# Select packages and describe changes (creates .changeset/*.md)
 
-# Version packages
+# Version packages (consumes changesets, bumps package.json versions, rewrites CHANGELOGs)
 bun run version-packages
-
-# Publish to npm
-bun run publish
 ```
+
+Packages are consumed internally via the bun workspace protocol. They are not published to npm. External publishing would be a separate decision if the project direction changes.
 
 ## Migration Guide
 
@@ -257,7 +243,7 @@ Quick start for migration:
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
+Contributions land via the Spacebot repository's PR workflow. See the root `CONTRIBUTING.md` for the overall flow and [`./CONTRIBUTING.md`](./CONTRIBUTING.md) for SpaceUI-specific conventions.
 
 Quick contributing workflow:
 
@@ -279,24 +265,21 @@ Quick contributing workflow:
 | `bun run typecheck` | Type check all packages |
 | `bun run clean` | Clean build artifacts |
 | `bun run showcase` | Run demo app |
-| `bun run link` | Link packages for local dev |
-| `bun run unlink` | Unlink packages |
 | `bun run changeset` | Create a changeset |
-| `bun run version-packages` | Bump versions |
-| `bun run publish` | Publish to npm |
+| `bun run version-packages` | Bump versions (consumes changesets, rewrites CHANGELOGs) |
 
 ## Resources
 
 - [Design Strategy](./docs/SHARED-UI-STRATEGY.md) - Migration plan & architecture
 - [Tailwind v4 Migration](./docs/TAILWIND-V4-MIGRATION.md) - v3→v4 migration spec
-- [Component Audit](./docs/COMPONENT-AUDIT.md) - Fidelity check vs real Spacedrive
+- [Component Audit](./docs/COMPONENT-AUDIT.md) - Fidelity check vs the Spacedrive components it was extracted from
 - [Repository Summary](./docs/REPO_SUMMARY.md) - Monorepo stats & tooling
-- [Contributing Guide](./CONTRIBUTING.md) - Development setup & guidelines
-- [Integration Guide](./INTEGRATION.md) - Consuming SpaceUI from an external project
+- [Contributing Guide](./CONTRIBUTING.md) - SpaceUI-specific development setup & guidelines
+- [Integration Guide](./INTEGRATION.md) - Reference for consuming SpaceUI from an external project (not needed for this repo; `interface/` uses the workspace protocol)
 - [Package READMEs](./packages/) - Individual package documentation
 - [Radix UI](https://www.radix-ui.com/) - Primitives we build on
 - [Tailwind CSS](https://tailwindcss.com/) - Styling system
 
 ## License
 
-MIT © Spacedrive
+MIT. Origin: Spacedrive design system, vendored and maintained in the Spacebot repository.

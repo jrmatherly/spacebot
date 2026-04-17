@@ -1,14 +1,18 @@
 <!--
-  Vendored upstream documentation. This README describes the Spacedrive
-  project as built and shipped by the upstream Spacedrive team. For Spacebot
-  setup and architecture, see the root README.md.
+  Vendored Spacedrive source. This directory is a co-located copy of the
+  Spacedrive platform, kept in-tree so the planned Spacebot ↔ Spacedrive
+  HTTP integration can be developed from a single clone. It is NOT a
+  git submodule and is NOT tracked upstream. Commits land directly in
+  the spacebot repository. For the Spacebot project README, see
+  `../README.md`. For the structural rules that keep the two workspaces
+  isolated, see `openspec/specs/spacedrive-in-tree/spec.md`.
 -->
 
 <p align="center">
   <img src=".github/logo.png" alt="Spacedrive" width="120" height="120" />
 </p>
 
-<h1 align="center">Spacedrive</h1>
+<h1 align="center">Spacedrive (vendored)</h1>
 
 <p align="center">
   <strong>One file manager for all your devices and clouds.</strong><br/>
@@ -19,19 +23,17 @@
   <a href="https://fsl.software/">
     <img src="https://img.shields.io/static/v1?label=License&message=FSL-1.1-ALv2&color=000" />
   </a>
-  <a href="https://github.com/spacedriveapp/spacedrive">
-    <img src="https://img.shields.io/static/v1?label=Core&message=Rust&color=DEA584" />
-  </a>
-  <a href="https://discord.gg/gTaF2Z44f5">
-    <img src="https://img.shields.io/discord/949090953497567312?label=Discord&color=5865F2" />
-  </a>
+  <img src="https://img.shields.io/static/v1?label=Core&message=Rust&color=DEA584" />
+  <img src="https://img.shields.io/static/v1?label=Status&message=vendored%20in-tree&color=8B5CF6" />
 </p>
 
 <p align="center">
-  <a href="https://v2.spacedrive.com"><strong>v2.spacedrive.com</strong></a> &bull;
-  <a href="https://discord.gg/gTaF2Z44f5">Discord</a> &bull;
-  <a href="#getting-started">Getting Started</a>
+  <a href="#getting-started">Getting Started</a> &bull;
+  <a href="#architecture">Architecture</a> &bull;
+  <a href="../openspec/specs/spacedrive-in-tree/spec.md">In-tree spec</a>
 </p>
+
+> **Heads up:** This README describes Spacedrive the platform. You're reading it from inside the Spacebot repository, where Spacedrive lives as a vendored independent Cargo workspace (own toolchain, own deps). HTTP integration between the two is planned but not yet wired; there is no live runtime coupling. Treat the instructions below as authoritative for working on the Spacedrive codebase, but remember contributions land via the Spacebot repo's PR workflow, not upstream.
 
 ---
 
@@ -68,7 +70,7 @@ Adapters are a folder with an `adapter.toml` manifest and a sync script in any l
 
 ### Spacebot
 
-Spacedrive integrates with [Spacebot](https://github.com/spacedriveapp/spacebot), an open source AI agent runtime. Spacebot runs as an optional separate process. Spacedrive provides the data, permission, and execution layer. Spacebot provides the intelligence.
+Spacedrive integrates with Spacebot, an open source AI agent runtime. Spacebot runs as an optional separate process. Spacedrive provides the data, permission, and execution layer. Spacebot provides the intelligence. (In this repository, Spacebot is the parent project; see the root `README.md`.)
 
 Each Spacebot instance pairs with one Spacedrive node as its home device. That node authenticates the agent, maintains the device graph, resolves permissions, and forwards operations to peer devices. Every device in your library can reach Spacebot through the paired node over P2P (Iroh/QUIC) without direct network access. One agent runtime serves your entire device fleet.
 
@@ -127,7 +129,7 @@ The implementation is a single Rust crate with CQRS/DDD architecture. Every oper
 | Desktop         | Tauri 2                                      |
 | Mobile          | React Native + Expo                          |
 | Frontend        | React 19, Vite, TanStack Query, Tailwind CSS v4 |
-| Design system   | [SpaceUI](https://github.com/spacedriveapp/spaceui) (shared component library) |
+| Design system   | SpaceUI (shared component library — co-located at `../spaceui/` in this repo) |
 | Type generation | Specta                                       |
 
 ```
@@ -155,9 +157,11 @@ spacedrive/
 
 Requires [Rust](https://rustup.rs/) 1.81+, [Bun](https://bun.sh) 1.3+, [just](https://github.com/casey/just), and Python 3.9+ (for adapters).
 
+Spacedrive is vendored inside the Spacebot repository. Clone the parent repo, then `cd` into this directory. The `spacedrive/` workspace uses its own `rust-toolchain.toml` and `Cargo.lock`, so always run cargo commands from here (never from the repo root).
+
 ```bash
-git clone https://github.com/spacedriveapp/spacedrive
-cd spacedrive
+git clone https://github.com/jrmatherly/spacebot
+cd spacebot/spacedrive
 
 just setup        # bun install + native deps + cargo config
 just dev-desktop  # launch the desktop app (auto-starts daemon)
@@ -182,10 +186,11 @@ Optional cloud integration is available for backup and remote access, but it's n
 
 ## Contributing
 
-- **Join [Discord](https://discord.gg/gTaF2Z44f5)** to chat with developers and community
-- **[Contributing Guide](CONTRIBUTING.md)**
+Contributions to the vendored Spacedrive source land via the Spacebot repository's PR workflow. See the root `CONTRIBUTING.md` for the overall flow, and the docs below for Spacedrive-specific details.
+
+- **[Contributing Guide](CONTRIBUTING.md)** — Spacedrive-specific conventions (inherited from upstream)
 - **[Adapter Guide](docs/ADAPTERS.md)** — write a data source adapter
-- **[SpaceUI](https://github.com/spacedriveapp/spaceui)** — shared design system (clone alongside Spacedrive to work on UI)
+- **SpaceUI** — shared design system, co-located at `../spaceui/` in this repo
 
 ---
 
