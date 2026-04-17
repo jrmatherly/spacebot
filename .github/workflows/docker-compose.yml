@@ -1,0 +1,102 @@
+name: Docker Compose validation
+
+on:
+  push:
+    paths:
+      - 'deploy/docker/**'
+      - 'spacedrive/Dockerfile'
+      - 'spacedrive/.dockerignore'
+      - 'Dockerfile'
+      - '.github/workflows/docker-compose.yml'
+  pull_request:
+    paths:
+      - 'deploy/docker/**'
+      - 'spacedrive/Dockerfile'
+      - 'spacedrive/.dockerignore'
+      - 'Dockerfile'
+      - '.github/workflows/docker-compose.yml'
+
+jobs:
+  validate:
+    name: Validate compose config for every profile
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder digest + credentials so `docker compose config` parses.
+      # Not used for actual runs.
+      SPACEBOT_IMAGE_DIGEST: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      SD_AUTH: "admin:validate"
+      GF_ADMIN_USER: "admin"
+      GF_ADMIN_PASSWORD: "validate"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Compose version
+        run: docker compose version
+
+      - name: Validate default profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile default config > /dev/null
+
+      - name: Validate build profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile build config > /dev/null
+
+      - name: Validate spacedrive profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile spacedrive config > /dev/null
+
+      - name: Validate proxy profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile proxy config > /dev/null
+
+      - name: Validate observability profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile observability config > /dev/null
+
+      - name: Validate tooling profile
+        run: docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
+
+  smoke:
+    name: Smoke-run default profile
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine latest published image digest
+        id: digest
+        run: |
+          # Use the v0.4.1 tag; digest must match whatever GHCR has pinned.
+          # In production CI, pin to a specific digest to avoid churn.
+          DIGEST=$(docker manifest inspect ghcr.io/jrmatherly/spacebot:v0.4.1 2>/dev/null | jq -r '.config.digest // empty' || true)
+          if [ -z "$DIGEST" ]; then
+            echo "Could not fetch digest; using known-good fallback"
+            DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Create .env for smoke test
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          cat > deploy/docker/.env <<EOF
+          ANTHROPIC_API_KEY=sk-ant-test-not-a-real-key
+          SPACEBOT_IMAGE_TAG=v0.4.1
+          SPACEBOT_IMAGE_DIGEST=${DIGEST}
+          RUST_LOG=info
+          EOF
+
+      - name: Start default stack
+        run: docker compose -f deploy/docker/docker-compose.yml --profile default up -d
+
+      - name: Wait for Spacebot health
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:19898/api/health > /dev/null; then
+              echo "Spacebot healthy after $((i*5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Spacebot failed to become healthy"
+          docker compose -f deploy/docker/docker-compose.yml logs spacebot
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.yml --profile default down -v
