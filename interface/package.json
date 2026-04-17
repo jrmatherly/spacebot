@@ -3,6 +3,9 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
+	"workspaces": [
+		"../spaceui/packages/*"
+	],
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
@@ -26,11 +29,11 @@
 		"@lobehub/icons": "^5.4.0",
 		"@phosphor-icons/react": "^2.1.10",
 		"@react-sigma/core": "^5.0.6",
-		"@spacedrive/ai": "^0.2.3",
-		"@spacedrive/explorer": "^0.2.3",
-		"@spacedrive/forms": "^0.2.3",
-		"@spacedrive/primitives": "^0.2.3",
-		"@spacedrive/tokens": "^0.2.3",
+		"@spacedrive/ai": "workspace:*",
+		"@spacedrive/explorer": "workspace:*",
+		"@spacedrive/forms": "workspace:*",
+		"@spacedrive/primitives": "workspace:*",
+		"@spacedrive/tokens": "workspace:*",
 		"@tanstack/react-query": "^5.99.0",
 		"@tanstack/react-query-devtools": "^5.99.0",
 		"@tanstack/react-router": "^1.168.22",

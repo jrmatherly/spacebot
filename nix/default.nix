@@ -62,12 +62,16 @@
   ] ++ lib.optionals stdenv.isLinux [pkgs.mold];
 
   frontendNodeModules = {
-    hash ? "sha256-uAfnobuwenX56PDKb0pAc6OJPK3yYAg/wTF5NrdhdCc=",
+    hash ? lib.fakeHash,
   }:
     stdenv.mkDerivation {
       pname = "spacebot-frontend-node-modules";
       inherit version;
-      src = "${frontendSrc}/interface";
+      # The whole frontendSrc is in scope because interface/package.json
+      # declares `"workspaces": ["../spaceui/packages/*"]` — bun walks
+      # sideways to resolve the `@spacedrive/*` workspace targets during
+      # install. Without the spaceui packages present, install fails.
+      src = frontendSrc;
 
       nativeBuildInputs = with pkgs; [
         bun
@@ -82,23 +86,44 @@
         runHook preBuild
 
         export BUN_INSTALL_CACHE_DIR="$(mktemp -d)"
-        bun install \
-          --frozen-lockfile \
-          --ignore-scripts \
-          --no-progress \
-          --os=${bunInstallOs} \
-          --cpu=${bunInstallCpu}
+
+        # spaceui holds its own bun workspace; run install there first so
+        # each package has its own node_modules resolved (Radix, framer-motion,
+        # and so on land inside spaceui/packages/*/node_modules under the
+        # isolated linker).
+        (
+          cd spaceui
+          bun install \
+            --frozen-lockfile \
+            --ignore-scripts \
+            --no-progress \
+            --os=${bunInstallOs} \
+            --cpu=${bunInstallCpu}
+        )
+
+        # interface/ references spaceui via workspace symlinks. A fresh
+        # install in interface/ places `@spacedrive/*` symlinks into
+        # interface/node_modules.
+        (
+          cd interface
+          bun install \
+            --frozen-lockfile \
+            --ignore-scripts \
+            --no-progress \
+            --os=${bunInstallOs} \
+            --cpu=${bunInstallCpu}
+        )
 
         esbuild_native_package="${if esbuildNativePackage == null then "" else esbuildNativePackage}"
-        if [ -n "$esbuild_native_package" ] && [ -f ./node_modules/esbuild/package.json ]; then
-          esbuild_version="$(node -p "require('./node_modules/esbuild/package.json').version")"
-          bun add --dev --no-save --no-progress "$esbuild_native_package@$esbuild_version"
+        if [ -n "$esbuild_native_package" ] && [ -f ./interface/node_modules/esbuild/package.json ]; then
+          esbuild_version="$(node -p "require('./interface/node_modules/esbuild/package.json').version")"
+          (cd interface && bun add --dev --no-save --no-progress "$esbuild_native_package@$esbuild_version")
         fi
 
         rollup_native_package="${if rollupNativePackage == null then "" else rollupNativePackage}"
-        if [ -n "$rollup_native_package" ] && [ -f ./node_modules/rollup/package.json ]; then
-          rollup_version="$(node -p "require('./node_modules/rollup/package.json').version")"
-          bun add --dev --no-save --no-progress "$rollup_native_package@$rollup_version"
+        if [ -n "$rollup_native_package" ] && [ -f ./interface/node_modules/rollup/package.json ]; then
+          rollup_version="$(node -p "require('./interface/node_modules/rollup/package.json').version")"
+          (cd interface && bun add --dev --no-save --no-progress "$rollup_native_package@$rollup_version")
         fi
 
         runHook postBuild
@@ -107,8 +132,21 @@
       installPhase = ''
         runHook preInstall
 
-        mkdir -p $out
-        cp -r node_modules $out/node_modules
+        # Capture both the interface node_modules (with @spacedrive/* symlinks
+        # pointing sideways) and the spaceui node_modules (transitive deps
+        # that those symlinks chain through).
+        mkdir -p $out/interface $out/spaceui
+        cp -r interface/node_modules $out/interface/node_modules
+        cp -r spaceui/node_modules $out/spaceui/node_modules
+        if [ -d spaceui/packages/primitives/node_modules ]; then
+          mkdir -p $out/spaceui/packages
+          for pkg in tokens primitives forms icons ai explorer; do
+            if [ -d spaceui/packages/$pkg/node_modules ]; then
+              mkdir -p $out/spaceui/packages/$pkg
+              cp -r spaceui/packages/$pkg/node_modules $out/spaceui/packages/$pkg/node_modules
+            fi
+          done
+        fi
 
         runHook postInstall
       '';
@@ -136,11 +174,25 @@
     buildPhase = ''
       runHook preBuild
 
-      cd interface
-      cp -r ${frontendNodeModulesDefault}/node_modules .
-      chmod -R u+w node_modules
-      patchShebangs --build node_modules
+      # Stage node_modules for both workspaces. interface/ symlinks
+      # `@spacedrive/*` into spaceui/packages/* (workspace protocol); those
+      # symlinks chain through spaceui/packages/*/node_modules for transitive
+      # deps like @radix-ui/* and framer-motion.
+      cp -r ${frontendNodeModulesDefault}/interface/node_modules interface/
+      cp -r ${frontendNodeModulesDefault}/spaceui/node_modules spaceui/
+      if [ -d ${frontendNodeModulesDefault}/spaceui/packages ]; then
+        for pkg in tokens primitives forms icons ai explorer; do
+          if [ -d ${frontendNodeModulesDefault}/spaceui/packages/$pkg/node_modules ]; then
+            cp -r ${frontendNodeModulesDefault}/spaceui/packages/$pkg/node_modules spaceui/packages/$pkg/
+          fi
+        done
+      fi
+      chmod -R u+w interface/node_modules spaceui
 
+      patchShebangs --build interface/node_modules
+      if [ -d spaceui/node_modules ]; then patchShebangs --build spaceui/node_modules; fi
+
+      cd interface
       bun run build
 
       runHook postBuild
