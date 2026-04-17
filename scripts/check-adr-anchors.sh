@@ -52,4 +52,13 @@ if [ "$failed" -gt 0 ]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Deferred anchors (become live once Track A Phase 3 is merged).
+# When src/spacedrive/envelope.rs lands, uncomment the checks below.
+# ---------------------------------------------------------------------------
+
+# check "Spacedrive envelope helper" \
+#     "src/spacedrive/envelope.rs" \
+#     "pub fn wrap_spacedrive_response"
+
 echo "OK — all ADR anchors resolve."
