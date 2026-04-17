@@ -49,7 +49,7 @@ controllers:
       app:
         image:
           repository: ghcr.io/jrmatherly/spacebot
-          tag: v0.4.1  # Overridden per release by cluster repo's HelmRelease
+          tag: v0.4.1  # Mirrors Cargo.toml version; no matching git tag exists in this repo. Overridden per release by the cluster repo's HelmRelease.
           pullPolicy: IfNotPresent
         env:
           SPACEBOT_DIR: /data

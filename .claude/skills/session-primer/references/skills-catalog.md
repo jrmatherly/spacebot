@@ -1,6 +1,6 @@
 # Skills Catalog
 
-The 20 other project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`). This catalog excludes the session-primer skill itself.
+The 22 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
 
 ## Tier 1: Core Architecture Skills
 
@@ -154,6 +154,18 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 **Trigger:** "review the prompt", "audit the system prompt"
 - Review prompts for clarity, coherence, LLM-friendliness
 - Identify ambiguities, missing context, tone issues
+
+### docs-audit
+**Trigger:** "audit docs", "review documentation", "find stale docs", "cleanup docs", "what's out of date"
+- Systematic audit of Tier 1 (user-facing) and Tier 2 (operational) documentation against git history, codebase, and release artifacts
+- Produces prioritized findings (🔴 Incorrect / 🟡 Stale / 🔵 Missing / ⚪ Polish) with file:line citations and evidence
+- Scope excludes CLAUDE.md and Serena memories (owned by `session-sync`), OpenSpec change artifacts (owned by `openspec-verify-change`)
+
+### session-primer
+**Trigger:** Start of every new session, "prime", "bootstrap", "get up to speed", "new session"
+- Bootstrap sequence: activate Serena project context, retrieve cross-session CMEM observations, assess git/working-tree state
+- Loads 5 canonical memories, identifies task domain, recommends next skill to invoke
+- Runs automatically via `/session-primer` at session start
 
 ---
 

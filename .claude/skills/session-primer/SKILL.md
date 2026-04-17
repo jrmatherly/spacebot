@@ -228,5 +228,5 @@ Two project-level agents for delegation:
 For detailed information beyond this primer:
 - **`references/tooling-inventory.md`** — Complete map of MCP servers, hooks, agents, rules, permissions
 - **`references/memory-systems.md`** — How to use all five memory systems for cross-session continuity
-- **`references/skills-catalog.md`** — All 20 project skills with triggers and composition patterns
+- **`references/skills-catalog.md`** — All 22 project skills with triggers and composition patterns
 - **`references/documentation-map.md`** — Every documentation source, location, and purpose

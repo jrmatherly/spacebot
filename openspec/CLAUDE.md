@@ -10,7 +10,7 @@ openspec/
 │   └── <name>/spec.md
 └── changes/
     ├── <active>/     # In-progress changes (proposal, design, tasks, specs/)
-    └── archive/      # Completed changes, immutable historical record (37 files, 7 changes)
+    └── archive/      # Completed changes, immutable historical record (7 archived changes)
 ```
 
 ## Immutability Rules

@@ -17,7 +17,7 @@ spacebot/
 │   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
 │   ├── memory/                    (7 files)  - Graph store, working memory, search, maintenance
 │   ├── messaging/                 (12 files) - Discord, Slack, Telegram, Twitch, Email, Cron
-│   ├── tools/                     (48 files) - 50+ LLM-callable tools
+│   ├── tools/                     (48 files) - LLM-callable tools (multiple per file in some cases)
 │   ├── conversation/              (8 files)  - Channel history, settings, context, portal
 │   ├── tasks/                     (2 files)  - Goal/task state machine
 │   ├── skills/                    (2 files)  - Skill installation, bundling, discovery
@@ -179,16 +179,19 @@ Nine persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, `S
 
 ## Project Rules (`.claude/rules/`)
 
-Seven rule files that govern agent behavior across Rust edits, messaging parity, and writing style.
+Ten rule files that govern agent behavior across Rust edits, messaging parity, API handler conventions, tool authoring, and writing style.
 
 | Rule | Scope |
 |---|---|
 | **rust-essentials.md** | Core Rust conventions (imports, naming, errors, lints) |
 | **rust-patterns.md** | Subsystem patterns (async, Rig, Serde, state machines) |
 | **rust-iteration-loop.md** | Fast inner-loop tool selection (fmt → check → clippy → tests) |
+| **coding-discipline.md** | Behavioral guardrails (surface assumptions, simplicity, surgical edits, goal-driven TDD) |
 | **async-state-safety.md** | Race conditions, cancellation, terminal-state reasoning |
 | **messaging-adapter-parity.md** | Cross-adapter feature consistency |
 | **provider-integration.md** | LLM provider wiring and pricing |
+| **api-handler.md** | Axum handler conventions (path-scoped: `src/api/**`) |
+| **tool-authoring.md** | Rig tool definition conventions (path-scoped: `src/tools/**`) |
 | **writing-guide.md** | Copy voice and anti-patterns |
 
 ---
