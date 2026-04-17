@@ -62,7 +62,7 @@
   ] ++ lib.optionals stdenv.isLinux [pkgs.mold];
 
   frontendNodeModules = {
-    hash ? lib.fakeHash,
+    hash ? "sha256-dnaECHhGL+Uzu2qlUc34nKgo2SSzWaRm/lYc2e9YlR0=",
   }:
     stdenv.mkDerivation {
       pname = "spacebot-frontend-node-modules";
@@ -191,6 +191,14 @@
 
       patchShebangs --build interface/node_modules
       if [ -d spaceui/node_modules ]; then patchShebangs --build spaceui/node_modules; fi
+
+      # spaceui workspace packages (primitives, forms, ai, explorer) export
+      # ./dist/index.js via their package.json "exports". Vite's workspace
+      # resolve in interface/ reads those exports and needs the built files
+      # on disk. Filter to packages/* only: examples (showcase) and the
+      # storybook workspace have tsc setups that fail under Nix sandbox
+      # and are not required for interface builds.
+      (cd spaceui && bunx turbo run build --filter="./packages/*")
 
       cd interface
       bun run build

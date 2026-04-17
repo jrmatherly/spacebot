@@ -66,25 +66,40 @@
             ./interface/tsconfig.json
             ./interface/tsconfig.node.json
             ./interface/vite.config.ts
-            ./interface/postcss.config.js
-            ./interface/tailwind.config.ts
             ./interface/public
             ./interface/src
             ./spaceui/packages/tokens/src
             ./spaceui/packages/tokens/package.json
             ./spaceui/packages/tokens/raw-colors.cjs
             ./spaceui/packages/tokens/raw-colors.d.ts
+            ./spaceui/packages/tokens/tsconfig.json
             ./spaceui/packages/primitives/src
             ./spaceui/packages/primitives/package.json
+            ./spaceui/packages/primitives/tsconfig.json
+            ./spaceui/packages/primitives/tsup.config.ts
             ./spaceui/packages/ai/src
             ./spaceui/packages/ai/package.json
+            ./spaceui/packages/ai/tsconfig.json
+            ./spaceui/packages/ai/tsup.config.ts
             ./spaceui/packages/forms/src
             ./spaceui/packages/forms/package.json
+            ./spaceui/packages/forms/tsconfig.json
+            ./spaceui/packages/forms/tsup.config.ts
             ./spaceui/packages/explorer/src
             ./spaceui/packages/explorer/package.json
+            ./spaceui/packages/explorer/tsconfig.json
+            ./spaceui/packages/explorer/tsup.config.ts
+            ./spaceui/packages/icons
             ./spaceui/package.json
+            ./spaceui/bun.lock
             ./spaceui/turbo.json
             ./spaceui/tsconfig.base.json
+            # Workspace members listed in spaceui/package.json — bun requires
+            # each to exist on disk when running install. Only package.json
+            # is needed for workspace discovery; node_modules and build
+            # artifacts stay excluded.
+            ./spaceui/.storybook/package.json
+            ./spaceui/examples/showcase/package.json
           ];
         };
 
