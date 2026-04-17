@@ -8,18 +8,18 @@
 
 @import "tailwindcss";
 
-/* SpaceUI design tokens */
-@import "@spacedrive/tokens/src/css/theme.css";
-@import "@spacedrive/tokens/src/css/base.css";
+/* SpaceUI design tokens (routed through the package's exports map) */
+@import "@spacedrive/tokens/theme";
+@import "@spacedrive/tokens/css";
 
 /* Themes */
-@import "@spacedrive/tokens/src/css/themes/light.css";
-@import "@spacedrive/tokens/src/css/themes/dark.css";
-@import "@spacedrive/tokens/src/css/themes/midnight.css";
-@import "@spacedrive/tokens/src/css/themes/noir.css";
-@import "@spacedrive/tokens/src/css/themes/slate.css";
-@import "@spacedrive/tokens/src/css/themes/nord.css";
-@import "@spacedrive/tokens/src/css/themes/mocha.css";
+@import "@spacedrive/tokens/css/themes/light";
+@import "@spacedrive/tokens/css/themes/dark";
+@import "@spacedrive/tokens/css/themes/midnight";
+@import "@spacedrive/tokens/css/themes/noir";
+@import "@spacedrive/tokens/css/themes/slate";
+@import "@spacedrive/tokens/css/themes/nord";
+@import "@spacedrive/tokens/css/themes/mocha";
 
 /* Tell Tailwind to scan SpaceUI component source for classes */
 @source "../../spaceui/packages/primitives/src";
