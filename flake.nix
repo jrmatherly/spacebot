@@ -2,7 +2,11 @@
   description = "Spacebot - An AI agent for teams, communities, and multi-user environments";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Pinned to a specific nixpkgs rev so `nix flake update` is an explicit act.
+    # This rev ships bun 1.3.11, which matches the project-local mise pin and
+    # the `packageManager` field in spaceui/package.json. Update all three
+    # together when bumping. See CLAUDE.md "Package Managers" section.
+    nixpkgs.url = "github:NixOS/nixpkgs/566acc07c54dc807f91625bb286cb9b321b5f42a";
     flake-utils.url = "github:numtide/flake-utils";
     crane = {
       url = "github:ipetkov/crane";
