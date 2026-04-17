@@ -32,7 +32,7 @@
 ## 5. OpenSpec + PR
 
 - [x] 5.1 Create OpenSpec change artifacts (proposal, design, specs, tasks)
-- [ ] 5.2 Validate OpenSpec proposal passes schema checks (`openspec validate integrate-spacedrive-track-a-config --strict`)
-- [ ] 5.3 Commit OpenSpec artifacts (one commit; separate from implementation commits for clean history)
-- [ ] 5.4 Push branch `feat/spacedrive-track-a-config` to origin
-- [ ] 5.5 Open PR targeting main with title `feat(spacedrive): Track A Phase 1 — config scaffolding` and summary linking the OpenSpec change
+- [x] 5.2 Validate OpenSpec proposal passes schema checks (`openspec validate integrate-spacedrive-track-a-config --strict`)
+- [x] 5.3 Commit OpenSpec artifacts (one commit; separate from implementation commits for clean history)
+- [x] 5.4 Push branch `feat/spacedrive-track-a-config` to origin
+- [x] 5.5 Open PR targeting main with title `feat(spacedrive): Track A Phase 1 — config scaffolding` and summary linking the OpenSpec change — PR #54
