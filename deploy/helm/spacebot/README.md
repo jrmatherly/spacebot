@@ -6,7 +6,7 @@ Kubernetes deployment values for Spacebot. This directory does **not** ship a He
 
 The target Talos cluster (`ai-k8s/talos-ai-cluster`) consumes `app-template` directly in every `HelmRelease` (litellm, langfuse, apollos-portal, cluster-docs, ~15 apps). Publishing a Spacebot-specific wrapper chart would make Spacebot the odd app out and add a chart-publishing pipeline (CI job, OCI push, version sync with the image tag) for no benefit. Instead, the cluster's `HelmRelease` references `app-template` and supplies the values from this file.
 
-See `.scratchpad/k8s-helm-scaffold.md` in this repo for the full decision record.
+See [`docs/design-docs/k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md) for the full decision record.
 
 ## Files
 
@@ -104,11 +104,11 @@ The `HelmRelease`'s `spec.values:` block is populated from `deploy/helm/spacebot
 
 ## When to revisit this approach
 
-The values-only approach is right while Spacebot deploys to a single cluster with this deployment pattern. Switch to a publishable wrapper chart (see `.scratchpad/k8s-helm-scaffold.md` Option 1b) only when a second independent operator wants to deploy Spacebot outside this cluster. Until then, the values bundle is the lower-overhead option.
+The values-only approach is right while Spacebot deploys to a single cluster with this deployment pattern. Switch to a publishable wrapper chart (see [`k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md) Option 1b) only when a second independent operator wants to deploy Spacebot outside this cluster. Until then, the values bundle is the lower-overhead option.
 
 ## References
 
-- Decision record: `.scratchpad/k8s-helm-scaffold.md`
+- Decision record: [`docs/design-docs/k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md)
 - Upstream chart: [bjw-s-labs/helm-charts](https://github.com/bjw-s-labs/helm-charts), `app-template`
 - Cluster repo pattern: `/Users/jason/dev/ai-k8s/talos-ai-cluster/templates/config/kubernetes/apps/ai/` (litellm, langfuse)
 - Cluster deploy workflow: `/cluster-deploy` skill
