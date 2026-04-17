@@ -192,3 +192,23 @@ compose-validate:
     SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
         docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
     @echo "All profile combinations parse cleanly."
+
+# ============================================
+# SpaceUI hygiene recipes
+# ============================================
+
+# Run the workspace-protocol guard over every package.json in the repo.
+spaceui-check-workspace:
+    bash scripts/check-workspace-protocol.sh
+
+# Typecheck + build spaceui/, then typecheck interface/ (which needs spaceui dist).
+# Add this to the default gate-pr dependency chain if spaceui regressions become
+# common, but the cadence is low today so it stays separate.
+spaceui-gate: spaceui-check-workspace
+    cd spaceui && bun install --frozen-lockfile
+    cd spaceui && bun run typecheck
+    cd spaceui && bun run build
+    cd interface && bun install --frozen-lockfile
+    cd interface && bunx tsc --noEmit
+    cd interface && bun run build
+    @echo "spaceui-gate passed."
