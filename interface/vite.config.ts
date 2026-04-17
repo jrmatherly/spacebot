@@ -3,8 +3,6 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const spaceui = path.resolve(__dirname, "../spaceui/packages");
-
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
 
@@ -18,7 +16,12 @@ export default defineConfig({
 			"class-variance-authority",
 		],
 		alias: [
-			// Pin React to a single copy (prevents "Invalid hook call")
+			// Pin React to a single copy (prevents "Invalid hook call" when a
+			// workspace package and this app both resolve React). The workspace
+			// protocol puts `@spacedrive/*` packages in interface/node_modules as
+			// symlinks, and each symlinked package may have its own
+			// `node_modules/react` under the isolated linker. Force every React
+			// import to the interface copy.
 			{
 				find: /^react$/,
 				replacement: path.resolve(
@@ -55,44 +58,8 @@ export default defineConfig({
 				),
 			},
 
-			// SpaceUI — resolve to source for HMR
-			{
-				find: "@spacedrive/tokens/src/css",
-				replacement: `${spaceui}/tokens/src/css`,
-			},
-			{
-				find: "@spacedrive/tokens",
-				replacement: `${spaceui}/tokens`,
-			},
-			{
-				find: "@spacedrive/primitives",
-				replacement: `${spaceui}/primitives/src/index.ts`,
-			},
-			{
-				find: "@spacedrive/ai",
-				replacement: `${spaceui}/ai/src/index.ts`,
-			},
-			{
-				find: "@spacedrive/forms",
-				replacement: `${spaceui}/forms/src/index.ts`,
-			},
-			{
-				find: "@spacedrive/explorer",
-				replacement: `${spaceui}/explorer/src/index.ts`,
-			},
-
 			// Project alias
 			{ find: "@", replacement: path.resolve(__dirname, "src") },
-		],
-	},
-
-	optimizeDeps: {
-		exclude: [
-			"@spacedrive/tokens",
-			"@spacedrive/primitives",
-			"@spacedrive/ai",
-			"@spacedrive/forms",
-			"@spacedrive/explorer",
 		],
 	},
 
