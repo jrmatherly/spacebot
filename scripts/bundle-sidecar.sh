@@ -56,6 +56,7 @@ esac
 #   - desktop/src-tauri/capabilities/default.json             (shell:allow-spawn name)
 #   - interface/src/components/ConnectionScreen.tsx           (spawnBundledProcess arg)
 #   - docs/content/docs/(getting-started)/desktop.mdx         (user-facing docs)
+#   - .github/workflows/desktop-ci.yml                        (smoke-test assertion)
 DEST_BIN="$BINARIES_DIR/spacebot-daemon-${TARGET_TRIPLE}${SUFFIX}"
 
 cp "$SRC_BIN${SUFFIX}" "$DEST_BIN"

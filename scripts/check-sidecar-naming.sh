@@ -103,6 +103,7 @@ KNOWN_SITES=(
 	"interface/src/components/ConnectionScreen.tsx|$SIDECAR_REF"
 	"docs/content/docs/(getting-started)/desktop.mdx|$DOCS_REF"
 	"scripts/bundle-sidecar.sh|$DOCS_REF"
+	".github/workflows/desktop-ci.yml|$SIDECAR_REF"
 )
 
 violations=0

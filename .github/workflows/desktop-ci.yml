@@ -1,0 +1,134 @@
+name: Desktop Smoke
+
+# Minimal cross-platform smoke test for the Tauri sidecar bundling path.
+# Runs the sync-invariant guard and then exercises scripts/bundle-sidecar.sh
+# on each target OS, asserting that the expected binary lands at the expected
+# path. This is the cheapest CI variant from the review doc — no `tauri build`,
+# no frontend compile — but it is enough to catch the class of bug that PR #57
+# fixed, because linux CI would not have caught the APFS collision (ext4 is
+# case-sensitive).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "interface/src/components/ConnectionScreen.tsx"
+      - "scripts/bundle-sidecar.sh"
+      - "scripts/check-sidecar-naming.sh"
+      # The Fumadocs route-group directory uses literal parentheses; the
+      # double-star keeps the filter robust to any future reshuffle of
+      # where this page lives in the docs tree.
+      - "docs/content/docs/**/desktop.mdx"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/desktop-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "interface/src/components/ConnectionScreen.tsx"
+      - "scripts/bundle-sidecar.sh"
+      - "scripts/check-sidecar-naming.sh"
+      # The Fumadocs route-group directory uses literal parentheses; the
+      # double-star keeps the filter robust to any future reshuffle of
+      # where this page lives in the docs tree.
+      - "docs/content/docs/**/desktop.mdx"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/desktop-ci.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Sidecar naming invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run sidecar naming guard
+        run: bash scripts/check-sidecar-naming.sh
+
+  smoke:
+    name: Bundle sidecar (${{ matrix.os }})
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-24.04
+            triple: x86_64-unknown-linux-gnu
+            expected_ext: ""
+          - os: macos
+            runner: macos-15
+            triple: aarch64-apple-darwin
+            expected_ext: ""
+          - os: windows
+            runner: windows-latest
+            triple: x86_64-pc-windows-msvc
+            expected_ext: ".exe"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install protoc (Linux)
+        if: matrix.os == 'linux'
+        # Required by prost/tonic (OpenTelemetry OTLP) and chromiumoxide_cdp.
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: matrix.os == 'macos'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: choco install protoc -y
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          # Scope the cache per-target so macOS and Windows do not thrash
+          # each other. Debug builds only; release is exercised in release.yml.
+          key: desktop-smoke-${{ matrix.triple }}
+
+      - name: Run bundle-sidecar (debug)
+        # Git Bash is available on windows-latest via C:\Program Files\Git\bin\bash.exe;
+        # actions/runner sets `bash` to resolve there automatically, so the script
+        # runs unchanged across all three runners.
+        shell: bash
+        run: bash scripts/bundle-sidecar.sh
+
+      - name: Assert sidecar binary exists at expected path
+        shell: bash
+        # Matrix values are statically defined in this workflow, not user
+        # input — still, pass them via env for the defensive style the
+        # project follows elsewhere.
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          EXPECTED_EXT: ${{ matrix.expected_ext }}
+        run: |
+          expected="desktop/src-tauri/binaries/spacebot-daemon-${TRIPLE}${EXPECTED_EXT}"
+          if [[ ! -f "$expected" ]]; then
+            echo "::error::expected sidecar binary at $expected but it was not produced"
+            ls -la desktop/src-tauri/binaries/ || true
+            exit 1
+          fi
+          echo "OK — sidecar binary landed at $expected"
