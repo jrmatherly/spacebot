@@ -44,7 +44,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 - `vendor/` — Vendored crates (imap-proto)
 - `interface/` — Web UI (Vite + React + TypeScript)
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
-- `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Runtime integration lives at `src/spacedrive/` (config, HTTP client, envelope, first agent tool `spacedrive_list_files`). Track A complete on main; runtime-gated behind `[spacedrive] enabled = true`.
+- `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Runtime integration lives at `src/spacedrive/` (config, HTTP client, envelope, first agent tool `spacedrive_list_files`). Track A complete on main; runtime-gated behind `[spacedrive] enabled = true`. As of PR #57 this is a real fork: 10 Spacebot-authored stub files under `spacedrive/core/src/` plus an `apps/web/dist/index.html` placeholder unblock the `sd-server` build. `spacedrive/SYNC.md` LOCAL_CHANGES is load-bearing — never overwrite it wholesale via rsync.
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 - `deploy/docker/` — Docker Compose variant (one file, six profiles: default, build, spacedrive, proxy, observability, tooling). See `deploy/docker/README.md` and `just compose-*` recipes.
