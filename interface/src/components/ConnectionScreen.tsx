@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from "react";
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
 import { Button, Input } from "@spacedrive/primitives";
 import { useServer } from "@/hooks/useServer";
 import {
@@ -11,6 +11,31 @@ const Orb = lazy(() => import("@/components/Orb"));
 
 type SidecarState = "idle" | "starting" | "running" | "error";
 
+// Maximum time to wait for the daemon's "HTTP server listening" line before
+// giving up and transitioning to the error state. Cold startup includes
+// migrations, lance index hydration, and the embedding model download; 45s
+// is a conservative upper bound that gives the user an escape hatch without
+// cutting off normal first-run cases.
+const STARTUP_TIMEOUT_MS = 45_000;
+
+// Short timeout for the pre-spawn health probe. If something is already
+// listening on the local port we short-circuit; if nothing is there the probe
+// fails fast and we fall through to the normal spawn path.
+const HEALTH_PROBE_TIMEOUT_MS = 500;
+
+const LOCAL_SERVER_URL = "http://localhost:19898";
+
+async function probeLocalServer(): Promise<boolean> {
+	try {
+		const response = await fetch(`${LOCAL_SERVER_URL}/api/health`, {
+			signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Full-screen connection screen shown when the app cannot reach
  * the spacebot server. Allows changing the server URL and, in
@@ -21,11 +46,29 @@ export function ConnectionScreen() {
 	const [draft, setDraft] = useState(serverUrl);
 	const [sidecarState, setSidecarState] = useState<SidecarState>("idle");
 	const [sidecarError, setSidecarError] = useState<string | null>(null);
+	const startupTimerRef = useRef<number | null>(null);
 
 	// Keep draft in sync when serverUrl changes externally
 	useEffect(() => {
 		setDraft(serverUrl);
 	}, [serverUrl]);
+
+	// Clear any pending startup timer if the component unmounts mid-spawn.
+	useEffect(() => {
+		return () => {
+			if (startupTimerRef.current !== null) {
+				window.clearTimeout(startupTimerRef.current);
+				startupTimerRef.current = null;
+			}
+		};
+	}, []);
+
+	const clearStartupTimer = useCallback(() => {
+		if (startupTimerRef.current !== null) {
+			window.clearTimeout(startupTimerRef.current);
+			startupTimerRef.current = null;
+		}
+	}, []);
 
 	const handleConnect = useCallback(() => {
 		setServerUrl(draft);
@@ -40,8 +83,25 @@ export function ConnectionScreen() {
 
 	const handleStartLocal = useCallback(async () => {
 		if (!IS_DESKTOP) return;
+		// Re-entrancy guard. The Button also sets disabled on these states,
+		// but state updates are async and rapid keyboard-driven activations
+		// can still fire a second handler before React re-renders.
+		if (sidecarState === "starting" || sidecarState === "running") return;
 		setSidecarState("starting");
 		setSidecarError(null);
+
+		// If something is already listening on the local port, skip the spawn
+		// and just connect. Handles leftover daemons from a crashed session
+		// and turns the common EADDRINUSE failure into a success path. The
+		// probe cannot distinguish Spacebot from another process responding
+		// 200 on /api/health; that is acceptable because the spawn we would
+		// otherwise attempt would fail immediately with EADDRINUSE anyway.
+		if (await probeLocalServer()) {
+			setSidecarState("running");
+			setServerUrl(LOCAL_SERVER_URL);
+			return;
+		}
+
 		try {
 			let sawReady = false;
 			const spawned = await spawnBundledProcess("binaries/spacebot-daemon", [
@@ -49,10 +109,12 @@ export function ConnectionScreen() {
 				"--foreground",
 			], {
 				onError: (error) => {
+					clearStartupTimer();
 					setSidecarState("error");
 					setSidecarError(error);
 				},
 				onClose: (data) => {
+					clearStartupTimer();
 					if (!sawReady || data.code === null || data.code !== 0) {
 						setSidecarState("error");
 						setSidecarError(
@@ -65,12 +127,11 @@ export function ConnectionScreen() {
 					setSidecarState("idle");
 				},
 				onStdout: (line) => {
-					// Look for the "HTTP server listening" log line
 					if (line.includes("HTTP server listening")) {
 						sawReady = true;
+						clearStartupTimer();
 						setSidecarState("running");
-						// Point the app at localhost
-						setServerUrl("http://localhost:19898");
+						setServerUrl(LOCAL_SERVER_URL);
 					}
 				},
 			});
@@ -81,14 +142,29 @@ export function ConnectionScreen() {
 				return;
 			}
 
-			setSidecarState("starting");
+			// Arm the startup timeout. onStdout-match / onClose / onError will
+			// clear it; if none of those fire within the budget we transition
+			// to error so the button does not sit stuck on "Starting...". The
+			// state guard inside the callback prevents clobbering a terminal
+			// state if onStdout raced ahead during spawn resolution.
+			startupTimerRef.current = window.setTimeout(() => {
+				startupTimerRef.current = null;
+				setSidecarState((current) => {
+					if (current !== "starting") return current;
+					setSidecarError(
+						"Timed out waiting for the local server to start. Check logs at ~/.spacebot/logs/",
+					);
+					return "error";
+				});
+			}, STARTUP_TIMEOUT_MS);
 		} catch (error) {
+			clearStartupTimer();
 			setSidecarState("error");
 			setSidecarError(
 				error instanceof Error ? error.message : String(error),
 			);
 		}
-	}, [setServerUrl]);
+	}, [sidecarState, setServerUrl, clearStartupTimer]);
 
 	const isChecking = state === "checking";
 

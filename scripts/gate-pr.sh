@@ -178,6 +178,7 @@ fi
 # stored in deployed SQLx `_sqlx_migrations` tables will cause checksum
 # mismatches and break startup on those databases; coordinate a full redeploy
 # or migration-checksum repair when landing migration reformatting changes.
+run_step "check-sidecar-naming" ./scripts/check-sidecar-naming.sh
 run_step "cargo fmt --all -- --check" cargo fmt --all -- --check
 run_step "cargo check --all-targets" cargo check --all-targets
 
