@@ -71,6 +71,12 @@ build-opencode-embed:
 bundle-sidecar:
     ./scripts/bundle-sidecar.sh --release
 
+# Enforce that the Tauri sidecar binary name agrees across every reference
+# site and does not collide case-insensitively with the desktop host binary
+# (the original APFS bug). Also runs automatically inside `just gate-pr`.
+check-sidecar-naming:
+    ./scripts/check-sidecar-naming.sh
+
 # Run the desktop app in development mode.
 # The desktop package script pre-bundles the sidecar, and Tauri starts Vite.
 desktop-dev:
