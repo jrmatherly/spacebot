@@ -7,7 +7,7 @@
 ## Tech Stack
 - **Runtime:** Tokio async
 - **HTTP Framework:** Axum 0.8
-- **Database:** SQLite via sqlx 0.8 (42 migrations in flat `migrations/` directory, 2026-02 → 2026-04)
+- **Database:** SQLite via sqlx 0.8 (48 migrations total: 42 in flat per-agent `migrations/`, 6 in instance-wide `migrations/global/` including `spacedrive_pairing`, 2026-02 → 2026-04)
 - **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb 4.0 (embedded)
 - **LLM Framework:** Rig v0.35 (agentic loop framework)
@@ -25,7 +25,7 @@
 - **JS Package Manager:** bun (NEVER npm/pnpm/yarn)
 - **Documentation Site:** Next.js + Fumadocs (`docs/`)
 - **SpaceUI:** Design system (6 packages: tokens, primitives, forms, icons, ai, explorer) (`spaceui/`)
-- **Spacedrive:** Vendored upstream platform at `spacedrive/` — independent Cargo workspace with its own toolchain (`stable`), excluded via `[workspace] exclude = ["spacedrive"]` in root `Cargo.toml`. Runtime integration is in flight: Track A Phase 1 (config scaffolding in `src/spacedrive/`) landed as PR #54 (2026-04-17). Phase 2 (HTTP client) and Phase 3 (first agent tool + pairing migration) are sequenced next.
+- **Spacedrive:** Vendored upstream platform at `spacedrive/` — independent Cargo workspace with its own toolchain (`stable`), excluded via `[workspace] exclude = ["spacedrive"]` in root `Cargo.toml`. Track A complete on main as of 2026-04-17: Phase 1 config (PR #54), Phase 2 HTTP client with `{"Query":...}` envelope + HTTPS enforcement + wiremock tests (PR #55), Phase 3 first agent tool `spacedrive_list_files` + prompt-injection envelope + pairing migration + secrets integration (PR #56). Runtime-gated behind `enabled`. Post-merge smoke test (Task 18) blocked on the vendored fork not compiling — 9 declared-but-unwritten modules in sd-core. Scope captured at `.scratchpad/2026-04-17-spacedrive-fork-stub-writing.md` for a future session.
 - **Desktop App:** Tauri (`desktop/`)
 
 ## Security

@@ -4,7 +4,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 ```
 spacebot/
-├── src/                  # 208 Rust source files
+├── src/                  # 213 Rust source files
 │   ├── main.rs           # CLI entry point (clap subcommands: start, stop, restart, status, skill, auth, secrets)
 │   ├── lib.rs            # Library root — 35 public modules, shared types
 │   ├── bin/              # Extra binaries: openapi-spec, cargo-bump
@@ -23,10 +23,10 @@ spacebot/
 │   ├── sandbox/          # Tool execution sandboxing
 │   ├── secrets/          # Keystore (macOS Keychain), secret scrubbing
 │   ├── skills/           # Skill installation & registry
-│   ├── spacedrive/       # Spacedrive integration — Track A Phase 1 landed the SpacedriveIntegrationConfig shape. Runtime-gated via `enabled` flag; no HTTP/tool work yet
+│   ├── spacedrive/       # Spacedrive integration (Track A complete): config, HTTP client with `{"Query":...}` envelope + HTTPS enforcement, error taxonomy, wire types including SdPath, prompt-injection envelope, build_client_from_secrets helper. Runtime-gated via `enabled` flag
 │   ├── tasks/            # Task CRUD & migration
 │   ├── telemetry/        # Prometheus metrics (feature-gated)
-│   ├── tools/            # 48 LLM-callable tool files (63 tool implementations)
+│   ├── tools/            # 49 LLM-callable tool files (64 tool implementations; `spacedrive_list_files` added 2026-04-17)
 │   └── wiki/             # Wiki pages CRUD & search
 ├── interface/            # Web UI (Vite + React + TypeScript)
 │   ├── src/              # React app, components, routes, hooks
@@ -35,10 +35,10 @@ spacebot/
 ├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`)
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
-├── migrations/           # 42 SQLite migrations: agent + global (2026-02 → 2026-04)
+├── migrations/           # 48 SQLite migrations: 42 flat per-agent + 6 instance-wide under global/ (2026-02 → 2026-04)
 ├── presets/              # 9 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 ├── scripts/              # Build & release scripts
-├── tests/                # 11 integration test files
+├── tests/                # 12 integration test files (added `spacedrive_client.rs` with wiremock-backed RPC envelope + 401/Bearer round-trip tests)
 ├── vendor/               # Vendored crate: imap-proto-0.10.2
 ├── nix/                  # Nix build support
 ├── flake.nix             # Nix flake definition
