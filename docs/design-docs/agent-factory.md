@@ -18,7 +18,7 @@ There are no presets, no guidance on writing a soul, no way to leverage existing
 The factory is a guided creation flow where the user describes what they want in natural language. The system synthesizes a fully configured agent from three sources:
 
 1. **User intent** — conversational answers about what the agent should do, how it should communicate, what platforms it should be on
-2. **Preset archetypes** — 8 curated soul/identity/role templates that serve as starting material for synthesis (never used directly)
+2. **Preset archetypes** — 9 curated soul/identity/role templates that serve as starting material for synthesis (never used directly)
 3. **Main agent's memories** — searched at creation time for company context, domain knowledge, preferences, organizational structure
 
 The factory is not a form. It's a conversation with the agent that happens to produce another agent.
@@ -174,7 +174,7 @@ The channel's `build_org_context()` then:
 
 ### Preset Structure
 
-Eight preset archetypes ship embedded in the binary. Each is a directory of markdown files:
+Nine preset archetypes ship embedded in the binary. Each is a directory of markdown files:
 
 ```
 presets/
@@ -248,7 +248,7 @@ GET /api/factory/presets/:id       → Preset (full content)
 
 ### Files
 
-- `presets/` directory with 8 archetype subdirectories
+- `presets/` directory with 9 archetype subdirectories
 - `src/factory/mod.rs` — module root
 - `src/factory/presets.rs` — `PresetRegistry`, `Preset`, `PresetMeta`, `include_dir!` loading
 - `src/api/factory.rs` — preset listing/loading endpoints

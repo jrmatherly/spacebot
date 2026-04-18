@@ -823,5 +823,36 @@ mod tests {
 
         assert_eq!(prompt, "Base prompt");
     }
+
+    /// Guard against silent emptying of system-message fragments.
+    ///
+    /// `wc -l` reports 0 for a file with content but no trailing newline,
+    /// which can mask an empty file. This test asserts the registered
+    /// `fragments/system/*` templates return non-empty bytes, so an
+    /// accidental truncation (or a broken mapping in `src/prompts/text.rs`)
+    /// fails at build time rather than at agent runtime.
+    #[test]
+    fn system_fragment_templates_are_non_empty() {
+        const SYSTEM_FRAGMENTS: &[&str] = &[
+            "fragments/system/retrigger",
+            "fragments/system/truncation",
+            "fragments/system/worker_overflow",
+            "fragments/system/worker_compact",
+            "fragments/system/memory_persistence",
+            "fragments/system/cortex_synthesis",
+            "fragments/system/profile_synthesis",
+            "fragments/system/ingestion_chunk",
+            "fragments/system/history_backfill",
+            "fragments/system/tool_syntax_correction",
+        ];
+
+        for key in SYSTEM_FRAGMENTS {
+            let content = crate::prompts::text::get(key);
+            assert!(
+                !content.trim().is_empty(),
+                "system fragment template '{key}' is empty or whitespace-only",
+            );
+        }
+    }
 }
 // to support multiple languages at compile time.
