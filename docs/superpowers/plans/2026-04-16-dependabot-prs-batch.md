@@ -1,5 +1,7 @@
 # Dependabot PR Batch — Implementation Plan (revised 2026-04-16)
 
+> **✅ COMPLETED 2026-04-18.** All five workspace-grouped PRs landed on main. Landing SHAs: `fbb8fa3` (Storybook 10 + React 19 coordinated bump), `0b12ba2` (react-markdown 10, graphology 0.26, react-spring 10, vite 8, plugin-react 6), `402c4c0` (spaceui-showcase april 2026 batch), `d88e3e3` (docs fumadocs-ui, fumadocs-mdx, next), plus `7b9f054` (workspace alignment drift fixes) and `04f1bb7` (TypeScript 5.4 → 6.0.2 follow-up). The original Dependabot PRs (#20-33) auto-closed as expected. This plan file is preserved as the historical record of the execution; see `git log --oneline --grep="^deps(spaceui\\|^deps(docs\\|^deps(spaceui-showcase"` for the full commit sequence. No further action needed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Apply the dependency upgrades from all 14 open Dependabot PRs (#20–#33) by writing them locally as 5 workspace-grouped feature branches, opening one PR per branch, and letting Dependabot's PRs auto-close when their bumped versions land in `main`.

@@ -313,7 +313,7 @@ Deliberately **not** in this values file:
 3. **Three probes, all point at `/api/health`.** Startup gives 155s grace for migrations; liveness and readiness are standard.
 4. **Metrics port in the Service but no custom values for the chart — the ServiceMonitor block handles scraping.**
 5. **Image pinning defers to cluster repo.** The chart's `values.yaml` pins `v0.4.1` as a *default*; Flux values in the cluster repo override this per release. Keeps the chart versioning and image versioning independent.
-6. **Resources are conservative.** Spacebot's actual footprint from fly.toml is `shared-cpu-2x / 1gb` — requests of `250m / 256Mi` with `1000m / 1Gi` limits match that sizing and let the cluster scheduler pack efficiently.
+6. **Resources are conservative.** Spacebot's historical footprint on Fly.io was `shared-cpu-2x / 1gb` (from the now-decommissioned `fly.toml`, archived 2026-04-18 at `.scratchpad/backups/archive/`). Requests of `250m / 256Mi` with `1000m / 1Gi` limits match that sizing and let the cluster scheduler pack efficiently.
 
 ## Open questions deferred to implementation time
 

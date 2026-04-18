@@ -21,7 +21,7 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 | Vendored Spacedrive policy files | `spacedrive/README.md`, `spacedrive/SECURITY.md`, `spacedrive/CONTRIBUTING.md`, `spacedrive/CODE_OF_CONDUCT.md`, `spacedrive/AGENTS.md` — these 5 root-level files are IN scope because they've been reframed as Spacebot-owned policy documents for the vendored subtree (banners, clone URLs, issue/PR routing pointed at `jrmatherly/spacebot`). The rest of `spacedrive/` (crates/, core/, apps/, docs/, extensions/, adapters/, schemas/) remains out of scope as upstream-maintained source. |
 | SpaceUI internal docs | `spaceui/docs/{COMPONENT-AUDIT,REPO_SUMMARY,SHARED-UI-STRATEGY,TAILWIND-V4-MIGRATION}.md` |
 | SpaceUI changesets | `spaceui/.changeset/README.md` + `config.json` |
-| SpaceUI packages | `spaceui/packages/{ai,explorer,forms,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` (`icons/` has no README — flag as 🔵 Missing or document why) |
+| SpaceUI packages | `spaceui/packages/{ai,explorer,forms,icons,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` |
 | Docs top-level | `docs/README.md`, `docs/docker.md`, `docs/mattermost.md`, `docs/metrics.md` |
 | Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
 | Design docs | `docs/design-docs/*.md` — 50 files; historical record, append-only |
@@ -297,7 +297,7 @@ Four nested files: `spaceui/CLAUDE.md`, `interface/CLAUDE.md`, `desktop/CLAUDE.m
 
 ### Coding rules (`.claude/rules/`)
 
-Nine rule files, some path-scoped via `paths:` frontmatter. Rules are loaded automatically when their paths match, so drift here propagates into every code change in the covered subtree.
+Ten rule files, some path-scoped via `paths:` frontmatter. Rules are loaded automatically when their paths match, so drift here propagates into every code change in the covered subtree.
 
 - **Path frontmatter correctness:** for each rule with `paths:`, verify the globs match real files. `grep -H '^paths:' .claude/rules/*.md` then sanity-check each glob.
 - **No conflicting rules:** two rules that both claim authority over the same path but give different guidance is 🔴 Incorrect. The narrower scope should win; the broader rule should link out.
