@@ -38,7 +38,7 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/spacebot"],
+    "externalBin": ["binaries/spacebot-daemon"],
     "resources": {
       "gen/icon/**/*": "./"
     },

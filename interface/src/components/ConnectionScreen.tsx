@@ -44,7 +44,7 @@ export function ConnectionScreen() {
 		setSidecarError(null);
 		try {
 			let sawReady = false;
-			const spawned = await spawnBundledProcess("binaries/spacebot", [
+			const spawned = await spawnBundledProcess("binaries/spacebot-daemon", [
 				"start",
 				"--foreground",
 			], {

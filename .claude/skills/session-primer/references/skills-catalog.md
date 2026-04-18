@@ -155,7 +155,7 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Review prompts for clarity, coherence, LLM-friendliness
 - Identify ambiguities, missing context, tone issues
 
-### docs-audit
+### docs-audit (398 lines)
 **Trigger:** "audit docs", "review documentation", "find stale docs", "cleanup docs", "what's out of date"
 - Systematic audit of Tier 1 (user-facing) and Tier 2 (operational) documentation against git history, codebase, and release artifacts
 - Produces prioritized findings (🔴 Incorrect / 🟡 Stale / 🔵 Missing / ⚪ Polish) with file:line citations and evidence

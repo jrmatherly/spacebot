@@ -39,3 +39,4 @@ Under the hood:
 - "cargo build fails in desktop" → you're probably in the root. `cd desktop/src-tauri` or use `just desktop-*`.
 - "UI changes don't show in the app" → the `beforeBuildCommand` rebuilds `interface/dist/`, but in dev the Vite server must be running. Use `just desktop-dev`, not manual orchestration.
 - "Tauri complains about missing sidecar binary" → run `just bundle-sidecar` first. It copies the built daemon into the Tauri resource path.
+- "Start Local Server opens a second desktop window instead of starting the daemon" → the sidecar binary name must not collide case-insensitively with the Tauri host binary. The host is `Spacebot`, APFS is case-insensitive, so naming the sidecar `spacebot-<triple>` resolves to the host. Keep the `spacebot-daemon-<triple>` naming in `scripts/bundle-sidecar.sh`, `tauri.conf.json` `externalBin`, `capabilities/default.json`, and `interface/src/components/ConnectionScreen.tsx`. All four must match.

@@ -24,7 +24,7 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 | SpaceUI packages | `spaceui/packages/{ai,explorer,forms,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` (`icons/` has no README — flag as 🔵 Missing or document why) |
 | Docs top-level | `docs/README.md`, `docs/docker.md`, `docs/mattermost.md`, `docs/metrics.md` |
 | Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
-| Design docs | `docs/design-docs/*.md` — 48 files; historical record, append-only |
+| Design docs | `docs/design-docs/*.md` — 50 files; historical record, append-only |
 | Security policy | `docs/security/*.md` (tracked per project_overview memory) |
 | Transient plans | `docs/superpowers/plans/*.md` — completed ones should move to `.scratchpad/completed/` |
 | Deployment values | `deploy/helm/spacebot/{values.yaml,values.local.yaml,README.md}` — Kubernetes/Helm values for the Talos cluster. Consumes `bjw-s-labs/app-template` (not a wrapper chart). Drift risk: image tag vs actual release, port/env mismatches against `src/config/`, probe paths against API handlers. |
@@ -41,7 +41,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (22 top-level skills + 21 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
 | Runtime skills | `skills/builtin/*/SKILL.md` — 1 file (wiki-writing). Skills the daemon ships to agents. |
-| Canonical specs | `openspec/specs/*/spec.md` — 7 files. Source-of-truth for deps/integration. **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
+| Canonical specs | `openspec/specs/*/spec.md` — 8 files. Source-of-truth for deps/integration. **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
 
 ### Explicitly Out of Scope
 
@@ -156,7 +156,7 @@ For each target file, don't just read. Compare against Step 1 evidence. Specific
 
 **Version claims**
 - Any "v0.X", "version 0.X", "x.y.z" mentioned in prose → diff against actual manifest
-- "Rig v0.33" type references are known drift risk (memory obs #25725 flagged this)
+- "Rig v0.33" type references are known drift risk (memory obs #25725 flagged this; resolved 2026-04-16)
 
 **Date-stamped claims**
 - `**Last updated:** ...`, `**Status (as of YYYY-MM-DD):** ...`, `**Updated:**` headers
@@ -269,7 +269,7 @@ Apply only what's approved. For changelog-related fixes in `spaceui/`, remember 
 ### Architectural docs (README, AGENTS, PROJECT_INDEX)
 
 - Tech stack tables and counts are high-drift. Prioritize these.
-- Cross-doc consistency matters: if `AGENTS.md` says "Rig v0.35" and `README.md` says "Rig v0.33", both need to agree with `Cargo.toml`.
+- Cross-doc consistency matters: if `AGENTS.md` states one dependency version and `README.md` states another, both need to agree with `Cargo.toml`.
 
 ### docs/ (Fumadocs site)
 

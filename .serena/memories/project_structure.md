@@ -32,10 +32,10 @@ spacebot/
 │   ├── src/              # React app, components, routes, hooks
 │   └── opencode-embed-src/  # Embeddable widget variant
 ├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer). Consumed by interface/ via bun workspace protocol — interface/package.json declares "workspaces": ["../spaceui/packages/*"] and pins each @spacedrive/* dep to "workspace:*"
-├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`)
+├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`). Now a real fork — PR #57 authored 10 stub files under core/src/ to unblock sd-server compile. SYNC.md LOCAL_CHANGES is load-bearing; do not overwrite via upstream rsync without consulting it.
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
-├── migrations/           # 48 SQLite migrations: 42 flat per-agent + 6 instance-wide under global/ (2026-02 → 2026-04)
+├── migrations/           # 48 SQLite migrations: 41 flat per-agent + 7 instance-wide under global/ (2026-02 → 2026-04)
 ├── presets/              # 9 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 ├── scripts/              # Build & release scripts
 ├── tests/                # 12 integration test files (added `spacedrive_client.rs` with wiremock-backed RPC envelope + 401/Bearer round-trip tests)
