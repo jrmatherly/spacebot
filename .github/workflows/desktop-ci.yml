@@ -3,8 +3,8 @@ name: Desktop Smoke
 # Minimal cross-platform smoke test for the Tauri sidecar bundling path.
 # Runs the sync-invariant guard and then exercises scripts/bundle-sidecar.sh
 # on each target OS, asserting that the expected binary lands at the expected
-# path. This is the cheapest CI variant from the review doc — no `tauri build`,
-# no frontend compile — but it is enough to catch the class of bug that PR #57
+# path. This is the cheapest CI variant from the review doc: no `tauri build`,
+# no frontend compile. Still enough to catch the class of bug that PR #57
 # fixed, because linux CI would not have caught the APFS collision (ext4 is
 # case-sensitive).
 
@@ -119,7 +119,7 @@ jobs:
       - name: Assert sidecar binary exists at expected path
         shell: bash
         # Matrix values are statically defined in this workflow, not user
-        # input — still, pass them via env for the defensive style the
+        # input. Pass them via env anyway for the defensive style the
         # project follows elsewhere.
         env:
           TRIPLE: ${{ matrix.triple }}

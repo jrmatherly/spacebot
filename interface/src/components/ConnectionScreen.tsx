@@ -12,9 +12,10 @@ const Orb = lazy(() => import("@/components/Orb"));
 type SidecarState = "idle" | "starting" | "running" | "error";
 
 // Maximum time to wait for the daemon's "HTTP server listening" line before
-// giving up and transitioning to the error state. Cold startup on a fresh
-// machine can include migrations, lance index hydration, and the embedding
-// model download, which together take ~15-30s; 45s is a safe upper bound.
+// giving up and transitioning to the error state. Cold startup includes
+// migrations, lance index hydration, and the embedding model download; 45s
+// is a conservative upper bound that gives the user an escape hatch without
+// cutting off normal first-run cases.
 const STARTUP_TIMEOUT_MS = 45_000;
 
 // Short timeout for the pre-spawn health probe. If something is already
@@ -82,13 +83,19 @@ export function ConnectionScreen() {
 
 	const handleStartLocal = useCallback(async () => {
 		if (!IS_DESKTOP) return;
+		// Re-entrancy guard. The Button also sets disabled on these states,
+		// but state updates are async and rapid keyboard-driven activations
+		// can still fire a second handler before React re-renders.
+		if (sidecarState === "starting" || sidecarState === "running") return;
 		setSidecarState("starting");
 		setSidecarError(null);
 
-		// If something is already listening on the local port (e.g. a manually
-		// launched daemon or a leftover from a previous desktop session), skip
-		// the spawn and just connect. This also turns the common EADDRINUSE
-		// failure into a success path.
+		// If something is already listening on the local port, skip the spawn
+		// and just connect. Handles leftover daemons from a crashed session
+		// and turns the common EADDRINUSE failure into a success path. The
+		// probe cannot distinguish Spacebot from another process responding
+		// 200 on /api/health; that is acceptable because the spawn we would
+		// otherwise attempt would fail immediately with EADDRINUSE anyway.
 		if (await probeLocalServer()) {
 			setSidecarState("running");
 			setServerUrl(LOCAL_SERVER_URL);
@@ -120,12 +127,10 @@ export function ConnectionScreen() {
 					setSidecarState("idle");
 				},
 				onStdout: (line) => {
-					// Look for the "HTTP server listening" log line
 					if (line.includes("HTTP server listening")) {
 						sawReady = true;
 						clearStartupTimer();
 						setSidecarState("running");
-						// Point the app at localhost
 						setServerUrl(LOCAL_SERVER_URL);
 					}
 				},
@@ -139,19 +144,19 @@ export function ConnectionScreen() {
 
 			// Arm the startup timeout. onStdout-match / onClose / onError will
 			// clear it; if none of those fire within the budget we transition
-			// to error so the button does not sit stuck on "Starting...".
-			clearStartupTimer();
+			// to error so the button does not sit stuck on "Starting...". The
+			// state guard inside the callback prevents clobbering a terminal
+			// state if onStdout raced ahead during spawn resolution.
 			startupTimerRef.current = window.setTimeout(() => {
 				startupTimerRef.current = null;
-				setSidecarState((current) =>
-					current === "starting" ? "error" : current,
-				);
-				setSidecarError(
-					"Timed out waiting for the local server to start. Check logs at ~/.spacebot/logs/",
-				);
+				setSidecarState((current) => {
+					if (current !== "starting") return current;
+					setSidecarError(
+						"Timed out waiting for the local server to start. Check logs at ~/.spacebot/logs/",
+					);
+					return "error";
+				});
 			}, STARTUP_TIMEOUT_MS);
-
-			setSidecarState("starting");
 		} catch (error) {
 			clearStartupTimer();
 			setSidecarState("error");
@@ -159,7 +164,7 @@ export function ConnectionScreen() {
 				error instanceof Error ? error.message : String(error),
 			);
 		}
-	}, [setServerUrl, clearStartupTimer]);
+	}, [sidecarState, setServerUrl, clearStartupTimer]);
 
 	const isChecking = state === "checking";
 

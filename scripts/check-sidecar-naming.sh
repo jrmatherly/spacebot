@@ -3,13 +3,13 @@
 # across every reference site, and that it does not collide case-insensitively
 # with the desktop host binary name (the original APFS bug).
 #
-# Runs two checks:
+# Two invariants:
 #
 # 1. Sync invariant: the sidecar basename derived from `scripts/bundle-sidecar.sh`
-#    must appear verbatim as `binaries/<name>` in the three configuration files
-#    that Tauri and the renderer consume, and as `<name>-<target-triple>` in the
-#    user-facing docs. A grep cross-check catches new reference sites that were
-#    not added to the enumerated list below.
+#    must appear verbatim at every enumerated reference site (see KNOWN_SITES
+#    below). A grep cross-check catches new reference sites that were not
+#    registered in KNOWN_SITES, so adding a site without updating the guard is
+#    itself a guard failure.
 #
 # 2. Collision invariant: lowercase(sidecar_basename) must differ from
 #    lowercase(host_bin_name) extracted from desktop/src-tauri/Cargo.toml's
@@ -40,14 +40,23 @@ CARGO_MANIFEST="desktop/src-tauri/Cargo.toml"
 
 # --- Source-of-truth extraction -------------------------------------------
 
-# Pull the sidecar basename from the line that constructs DEST_BIN.
-# Matches: DEST_BIN="$BINARIES_DIR/spacebot-daemon-${TARGET_TRIPLE}${SUFFIX}"
+# Pull the sidecar basename from the line that constructs DEST_BIN in
+# bundle-sidecar.sh. The sed regex captures the identifier before the
+# `-${TARGET_TRIPLE}` suffix, which is the only convention bundle-sidecar.sh
+# uses today. A rename that keeps the TARGET_TRIPLE suffix still works; any
+# other refactor should either preserve the pattern or update this extraction.
 SIDECAR_NAME="$(
 	grep -E '^DEST_BIN=' "$BUNDLE_SCRIPT" \
 		| sed -E 's|.*/([a-zA-Z0-9_-]+)-\$\{TARGET_TRIPLE\}.*|\1|' \
 		| head -n 1
 )"
 [[ -n "$SIDECAR_NAME" ]] || fail "could not extract sidecar basename from $BUNDLE_SCRIPT"
+# Defend against a sed fall-through that returns the whole DEST_BIN= line
+# if the regex does not match: a valid basename is path-safe alphanumerics
+# plus dashes/underscores, nothing else.
+[[ "$SIDECAR_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] \
+	|| fail "extracted sidecar basename '$SIDECAR_NAME' is not a valid identifier; " \
+		"check the DEST_BIN= line in $BUNDLE_SCRIPT"
 
 # Pull the host bin name from desktop/src-tauri/Cargo.toml's [[bin]] stanza.
 # awk keeps track of the current section; we only grab `name` inside `[[bin]]`.
@@ -80,12 +89,6 @@ if [[ "$SIDECAR_LC" == "$HOST_LC" ]]; then
 		"lowercase to the same name. APFS/NTFS will clobber one with the other " \
 		"in target/debug/. Rename one so lowercase basenames differ."
 fi
-
-# The sidecar also must not be a case-insensitive prefix of host or vice versa
-# that would produce colliding on-disk paths. Today's names ("spacebot-daemon"
-# vs "Spacebot") already differ structurally; a future rename to e.g. "Spacebot"
-# or "spacebot" would fail the equality check above, so no separate prefix check
-# is required here.
 
 log "collision invariant holds"
 
@@ -139,11 +142,18 @@ for entry in "${KNOWN_SITES[@]}"; do
 	KNOWN_FILES+=("${entry%%|*}")
 done
 
-# Collect all candidate files via grep. Exclude directories up front
-# (--exclude-dir) rather than filtering afterward; piping through grep -v
-# still forces a full recursive walk of target/ and node_modules/ which
-# takes minutes on a warm Cargo build directory.
-mapfile -t HIT_FILES < <(
+# Collect all candidate files via grep. Two notes:
+#
+# - Exclude directories up front (--exclude-dir) rather than filtering
+#   afterward; piping through grep -v still forces a full recursive walk
+#   of target/ and node_modules/ which takes minutes on a warm Cargo tree.
+#
+# - `set -e` does NOT propagate into process substitution, so we capture
+#   grep's exit code explicitly and distinguish 0 (matches) and 1 (no
+#   matches, valid here) from 2+ (real error: unreadable dir, invalid
+#   pattern). Without this, a broken invocation silently reports "clean".
+set +e
+grep_output="$(
 	grep -rlF "$SIDECAR_REF" \
 		--exclude-dir=target \
 		--exclude-dir=gen \
@@ -153,9 +163,14 @@ mapfile -t HIT_FILES < <(
 		--exclude-dir=.scratchpad \
 		--exclude-dir=dist \
 		--exclude-dir=.next \
-		. 2>/dev/null \
-		| sort -u
-)
+		.
+)"
+grep_status=$?
+set -e
+if ((grep_status > 1)); then
+	fail "grep cross-check failed with exit $grep_status (invalid pattern or unreadable path)"
+fi
+mapfile -t HIT_FILES < <(printf '%s\n' "$grep_output" | sort -u | grep -v '^$' || true)
 
 unexpected=()
 for hit in "${HIT_FILES[@]}"; do
