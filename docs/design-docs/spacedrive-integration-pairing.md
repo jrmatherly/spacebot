@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted 2026-04-17.** Bound to the Track A implementation plan at `.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md`. Phase 1 of Track A uses the config shape defined in D2. Phase 2 uses the auth patterns from D3.
+**Accepted 2026-04-17.** The Track A implementation plan was drafted at `.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md` (gitignored historical record); Phase 1 uses the config shape from D2, Phase 2 uses the auth patterns from D3. Track A landed on main via PRs #54 (Phase 1), #55 (Phase 2), and #56 (Phase 3).
 
 ## Context
 
@@ -209,7 +209,7 @@ These belong in the pairing OpenSpec's design/specs artifacts, not here.
 
 ## References
 
-- Self-reliance strategy: `.scratchpad/spacedrive-spaceui-self-reliance.md`
+- Self-reliance strategy (historical, gitignored): `.scratchpad/spacedrive-spaceui-self-reliance.md`. Not a tracked link. Preserved as context for where the fork's independence rationale was drafted.
 - Upstream design docs (treat as aspirational per 2026-04-16 decision): `spacedrive/docs/core/design/spacebot-integration.md`, `spacebot-remote-execution.md`, `spacebot-spacedrive-contract.md`
 - Spacedrive `SpacebotConfig`: `spacedrive/core/src/config/app_config.rs:52`
 - Spacedrive update op: `spacedrive/core/src/ops/config/app/update.rs:81`

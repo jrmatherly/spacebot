@@ -2,7 +2,7 @@
 
 Tracked hardcoded patterns and duplication in `interface/src/` that are worth consolidating. Every entry is grounded in a grep against the current tree (not historical claims).
 
-**Snapshot:** 2026-04-17 — post `@spacedrive/primitives` migration, Tailwind v4.
+**Snapshot:** 2026-04-18. Re-verified against the current tree after the `@spacedrive/primitives` migration.
 
 **How to use this doc:**
 - Before "fixing" anything here, re-run the referenced grep. Counts drift quickly.
@@ -29,24 +29,11 @@ grep -rnE 'h-2 w-2 animate-pulse rounded-full bg-accent' interface/src/
 
 ---
 
-## 🟡 Scattered color maps (4 locations, no central tokens file)
+## ⚪ Scattered color maps — ✅ resolved (moved to `interface/src/lib/colors.ts`)
 
-Per-domain color mappings live as inline consts instead of semantic tokens:
+**Status (as of 2026-04-18):** The three per-domain color constants (`TYPE_COLORS`, `EVENT_CATEGORY_COLORS`, `MEMORY_TYPE_COLORS`) and `platformColor()` have been consolidated into `interface/src/lib/colors.ts`. Verified via `grep -rn "TYPE_COLORS\|EVENT_CATEGORY_COLORS\|MEMORY_TYPE_COLORS" interface/src/routes/*.tsx` returning zero hits, and `interface/src/lib/format.ts:53` now reads `export {platformColor} from "./colors";` (a compatibility re-export).
 
-| Const | File:line |
-|-------|-----------|
-| `TYPE_COLORS` (MemoryType → Tailwind classes) | `interface/src/routes/AgentMemories.tsx:34` |
-| `EVENT_CATEGORY_COLORS` (event type → classes) | `interface/src/routes/AgentCortex.tsx:10` |
-| `MEMORY_TYPE_COLORS` (array, positional) | `interface/src/routes/AgentDetail.tsx:390` |
-| `platformColor()` (switch on platform name) | `interface/src/lib/format.ts:50` |
-
-**Verify:**
-```bash
-grep -n "TYPE_COLORS\|EVENT_CATEGORY_COLORS\|MEMORY_TYPE_COLORS" interface/src/routes/*.tsx
-grep -n "platformColor" interface/src/lib/format.ts
-```
-
-**Fix:** These are semantic color mappings, not arbitrary styling. The natural home is `@spacedrive/tokens` as named semantic tokens (e.g. `color.memory.fact`, `color.event.bulletin_generated`), consumed from interface via the existing `@spacedrive/tokens` dependency. A local `interface/src/lib/semantic-colors.ts` is acceptable if the domain is too interface-specific for the shared design system.
+Kept as a tracking marker; not an action item. If `@spacedrive/tokens` ever grows a semantic-color surface (`color.memory.fact`, `color.event.*`), those can migrate from `colors.ts` into the shared design system.
 
 ---
 
@@ -77,7 +64,7 @@ grep -nE "^function Field" interface/src/routes/AgentCron.tsx
 
 ## 🟡 Grid column template duplicated in table rows
 
-**Pattern:** `grid-cols-[80px_1fr_100px_120px_100px]` — appears twice in `interface/src/routes/AgentMemories.tsx` (lines 241 header, 292 row) and nowhere else.
+**Pattern:** `grid-cols-[80px_1fr_100px_120px_100px]` — appears twice in `interface/src/routes/AgentMemories.tsx` (lines 232 header, 282 row) and nowhere else.
 
 **Verify:**
 ```bash
@@ -123,7 +110,7 @@ These were evaluated and deemed not worth consolidating:
 Do these in order:
 
 1. ~~**Pulse-dot component** (🔴, 26 sites — highest leverage)~~ — resolved, see entry above.
-2. **Semantic colors in `@spacedrive/tokens`** (🟡, fixes 4 scattered maps in one move)
+2. ~~**Semantic colors** (🟡, 4 scattered maps)~~ — resolved, now in `interface/src/lib/colors.ts`.
 3. **AgentCron `Field` → `@spacedrive/forms` variants** (🟡, narrow but finishes the forms migration)
 4. **Hoist grid template to const** (🟡, 2-line change)
 

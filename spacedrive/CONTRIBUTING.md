@@ -134,6 +134,8 @@ cargo cli     # Runs sd-cli with ffmpeg,heif features enabled
 
 #### Optional: ML-SHARP for Gaussian Splat Generation
 
+> **Upstream dependency.** `ml-sharp` is maintained by the upstream Spacedrive team at `spacedriveapp/ml-sharp` and is not forked into this `jrmatherly/spacebot` repo. The URLs below point at the upstream source of truth, which is correct for installation.
+
 Spacedrive can generate 3D Gaussian splats from images using [ml-sharp](https://github.com/spacedriveapp/ml-sharp), which implements Apple's SHARP model. This feature is optional and requires manual installation.
 
 > **Note:** We plan to bundle ml-sharp with Spacedrive's native dependencies in a future release. For now, manual installation is required.
