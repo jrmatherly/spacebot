@@ -43,7 +43,11 @@ case "$TARGET_TRIPLE" in
     *windows*) SUFFIX=".exe" ;;
 esac
 
-DEST_BIN="$BINARIES_DIR/spacebot-${TARGET_TRIPLE}${SUFFIX}"
+# Name the sidecar `spacebot-daemon-<triple>` rather than `spacebot-<triple>` because the
+# Tauri host binary on macOS is `Spacebot`, and APFS is case-insensitive by default — so
+# `target/debug/spacebot` and `target/debug/Spacebot` resolve to the same inode, causing
+# Tauri's dev-mode sidecar lookup to execute the desktop host instead of the daemon.
+DEST_BIN="$BINARIES_DIR/spacebot-daemon-${TARGET_TRIPLE}${SUFFIX}"
 
 cp "$SRC_BIN${SUFFIX}" "$DEST_BIN"
 echo "Copied $SRC_BIN -> $DEST_BIN"

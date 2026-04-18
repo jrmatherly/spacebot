@@ -13,7 +13,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/spacebot",
+          "name": "binaries/spacebot-daemon",
           "sidecar": true,
           "args": ["start", "--foreground"]
         }
