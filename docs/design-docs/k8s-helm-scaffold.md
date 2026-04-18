@@ -38,7 +38,6 @@ Research and recommendations for scaffolding Spacebot's Kubernetes deployment as
 |---|---|---|
 | `Dockerfile` (multi-stage: rust:trixie builder → debian:trixie-slim) | Production image | Direct input for chart's `image.repository` |
 | `.github/workflows/release.yml` | Publishes `ghcr.io/${{ github.repository_owner }}/spacebot:v<version>` | Image source for chart values (fork-aware via `github.repository_owner`) |
-| `fly.toml` | Current production deploy on Fly.io | Reference for env vars, ports, volume, health check |
 | `examples/prometheus.yml` | Prometheus scrape config | Sanity-check for metrics endpoint shape |
 
 ### Cluster deployment pattern (from `/Users/jason/dev/ai-k8s/talos-ai-cluster/`)

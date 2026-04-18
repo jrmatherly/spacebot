@@ -432,7 +432,6 @@ Three supported deployment shapes, each under its own directory at the repo root
 - `Dockerfile` (root) — single-stage multi-arch build for the published GHCR image at `ghcr.io/jrmatherly/spacebot`. Produces the binary everyone else consumes.
 - `deploy/docker/` — Docker Compose dev/test variant. One `docker-compose.yml`, six profiles (`default`, `build`, `spacedrive`, `proxy`, `observability`, `tooling`). See `deploy/docker/README.md`. Twelve `just compose-*` recipes drive activation. A dedicated CI workflow (`.github/workflows/docker-compose.yml`) validates every profile on push.
 - `deploy/helm/` — Kubernetes Helm values for the production Talos cluster target. Consumes `bjw-s-labs/app-template` (values-only wrapper, not a standalone chart).
-- `fly.toml` — Fly.io production deployment config.
 - `spacedrive/Dockerfile` — separate Dockerfile for the in-tree vendored Spacedrive `sd-server`. Built by the `deploy/docker/` `spacedrive` profile with `--no-default-features` (skips wasmer).
 
 Infrastructure changes in these directories are pure-infra, zero-Rust. The iteration loop is `just compose-validate` and/or `docker build --check`, not the full `just gate-pr`.
