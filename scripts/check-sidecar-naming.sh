@@ -154,15 +154,35 @@ done
 #   pattern). Without this, a broken invocation silently reports "clean".
 set +e
 grep_output="$(
+	# Exclude gitignored build outputs, tooling caches, and vendored trees.
+	# grep `--exclude-dir` matches by basename at any depth (BSD + GNU), so
+	# `binaries` also skips `desktop/src-tauri/binaries/` where the built
+	# sidecar itself lives.
 	grep -rlF "$SIDECAR_REF" \
-		--exclude-dir=target \
+		--exclude-dir=.archon \
+		--exclude-dir=.build \
+		--exclude-dir=.code-review-graph \
+		--exclude-dir=.codex \
+		--exclude-dir=.direnv \
+		--exclude-dir=.fastembed_cache \
+		--exclude-dir=.full-review \
+		--exclude-dir=.git \
+		--exclude-dir=.idea \
+		--exclude-dir=.next \
+		--exclude-dir=.opencode-build-cache \
+		--exclude-dir=.remember \
+		--exclude-dir=.scratchpad \
+		--exclude-dir=.serena \
+		--exclude-dir=.turbo \
+		--exclude-dir=.vscode \
+		--exclude-dir=.windsurf \
+		--exclude-dir=.worktrees \
+		--exclude-dir=binaries \
+		--exclude-dir=dist \
 		--exclude-dir=gen \
 		--exclude-dir=node_modules \
-		--exclude-dir=.git \
 		--exclude-dir=spacedrive \
-		--exclude-dir=.scratchpad \
-		--exclude-dir=dist \
-		--exclude-dir=.next \
+		--exclude-dir=target \
 		.
 )"
 grep_status=$?

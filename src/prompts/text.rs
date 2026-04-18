@@ -113,6 +113,11 @@ fn lookup(lang: &str, key: &str) -> &'static str {
         ("en", "fragments/system/memory_persistence") => {
             include_str!("../../prompts/en/fragments/system/memory_persistence.md.j2")
         }
+        ("en", "fragments/system/memory_persistence_contract_retry") => {
+            include_str!(
+                "../../prompts/en/fragments/system/memory_persistence_contract_retry.md.j2"
+            )
+        }
         ("en", "fragments/system/cortex_synthesis") => {
             include_str!("../../prompts/en/fragments/system/cortex_synthesis.md.j2")
         }
