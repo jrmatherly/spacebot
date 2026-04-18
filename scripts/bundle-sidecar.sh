@@ -48,10 +48,13 @@ esac
 # result, `target/debug/spacebot` and `target/debug/Spacebot` resolve to the same inode,
 # causing Tauri's dev-mode sidecar lookup to execute the desktop host instead of the daemon.
 #
-# If you rename this, update the three matching references so they stay in sync:
-#   - desktop/src-tauri/tauri.conf.json           (externalBin)
-#   - desktop/src-tauri/capabilities/default.json (shell:allow-spawn name)
-#   - interface/src/components/ConnectionScreen.tsx (spawnBundledProcess arg)
+# If you rename this, update every call site. Find them with:
+#   rg 'binaries/spacebot-daemon|spacebot-daemon-<target-triple>' desktop/ interface/ docs/
+# Known sites today:
+#   - desktop/src-tauri/tauri.conf.json                       (externalBin)
+#   - desktop/src-tauri/capabilities/default.json             (shell:allow-spawn name)
+#   - interface/src/components/ConnectionScreen.tsx           (spawnBundledProcess arg)
+#   - docs/content/docs/(getting-started)/desktop.mdx         (user-facing docs)
 DEST_BIN="$BINARIES_DIR/spacebot-daemon-${TARGET_TRIPLE}${SUFFIX}"
 
 cp "$SRC_BIN${SUFFIX}" "$DEST_BIN"
