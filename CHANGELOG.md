@@ -15,6 +15,7 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **Docker Compose variant** (`deploy/docker/`) — one file, six profiles: `default`, `build`, `spacedrive`, `proxy`, `observability`, `tooling`. Includes Caddy proxy, Prometheus + Grafana observability, dbtools SQLite shell, mcp-stub test MCP server, and an in-tree Spacedrive integration harness. Twelve new `just compose-*` recipes plus a dedicated CI workflow validate every profile on push.
 - **`spacedrive/Dockerfile`** for `sd-server` built with `--no-default-features` (skips wasmer).
 - **bjw-s-labs/app-template Helm wrapper** at `deploy/helm/spacebot/` for the Talos deployment target (landed across earlier commits).
+- **Spacedrive fork — stub modules** (PR #57). Ten stub files under `spacedrive/core/src/` (nine declared-but-never-authored `sd-core` modules plus `data/mod.rs`) and an `apps/web/dist/index.html` placeholder unblock `cd spacedrive && cargo build --bin sd-server`. This makes `spacedrive/` a genuine fork with documented local divergence. See `spacedrive/SYNC.md` LOCAL_CHANGES for the per-file retirement triggers.
 
 ### Fixed
 

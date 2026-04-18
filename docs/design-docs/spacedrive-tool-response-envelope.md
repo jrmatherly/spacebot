@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted 2026-04-17.** Binds Track A Phase 3 (`.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md`, Task 12+).
+**Accepted 2026-04-17.** Binds Track A Phase 3. The original implementation plan was drafted at `.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md` (gitignored historical record, not a tracked live link); Phase 3 shipped via PRs #55 and #56 on main.
 
 ## Context
 
@@ -107,7 +107,7 @@ Extending the envelope to other tools is out of scope for this ADR. It may becom
 
 - Self-reliance doc reviewer sweep finding S-4
 - Strategy doc §Integration substrate
-- Track A Phase 3 plan: `.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md`
+- Track A Phase 3 plan (historical, gitignored): `.scratchpad/plans/2026-04-17-track-a-spacebot-outbound.md`. Not a tracked link. Preserved as a record of where the plan was drafted before landing via PRs #55-56.
 - Related: `docs/design-docs/spacedrive-integration-pairing.md`
 
 ## Changelog
