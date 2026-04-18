@@ -20,6 +20,7 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 
 - **rustls-webpki audit advisories** (RUSTSEC-2026-0049/-0098/-0099) resolved by pinning Serenity to the `next` branch. Required API migration for the Discord adapter across `src/messaging/discord.rs`.
 - **API route mismatches** corrected from the v0.4.0 OpenAPI migration (12 fixes across OAuth, config, channels, updates, links endpoints) — shipped in v0.4.1 release candidates.
+- **Desktop "Start Local Server" on macOS** no longer spawns a duplicate app window. The Tauri sidecar is now named `spacebot-daemon-<triple>` instead of `spacebot-<triple>` to avoid APFS case-insensitive collision with the `Spacebot` host binary. See `desktop/CLAUDE.md` Common Pitfalls for the full constraint.
 
 ### Changed
 

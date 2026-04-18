@@ -86,7 +86,7 @@ just desktop-build
 
 Tauri's `beforeBuildCommand` automatically handles building the spacebot sidecar binary (release mode) and the web interface -- no manual steps needed.
 
-Under the hood, `bundle-sidecar.sh` compiles the spacebot binary and copies it to `desktop/src-tauri/binaries/spacebot-<target-triple>` (e.g. `spacebot-aarch64-apple-darwin`). Tauri requires the target triple suffix for cross-platform sidecar support.
+Under the hood, `bundle-sidecar.sh` compiles the spacebot binary and copies it to `desktop/src-tauri/binaries/spacebot-daemon-<target-triple>` (e.g. `spacebot-daemon-aarch64-apple-darwin`). Tauri requires the target triple suffix for cross-platform sidecar support. The `spacebot-daemon-` prefix avoids a case-insensitive filesystem collision with the `Spacebot` host binary on APFS/NTFS — see `desktop/CLAUDE.md` Common Pitfalls.
 
 ### Development
 

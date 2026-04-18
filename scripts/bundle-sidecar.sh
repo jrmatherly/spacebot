@@ -6,7 +6,7 @@
 #   ./scripts/bundle-sidecar.sh [--release]
 #
 # Tauri expects sidecar binaries at:
-#   desktop/src-tauri/binaries/spacebot-<target-triple>[.exe]
+#   desktop/src-tauri/binaries/spacebot-daemon-<target-triple>[.exe]
 
 set -euo pipefail
 
@@ -44,9 +44,17 @@ case "$TARGET_TRIPLE" in
 esac
 
 # Name the sidecar `spacebot-daemon-<triple>` rather than `spacebot-<triple>` because the
-# Tauri host binary on macOS is `Spacebot`, and APFS is case-insensitive by default — so
-# `target/debug/spacebot` and `target/debug/Spacebot` resolve to the same inode, causing
-# Tauri's dev-mode sidecar lookup to execute the desktop host instead of the daemon.
+# Tauri host binary on macOS is `Spacebot`, and APFS is case-insensitive by default. As a
+# result, `target/debug/spacebot` and `target/debug/Spacebot` resolve to the same inode,
+# causing Tauri's dev-mode sidecar lookup to execute the desktop host instead of the daemon.
+#
+# If you rename this, update every call site. Find them with:
+#   rg 'binaries/spacebot-daemon|spacebot-daemon-<target-triple>' desktop/ interface/ docs/
+# Known sites today:
+#   - desktop/src-tauri/tauri.conf.json                       (externalBin)
+#   - desktop/src-tauri/capabilities/default.json             (shell:allow-spawn name)
+#   - interface/src/components/ConnectionScreen.tsx           (spawnBundledProcess arg)
+#   - docs/content/docs/(getting-started)/desktop.mdx         (user-facing docs)
 DEST_BIN="$BINARIES_DIR/spacebot-daemon-${TARGET_TRIPLE}${SUFFIX}"
 
 cp "$SRC_BIN${SUFFIX}" "$DEST_BIN"
