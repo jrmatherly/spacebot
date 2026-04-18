@@ -10,6 +10,8 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 
 ### Added
 
+- **Spacedrive integration — Track A** (three phases). Phase 1: `[spacedrive]` config section with `enabled`, `base_url`, reserved `library_id` and `spacebot_instance_id` fields. Phase 2: outbound HTTP client in `src/spacedrive/client.rs` with explicit timeouts, HTTPS enforcement for non-loopback hosts, 10 MB response cap, bearer-token auth, and the `{"Query":...}` / `{"Action":...}` envelope. Phase 3: first agent tool `spacedrive_list_files`, prompt-injection defense envelope at `src/spacedrive/envelope.rs`, `spacedrive_pairing` migration (instance-wide), and secret-store integration. Runtime-gated behind `enabled`. No default operator-visible behavior — opt-in only.
+- **Spacedrive integration pairing and tool-response envelope ADRs** at `docs/design-docs/spacedrive-integration-pairing.md` and `docs/design-docs/spacedrive-tool-response-envelope.md`. Anchor integrity enforced via `just check-adr-anchors`.
 - **Docker Compose variant** (`deploy/docker/`) — one file, six profiles: `default`, `build`, `spacedrive`, `proxy`, `observability`, `tooling`. Includes Caddy proxy, Prometheus + Grafana observability, dbtools SQLite shell, mcp-stub test MCP server, and an in-tree Spacedrive integration harness. Twelve new `just compose-*` recipes plus a dedicated CI workflow validate every profile on push.
 - **`spacedrive/Dockerfile`** for `sd-server` built with `--no-default-features` (skips wasmer).
 - **bjw-s-labs/app-template Helm wrapper** at `deploy/helm/spacebot/` for the Talos deployment target (landed across earlier commits).
