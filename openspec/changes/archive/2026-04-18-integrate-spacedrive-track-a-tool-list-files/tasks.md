@@ -64,7 +64,7 @@
 ## 8. OpenSpec + PR
 
 - [x] 8.1 Create change artifacts (proposal, design, specs, tasks)
-- [ ] 8.2 Validate with `openspec validate integrate-spacedrive-track-a-tool-list-files --strict`
-- [ ] 8.3 Commit OpenSpec artifacts
-- [ ] 8.4 Push branch `feat/spacedrive-track-a-tool-list-files` to origin
-- [ ] 8.5 Open PR targeting main; reference Phase 3 in title
+- [x] 8.2 Validate with `openspec validate integrate-spacedrive-track-a-tool-list-files --strict`
+- [x] 8.3 Commit OpenSpec artifacts (commit 392e3c9)
+- [x] 8.4 Push branch `feat/spacedrive-track-a-tool-list-files` to origin
+- [x] 8.5 Open PR targeting main; reference Phase 3 in title — PR #56 (merged as 2fe2fa0)
