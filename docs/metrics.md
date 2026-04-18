@@ -193,6 +193,24 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
+Binaries built with `cargo build --release --features metrics` expose `/metrics` on the configured port. The Docker image at `ghcr.io/jrmatherly/spacebot` is always built with metrics enabled; see the Dockerfile. A ready-to-use scrape configuration for local Prometheus is shipped in `deploy/docker/prometheus.yml`, wired into Compose's `observability` profile.
+
+### Trimming High-Cardinality LLM Series
+
+When the number of distinct models in use grows, the `spacebot_llm_*` metrics can explode the label-cardinality of the Prometheus TSDB. To keep only aggregate LLM metrics and drop the per-label detail, apply this `metric_relabel_configs` block to the spacebot scrape job:
+
+```yaml
+scrape_configs:
+  - job_name: spacebot
+    # ... scrape target + interval as above
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "spacebot_llm_.*"
+        action: keep
+```
+
+This is an operator-side decision, not a default. Keep the full label set when you need per-model cost attribution or worker-tier drill-down.
+
 ## Docker
 
 Expose the metrics port alongside the API port:
