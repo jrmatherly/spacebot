@@ -1,12 +1,13 @@
 //! Wire types for Spacedrive RPC calls.
 //!
 //! Mirrors the shape of `spacedrive/crates/sd-client/src/types.rs` but
-//! Spacebot-owned. Deliberately minimal — only the fields Spacebot actually
+//! Spacebot-owned. Deliberately minimal. Only the fields Spacebot actually
 //! reads. Every `Option<T>` field uses `#[serde(default)]` so we survive
 //! upstream additions gracefully.
 //!
 //! Source anchor: `spacedrive/crates/sd-client/src/client.rs:50-55` documents
-//! the `{"Query": ...}` / `{"Action": ...}` envelope.
+//! the `{"Query": ...}` / `{"Action": ...}` envelope. `SdPath` mirrors the
+//! externally-tagged enum at `spacedrive/core/src/domain/addressing.rs:26`.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -39,11 +40,43 @@ pub struct RpcResponse<T> {
 }
 
 /// Response from `GET /health`. Spacedrive returns a plain `OK` body today;
-/// kept as a typed wrapper for future shape expansion.
+/// the client synthesises `ok = !body.is_empty()` to keep a typed wrapper
+/// usable when the endpoint grows a real JSON shape.
 #[derive(Debug, Deserialize)]
 pub struct HealthResponse {
     #[serde(default)]
     pub ok: bool,
+}
+
+/// Path within Spacedrive's Virtual Distributed File System.
+///
+/// Mirrors the externally-tagged enum at
+/// `spacedrive/core/src/domain/addressing.rs:26`. Only the `Physical` variant
+/// is used by `spacedrive_list_files` today; other variants are carried so
+/// future tools and the RPC response types can round-trip without reshaping.
+///
+/// Wire shape: default external-tagging, e.g. a physical path serializes as
+/// `{"Physical": {"device_slug": "...", "path": "..."}}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SdPath {
+    Physical {
+        device_slug: String,
+        path: String,
+    },
+    Cloud {
+        service: String,
+        identifier: String,
+        path: String,
+    },
+    Content {
+        content_id: Uuid,
+    },
+    Sidecar {
+        content_id: Uuid,
+        kind: String,
+        variant: String,
+        format: String,
+    },
 }
 
 #[cfg(test)]

@@ -1,8 +1,9 @@
 //! HTTP client for calling a paired Spacedrive instance.
 //!
 //! Constructs its own `reqwest::Client` with explicit connect/timeout bounds
-//! per reviewer sweep Rust-2. Does NOT follow the `src/llm/` pattern; those
-//! are Rig-framework adapters, not reqwest clients.
+//! so timeouts stay deterministic even if the global default changes.
+//! Does NOT follow the `src/llm/` pattern. Those are Rig-framework adapters,
+//! not reqwest clients.
 //!
 //! Wire format: every call wraps the `QueryRequest` in either
 //! `{"Query": ...}` or `{"Action": ...}` per the Spacedrive daemon's
@@ -94,7 +95,7 @@ impl SpacedriveClient {
         })
     }
 
-    /// POST /rpc — the primary wire path.
+    /// POST /rpc. The primary wire path.
     ///
     /// `wire_method` prefix determines envelope shape: `query:...` → Query,
     /// anything else → Action.

@@ -247,6 +247,9 @@ fn lookup(lang: &str, key: &str) -> &'static str {
         ("en", "tools/spacebot_docs") => {
             include_str!("../../prompts/en/tools/spacebot_docs_description.md.j2")
         }
+        ("en", "tools/spacedrive_list_files") => {
+            include_str!("../../prompts/en/tools/spacedrive_list_files_description.md.j2")
+        }
         ("en", "tools/config_inspect") => {
             include_str!("../../prompts/en/tools/config_inspect_description.md.j2")
         }

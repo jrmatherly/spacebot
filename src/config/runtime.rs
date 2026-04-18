@@ -22,8 +22,10 @@ pub struct RuntimeConfig {
     pub instance_dir: PathBuf,
     /// Spacedrive integration config. Instance-wide (pairing is per-instance,
     /// not per-agent), plain field because the per-agent reload path does not
-    /// touch it. Immutable after startup; a future pairing flow that mutates
-    /// it can wrap it in ArcSwap then.
+    /// touch it. Populated at RuntimeConfig construction from the current
+    /// config.toml snapshot and never mutated afterward on this instance.
+    /// A future pairing flow that mutates it in place can wrap it in ArcSwap.
+    // TODO: revisit with the pairing flow (docs/design-docs/spacedrive-integration-pairing.md).
     pub spacedrive: crate::spacedrive::SpacedriveIntegrationConfig,
     /// Agent workspace directory (e.g., ~/.spacebot/agents/{id}/workspace). Immutable after startup.
     pub workspace_dir: PathBuf,

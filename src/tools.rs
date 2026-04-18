@@ -899,30 +899,9 @@ pub fn create_worker_tool_server(
 
     if let Some(store) = runtime_config.secrets.load().as_ref() {
         server = server.tool(SecretSetTool::new(store.clone()));
-
-        // Spacedrive integration — opt-in per config + pairing state.
-        if runtime_config.spacedrive.enabled && runtime_config.spacedrive.library_id.is_some() {
-            match crate::spacedrive::build_client_from_secrets(
-                &runtime_config.spacedrive,
-                store.as_ref(),
-            ) {
-                Ok(client) => {
-                    let lib_id = runtime_config.spacedrive.library_id.unwrap().to_string();
-                    server = crate::tools::spacedrive_list_files::register_spacedrive_tools(
-                        server,
-                        std::sync::Arc::new(client),
-                        lib_id,
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = ?e,
-                        "spacedrive integration enabled but client failed to build; tool not registered"
-                    );
-                }
-            }
-        }
     }
+
+    server = register_spacedrive(server, &runtime_config);
 
     if browser_config.enabled {
         server = register_browser_tools(server, browser_config, screenshot_dir, &runtime_config);
@@ -1067,31 +1046,7 @@ pub fn create_cortex_chat_tool_server(
         .tool(ShellTool::new(workspace.clone(), sandbox.clone()));
 
     server = register_file_tools(server, workspace, sandbox);
-
-    // Spacedrive integration — opt-in per config + pairing state.
-    if runtime_config.spacedrive.enabled && runtime_config.spacedrive.library_id.is_some() {
-        if let Some(store) = runtime_config.secrets.load().as_ref() {
-            match crate::spacedrive::build_client_from_secrets(
-                &runtime_config.spacedrive,
-                store.as_ref(),
-            ) {
-                Ok(client) => {
-                    let lib_id = runtime_config.spacedrive.library_id.unwrap().to_string();
-                    server = crate::tools::spacedrive_list_files::register_spacedrive_tools(
-                        server,
-                        std::sync::Arc::new(client),
-                        lib_id,
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = ?e,
-                        "spacedrive integration enabled but client failed to build; tool not registered"
-                    );
-                }
-            }
-        }
-    }
+    server = register_spacedrive(server, &runtime_config);
 
     if browser_config.enabled {
         server = register_browser_tools(server, browser_config, screenshot_dir, &runtime_config);
@@ -1147,6 +1102,50 @@ pub async fn add_factory_tools(
         .await?;
     handle.add_tool(FactoryUpdateConfigTool::new(state)).await?;
     Ok(())
+}
+
+/// Register Spacedrive agent tools when the integration is opted in, paired,
+/// and the secret token can be resolved. Each failure mode emits a distinct
+/// log so an operator can diagnose without log-scraping. Never panics.
+fn register_spacedrive(
+    server: rig::tool::server::ToolServer,
+    runtime_config: &Arc<crate::config::RuntimeConfig>,
+) -> rig::tool::server::ToolServer {
+    if !runtime_config.spacedrive.enabled {
+        return server;
+    }
+    let Some(library_id) = runtime_config.spacedrive.library_id else {
+        tracing::warn!(
+            base_url = %runtime_config.spacedrive.base_url,
+            "spacedrive integration is enabled but no library is paired; run the pairing flow to activate the tool"
+        );
+        return server;
+    };
+    let Some(store) = runtime_config.secrets.load().as_ref().clone() else {
+        tracing::error!(
+            %library_id,
+            base_url = %runtime_config.spacedrive.base_url,
+            "spacedrive opt-in succeeded but secrets store is unavailable; tool NOT registered"
+        );
+        return server;
+    };
+    match crate::spacedrive::build_client_from_secrets(&runtime_config.spacedrive, store.as_ref()) {
+        Ok(client) => crate::tools::spacedrive_list_files::register_spacedrive_tools(
+            server,
+            std::sync::Arc::new(client),
+            library_id.to_string(),
+        ),
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                source = ?std::error::Error::source(&e),
+                %library_id,
+                base_url = %runtime_config.spacedrive.base_url,
+                "spacedrive opt-in succeeded but client construction failed; tool NOT registered"
+            );
+            server
+        }
+    }
 }
 
 #[cfg(test)]

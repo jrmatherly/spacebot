@@ -25,16 +25,16 @@ pub struct SpacedriveIntegrationConfig {
     /// Base URL for the paired Spacedrive HTTP server, e.g.
     /// `http://127.0.0.1:8080` for co-located dev, or an `https://` URL for
     /// remote deployments. Must use `https://` unless the host is
-    /// `localhost` / `127.0.0.1` (enforced at config-load time in Phase 2).
+    /// `localhost` / `127.0.0.1` (enforced in `SpacedriveClient::new`).
     pub base_url: String,
 
     /// Library ID the Spacebot instance is paired with. Populated by the
-    /// pairing flow (Phase 3). Not hand-edited.
+    /// pairing flow in `src/spacedrive.rs`. Not hand-edited.
     #[serde(default)]
     pub library_id: Option<Uuid>,
 
     /// Spacebot instance ID recorded in Spacedrive's SpacebotConfig during
-    /// pairing. Populated by the pairing flow.
+    /// pairing. Populated by the pairing flow in `src/spacedrive.rs`.
     #[serde(default)]
     pub spacebot_instance_id: Option<Uuid>,
 }

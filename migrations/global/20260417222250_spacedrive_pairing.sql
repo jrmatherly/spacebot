@@ -5,6 +5,8 @@
 -- store under key `spacedrive_auth_token:<library_id>`. See
 -- docs/design-docs/spacedrive-integration-pairing.md (ADR D2).
 
+-- SQLite auto-creates a backing index for UNIQUE(library_id), so no explicit
+-- CREATE INDEX is needed on that column.
 CREATE TABLE spacedrive_pairing (
     id INTEGER PRIMARY KEY,
     library_id TEXT NOT NULL UNIQUE,
@@ -13,5 +15,3 @@ CREATE TABLE spacedrive_pairing (
     paired_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE INDEX idx_spacedrive_pairing_library_id ON spacedrive_pairing (library_id);
