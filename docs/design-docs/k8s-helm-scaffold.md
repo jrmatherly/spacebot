@@ -38,7 +38,7 @@ Research and recommendations for scaffolding Spacebot's Kubernetes deployment as
 |---|---|---|
 | `Dockerfile` (multi-stage: rust:trixie builder → debian:trixie-slim) | Production image | Direct input for chart's `image.repository` |
 | `.github/workflows/release.yml` | Publishes `ghcr.io/${{ github.repository_owner }}/spacebot:v<version>` | Image source for chart values (fork-aware via `github.repository_owner`) |
-| `examples/prometheus.yml` | Prometheus scrape config | Sanity-check for metrics endpoint shape |
+| `deploy/docker/prometheus.yml` + `docs/metrics.md` §Prometheus Scrape Config | Prometheus scrape config + operator playbook | Sanity-check for metrics endpoint shape; cardinality-trimming snippet |
 
 ### Cluster deployment pattern (from `/Users/jason/dev/ai-k8s/talos-ai-cluster/`)
 
