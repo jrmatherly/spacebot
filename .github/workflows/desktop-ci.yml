@@ -83,10 +83,12 @@ jobs:
             runner: macos-15
             triple: aarch64-apple-darwin
             expected_ext: ""
-          - os: windows
-            runner: windows-latest
-            triple: x86_64-pc-windows-msvc
-            expected_ext: ".exe"
+          # Windows is intentionally omitted. The spacebot crate depends on
+          # `daemonize` and `libc` unconditionally, which are Unix-only, so
+          # `cargo build` fails with ~50 errors on `x86_64-pc-windows-msvc`.
+          # See `.scratchpad/2026-04-18-windows-build-gap.md` for the full
+          # write-up and the re-enablement checklist. When the Cargo.toml
+          # cfg-gating lands, restore the Windows matrix entry here.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     steps:
