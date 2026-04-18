@@ -13,7 +13,7 @@ Tools are the agent's interface to side effects. Every LLM-callable capability l
 Every tool has **two** files:
 
 1. `src/tools/<name>.rs`: the Rust implementation
-2. `prompts/en/tools/<name>_description.md.j2`: the description the LLM sees (Jinja2 template, 49 tool descriptions currently exist)
+2. `prompts/en/tools/<name>_description.md.j2`: the description the LLM sees (Jinja2 template, 51 tool descriptions currently exist)
 
 If one is present and the other isn't, something is wrong.
 

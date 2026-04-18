@@ -190,9 +190,9 @@ For the complete catalog with triggers and composition patterns, consult **`refe
 | Module index | `PROJECT_INDEX.md` |
 | Metrics reference | `METRICS.md` |
 | Design decisions | `docs/design-docs/` (50 docs) |
-| Prompt templates | `prompts/` (87 Jinja2 files, 49 tool descriptions) |
+| Prompt templates | `prompts/` (88 Jinja2 files, 51 tool descriptions) |
 | Agent presets | `presets/` (9 personas) |
-| Just recipes | `justfile` (39 recipes) |
+| Just recipes | `justfile` (41 recipes) |
 
 For the complete documentation map, consult **`references/documentation-map.md`**.
 
