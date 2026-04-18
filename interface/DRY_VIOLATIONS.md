@@ -11,7 +11,7 @@ Tracked hardcoded patterns and duplication in `interface/src/` that are worth co
 
 ---
 
-## ⚪ Pulse-dot loading indicator — ✅ largely fixed (1 remaining occurrence)
+## ⚪ Pulse-dot loading indicator — ✅ resolved (1 intentional occurrence remains)
 
 **Pattern:**
 ```tsx
@@ -23,11 +23,9 @@ Tracked hardcoded patterns and duplication in `interface/src/` that are worth co
 grep -rnE 'h-2 w-2 animate-pulse rounded-full bg-accent' interface/src/
 ```
 
-**Status (as of 2026-04-17):** 25 of 26 occurrences migrated to `LoadingDot` from `@spacedrive/primitives` (`spaceui/packages/primitives/src/LoadingDot.tsx`). One remaining:
+**Status (as of 2026-04-18):** 25 of 26 occurrences migrated to `LoadingDot` from `@spacedrive/primitives` (`spaceui/packages/primitives/src/LoadingDot.tsx`). One remaining at `interface/src/routes/ChannelDetail.tsx:134` — intentionally left raw. `LoadingDot` wraps the dot and its label in a dedicated flex container, but the ChannelDetail site embeds the dot directly into a shared flex row alongside a `<CancelButton />` and other siblings. Replacing it with `<LoadingDot />` would introduce a nested flex wrapper and change the row layout. Leave in place.
 
-- `interface/src/routes/ChannelDetail.tsx:134`
-
-**Fix:** Swap the last raw div for `<LoadingDot />`. After that, delete this entry from DRY_VIOLATIONS.md.
+**Future:** If a dot-only variant of `LoadingDot` (no flex wrapper, no label) lands in `@spacedrive/primitives`, revisit and consolidate. Until then, the raw div here is the correct shape. This entry is kept as a tracking marker, not an action item.
 
 ---
 
@@ -124,7 +122,7 @@ These were evaluated and deemed not worth consolidating:
 
 Do these in order:
 
-1. **Pulse-dot component** (🔴, 26 sites — highest leverage)
+1. ~~**Pulse-dot component** (🔴, 26 sites — highest leverage)~~ — resolved, see entry above.
 2. **Semantic colors in `@spacedrive/tokens`** (🟡, fixes 4 scattered maps in one move)
 3. **AgentCron `Field` → `@spacedrive/forms` variants** (🟡, narrow but finishes the forms migration)
 4. **Hoist grid template to const** (🟡, 2-line change)

@@ -79,7 +79,7 @@ Format: `YYYYMMDDHHMMSS_description.sql`
 
 ## Design Docs
 
-Located in `docs/design-docs/`. 49 design documents covering system architecture decisions:
+Located in `docs/design-docs/`. 50 design documents covering system architecture decisions:
 
 **Architecture:**
 `working-memory`, `cortex-implementation`, `cortex-history`, `multi-agent-communication-graph`, `branch-and-spawn`, `link-channels-task-delegation`

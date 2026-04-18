@@ -15,7 +15,7 @@ The `spaceui/` directory is Spacebot's vendored copy of the SpaceUI design syste
 
 | Fact | Value |
 |---|---|
-| Upstream project | Presumed `spacedriveapp/spaceui` on GitHub (confirm on next pull) |
+| Upstream project | `spacedriveapp/spaceui` on GitHub |
 | Reference snapshot | `~/dev/spaceui` (a local clone used as "what we started from") |
 | Reference snapshot date | Approximately 2026-04-14 (see `stat ~/dev/spaceui/package.json`) |
 | Upstream commit at snapshot time | **Unknown.** `~/dev/spaceui` has a stale `.git/` directory but no working remote config. |

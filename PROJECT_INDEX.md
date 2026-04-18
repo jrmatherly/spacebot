@@ -34,7 +34,7 @@ spacebot/
 ├── desktop/                        (Tauri 2 app)
 ├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (9 agent persona presets)
-├── prompts/                        (86 Jinja2 system prompt templates)
+├── prompts/                        (87 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
@@ -48,7 +48,7 @@ spacebot/
 | Entry Point | Purpose |
 |---|---|
 | **src/main.rs** | CLI daemon (start/stop/restart/status, skill, auth) |
-| **src/lib.rs** | Library root with 34 public modules |
+| **src/lib.rs** | Library root with 35 public modules |
 | **src/bin/openapi_spec.rs** | Generates OpenAPI 3.0 JSON from Rust types |
 | **src/bin/cargo-bump.rs** | Version bumper tool |
 
@@ -65,7 +65,7 @@ spacebot/
 | **memory** | Graph store (typed SQLite), working memory, semantic search |
 | **messaging** | Discord, Slack, Telegram, Twitch, Email adapters |
 | **conversation** | Channel state, history, participants, portal |
-| **tools** | 48 LLM-callable tool files (browser, git, file, web, Docker) |
+| **tools** | 49 LLM-callable tool files (browser, git, file, web, Docker) |
 | **tasks** | Goal/task state machine with worker delegation |
 | **skills** | Skill bundling, installation, discovery |
 | **cron** | Background job scheduler |
