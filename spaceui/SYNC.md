@@ -91,7 +91,7 @@ These are build outputs, gitignored but not in the reference clone:
    - Enumerated in `flake.nix` (line 92)
    - Present in `spaceui/packages/icons/` with full source
 
-   Decision pending: either import it from a frontend component (and justify the staging cost) or drop it from the workspace (remove 3 line-items). See `.scratchpad/spacedrive-spaceui-self-reliance.md` recommendation #4.
+   Decision 2026-04-17: keep icons wired in; revisit when a concrete importer lands or removal pressure returns. See the SpaceUI hygiene PR (#52) for the reasoning.
 
 2. **`@spacedrive/*` npm scope not renamed.** Per 2026-04-16 self-reliance decision, the rename to `@spacebot/*` is deferred to a future session. Interim guard (see recommendation #3 in the self-reliance doc) will block silent npm fallbacks.
 
@@ -149,7 +149,7 @@ cd spaceui && bun run typecheck && bun run build
 cd ../interface && bun run build
 ```
 
-A future `just spaceui-gate` recipe should wrap these two commands. See recommendation #7/#8 in `.scratchpad/spacedrive-spaceui-self-reliance.md`.
+The `just spaceui-gate` recipe (landed in PR #52) wraps these two commands plus the workspace-protocol + vite-dedupe guards.
 
 ## Hold-out list (never accept upstream overwrites for these)
 
@@ -179,7 +179,6 @@ If any of these get touched by an upstream pull, re-verify and restore.
 | `justfile` (`spaceui-*` recipes) | Retired helpers — workspace protocol handles linking |
 | `openspec/specs/spaceui-integration/spec.md` | Structural spec for SpaceUI in-tree integration |
 | `~/dev/spaceui/` | Reference snapshot (has stale `.git/` but no working remote) |
-| `.scratchpad/spacedrive-spaceui-self-reliance.md` | Strategy doc |
 
 ## Changelog
 

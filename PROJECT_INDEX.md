@@ -10,14 +10,14 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (206 .rs files)
+├── src/                           (213 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
 │   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
 │   ├── memory/                    (7 files)  - Graph store, working memory, search, maintenance
 │   ├── messaging/                 (12 files) - Discord, Slack, Telegram, Twitch, Email, Cron
-│   ├── tools/                     (48 files) - LLM-callable tools (multiple per file in some cases)
+│   ├── tools/                     (49 files) - LLM-callable tools (multiple per file in some cases)
 │   ├── conversation/              (8 files)  - Channel history, settings, context, portal
 │   ├── tasks/                     (2 files)  - Goal/task state machine
 │   ├── skills/                    (2 files)  - Skill installation, bundling, discovery
@@ -32,13 +32,13 @@ spacebot/
 │   └── package.json               - React 19, Tailwind 4, React Router
 ├── docs/                           (38 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (42 SQL migrations, 2026-02 → 2026-04)
+├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (9 agent persona presets)
 ├── prompts/                        (86 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (11 integration test files)
+└── tests/                          (12 integration test files)
 ```
 
 ---
@@ -136,7 +136,7 @@ just gate-pr
 ## Test Coverage
 
 - 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
-- 11 dedicated integration test files in tests/
+- 12 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces fmt + clippy + tests + migration safety
 
 ---
@@ -202,13 +202,21 @@ Ten rule files that govern agent behavior across Rust edits, messaging parity, A
 
 Under `openspec/changes/` — structured change proposals with specs + phased tasks.
 
-No active changes at present. Recently archived:
+Active (implemented, awaiting archive):
+
+| Active change | Summary |
+|---|---|
+| `integrate-spacedrive-track-a-config` | Track A Phase 1 — `[spacedrive]` config section, `SpacedriveIntegrationConfig` shape |
+| `integrate-spacedrive-track-a-client` | Track A Phase 2 — outbound HTTP client with `{"Query":...}` envelope, HTTPS enforcement, 10 MB response cap |
+| `integrate-spacedrive-track-a-tool-list-files` | Track A Phase 3 — `spacedrive_list_files` agent tool, prompt-injection envelope, pairing migration, secrets integration |
+
+Recently archived:
 
 | Archived change | Summary |
 |---|---|
 | `2026-04-16-security-remediation-obsolete` | Security remediation workstream (superseded / complete) |
 | `2026-04-16-spacebot-dependency-remediation` | Dependency advisory remediation |
-| `2026-04-16-integrate-spacedrive` | Vendor Spacedrive into `spacedrive/` in preparation for HTTP integration |
+| `2026-04-16-integrate-spacedrive` | Vendor Spacedrive into `spacedrive/` as an independent Cargo workspace (prerequisite for Track A) |
 | `2026-04-15-integrate-spaceui` | Adopt SpaceUI (`spaceui/`) as the frontend design system |
 | `2026-04-15-fix-rustls-webpki-audit` | Serenity `next` branch pin to resolve rustls-webpki advisories |
 | `2026-04-15-upgrade-dependencies` | Workspace-level dependency wave |
