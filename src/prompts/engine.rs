@@ -145,6 +145,10 @@ impl PromptEngine {
             crate::prompts::text::get("fragments/system/memory_persistence"),
         )?;
         env.add_template(
+            "fragments/system/memory_persistence_contract_retry",
+            crate::prompts::text::get("fragments/system/memory_persistence_contract_retry"),
+        )?;
+        env.add_template(
             "fragments/system/cortex_synthesis",
             crate::prompts::text::get("fragments/system/cortex_synthesis"),
         )?;
@@ -822,6 +826,68 @@ mod tests {
             .expect("tool-use guidance should render");
 
         assert_eq!(prompt, "Base prompt");
+    }
+
+    /// Guard against silent emptying or orphaning of system-message fragments.
+    ///
+    /// Walks `prompts/en/fragments/system/*.md.j2` on disk and asserts each
+    /// file is (a) non-empty, (b) mapped in the `src/prompts/text.rs`
+    /// registry, and (c) registered with the MiniJinja environment. The
+    /// filesystem is the source of truth — deriving the test list from a
+    /// hardcoded constant would mask an orphan fragment whose registration
+    /// silently drifted out.
+    ///
+    /// `wc -l` reports 0 for a file with content but no trailing newline,
+    /// which can mask an empty file. `text::get` falls through to `""` for
+    /// unknown keys, which can mask a missing match arm. Both classes of
+    /// silent failure surface as assertion failures here.
+    #[test]
+    fn system_fragment_templates_are_non_empty() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let fragments_dir = std::path::Path::new(manifest_dir).join("prompts/en/fragments/system");
+
+        let engine = PromptEngine::new("en").expect("prompt engine should build");
+        let entries = std::fs::read_dir(&fragments_dir)
+            .unwrap_or_else(|error| panic!("read {}: {error}", fragments_dir.display()));
+
+        let mut checked = 0;
+        for entry in entries {
+            let path = entry.expect("readable dir entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("j2") {
+                continue;
+            }
+            let file_stem = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_suffix(".md.j2"))
+                .unwrap_or_else(|| panic!("unexpected fragment filename: {}", path.display()));
+            let key = format!("fragments/system/{file_stem}");
+
+            let raw = crate::prompts::text::get(&key);
+            assert!(
+                !raw.trim().is_empty(),
+                "system fragment '{key}' is empty or not mapped in src/prompts/text.rs \
+                 (file: {})",
+                path.display(),
+            );
+
+            // Prove registration without attempting to render. Some fragments
+            // require context vars (e.g. retrigger loops over `{{ results }}`)
+            // and would error in `render_static` even when correctly registered.
+            assert!(
+                engine.env.get_template(&key).is_ok(),
+                "system fragment '{key}' is not registered with the MiniJinja environment in \
+                 src/prompts/engine.rs (file: {})",
+                path.display(),
+            );
+
+            checked += 1;
+        }
+
+        assert!(
+            checked >= 10,
+            "expected to check at least 10 system fragments, checked {checked}",
+        );
     }
 }
 // to support multiple languages at compile time.

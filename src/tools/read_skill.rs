@@ -53,10 +53,7 @@ impl Tool for ReadSkillTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Read the full instructions for a skill by name. \
-                Call this before starting any task that matches a skill in <available_skills>. \
-                You may read multiple skills if the task requires more than one."
-                .to_string(),
+            description: crate::prompts::text::get("tools/read_skill").to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

@@ -1,0 +1,19 @@
+Read the full instructions for a skill by name.
+
+Workers see a listing of available skills (name + description) in the `<available_skills>` section of their system prompt. That listing is a summary. Call this tool to load the full skill body before starting any task that matches one of those skills.
+
+You may call this tool multiple times if a task spans more than one skill.
+
+## Parameters
+
+- `name` — the skill name, exactly as it appears in `<available_skills>`. Case-sensitive.
+
+## When to call
+
+- Before starting work on a task whose description matches a listed skill.
+- When the user references a skill by name.
+- When another tool's output points at a skill (e.g. `skills_search`).
+
+## Errors
+
+Returns an error if the requested name is not in the runtime skill registry. The error message lists no alternatives; re-check `<available_skills>` in your system prompt for the exact name.

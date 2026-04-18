@@ -113,6 +113,11 @@ fn lookup(lang: &str, key: &str) -> &'static str {
         ("en", "fragments/system/memory_persistence") => {
             include_str!("../../prompts/en/fragments/system/memory_persistence.md.j2")
         }
+        ("en", "fragments/system/memory_persistence_contract_retry") => {
+            include_str!(
+                "../../prompts/en/fragments/system/memory_persistence_contract_retry.md.j2"
+            )
+        }
         ("en", "fragments/system/cortex_synthesis") => {
             include_str!("../../prompts/en/fragments/system/cortex_synthesis.md.j2")
         }
@@ -154,6 +159,9 @@ fn lookup(lang: &str, key: &str) -> &'static str {
         ("en", "tools/cancel") => include_str!("../../prompts/en/tools/cancel_description.md.j2"),
         ("en", "tools/skip") => include_str!("../../prompts/en/tools/skip_description.md.j2"),
         ("en", "tools/react") => include_str!("../../prompts/en/tools/react_description.md.j2"),
+        ("en", "tools/read_skill") => {
+            include_str!("../../prompts/en/tools/read_skill_description.md.j2")
+        }
         ("en", "tools/set_outcome") => {
             include_str!("../../prompts/en/tools/set_outcome_description.md.j2")
         }
