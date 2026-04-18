@@ -440,14 +440,16 @@ Summary of all variables Spacebot introduces:
 | `spacebot_discord_token` | Discord bot token | No |
 | `spacebot_slack_token` | Slack bot token | No |
 
-## Migration from Fly.io
+## Migration from Fly.io (historical)
 
-Spacebot currently runs on Fly.io (`fly.toml` in repo root). The transition plan:
+Spacebot previously ran on Fly.io. The transition to the Talos cluster is complete; the historical Fly configs (`fly.toml`, `fly.staging.toml`) were decommissioned on 2026-04-18 and archived to `.scratchpad/backups/archive/` for reference to the original port, env, volume, and healthcheck choices.
 
-1. Build and push the container image to GHCR (or use existing CI)
-2. Create the cluster manifests using this skill
-3. Run both Fly.io and K8s in parallel during validation
-4. Switch DNS to the K8s ingress
-5. Decommission the Fly.io deployment
+The original transition plan was:
 
-The container image is identical. The `Dockerfile` already produces a portable image. The only differences are environment variables and the storage backend (Fly volume vs. K8s PVC).
+1. Build and push the container image to GHCR (or use existing CI).
+2. Create the cluster manifests using this skill.
+3. Run both Fly.io and K8s in parallel during validation.
+4. Switch DNS to the K8s ingress.
+5. Decommission the Fly.io deployment.
+
+The container image was identical between platforms. The `Dockerfile` already produced a portable image. The only differences were environment variables and the storage backend (Fly volume vs. K8s PVC).

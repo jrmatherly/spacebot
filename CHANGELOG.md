@@ -33,6 +33,11 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **CI audit job** is now a hard gate (removed `continue-on-error`), ignoring `RUSTSEC-2023-0071` (rsa via sqlx-mysql, never compiled).
 - **Documentation drift sweeps** across README, AGENTS, PROJECT_INDEX, CHANGELOG, spaceui/ READMEs, vendored spacedrive/ policy files. Rule/skill/design-doc counts corrected.
 - **bun workspace protocol** adopted for `interface/` → `spaceui/packages/*` linkage; `just spaceui-link` / `just spaceui-unlink` retired as no-op stubs.
+- **`.claude/skills/cluster-deploy/SKILL.md` Fly.io migration section** rewritten as historical. The transition to the Talos cluster is complete; the section now reads past-tense and records the 2026-04-18 decommissioning + archive location.
+
+### Removed
+
+- **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). The original Fly configs are preserved locally (gitignored) at `.scratchpad/backups/archive/` for reference to the historical port, env, volume, and healthcheck choices. Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
 ## v0.4.1
 
