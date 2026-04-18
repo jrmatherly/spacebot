@@ -22,7 +22,7 @@ The `spacedrive/` directory is Spacebot's vendored copy of the Spacedrive platfo
 | In-tree toolchain | `stable` (via `spacedrive/rust-toolchain.toml`), edition 2021 |
 | Root-repo toolchain | `1.94.1`, edition 2024 — incompatible with spacedrive, so `cd spacedrive` is required before cargo commands |
 
-## LOCAL_CHANGES (as of 2026-04-16)
+## LOCAL_CHANGES (as of 2026-04-18)
 
 The following files in `spacedrive/` differ from the `~/dev/spacedrive` reference. Everything else is byte-identical.
 
@@ -37,6 +37,26 @@ The following files in `spacedrive/` differ from the `~/dev/spacedrive` referenc
 | `spacedrive/CONTRIBUTING.md` | Prepended a "Vendored upstream guide" banner redirecting contributors to the Spacebot PR workflow and issue tracker. |
 | `spacedrive/.dockerignore` | Spacebot-authored ignore file for Docker build context (target, node_modules, build artifacts). No upstream counterpart. |
 | `spacedrive/Dockerfile` | Spacebot-authored Dockerfile that builds the Spacedrive server from the vendored subtree. No upstream counterpart. |
+
+### Fork-authored stubs for `sd-core` modules that upstream declares but has not written
+
+As of 2026-04-18 the upstream `spacedriveapp/spacedrive` main branch declares nine modules in `core/src/{lib.rs,ops/*/mod.rs}` that have no backing source files. The tree in `~/dev/spacedrive` is in the same state, so re-vendoring cannot unblock a build. Spacebot authored minimal stubs so `cargo build --bin sd-server` succeeds and Track A's Task 18 smoke test can run. These files are deliberate fork divergence: they satisfy type inference at the call sites and return empty-vec / always-fail placeholders at runtime. Real archive-source, adapter, and volume operations are NOT implemented.
+
+| File | Purpose | Retirement trigger |
+|---|---|---|
+| `spacedrive/core/src/data/mod.rs` | Declares `pub mod manager;` — needed because `core/src/lib.rs:11` has `pub mod data;`. | Remove when upstream ships any real `core/src/data/` implementation. |
+| `spacedrive/core/src/data/manager.rs` | `SourceManager` scaffold. Exposes 8 methods: `new` (6 sources methods + 2 adapters methods) derived from E0282/E0599 errors at `library/mod.rs:149`, `ops/sources/{create,delete,get,list_items,sync}/*`, and `ops/adapters/{config,update}/*`. Error type is `String` everywhere to match `.map_err(\|e\| ...Internal(e))` call sites. | Remove once upstream ships a real `data::manager::SourceManager`. Expect method signatures to change — a real impl likely has richer error types and may change the `adapter_config_fields` / `update_adapter` sync-vs-async split. |
+| `spacedrive/core/src/ops/libraries/list.rs` | `list::output::LibraryInfo` struct — consumed by `ops/core/status/{query,output}.rs` for the `core.status` response. Fields: `{id, name, path, stats}` derived from the construction site at `core/status/query.rs:70-76`. | Remove once upstream ships a real `libraries::list`. The upstream struct may have additional fields; delete the stub before copying upstream in to avoid duplicate definitions. |
+| `spacedrive/core/src/ops/sources/list.rs` | `SourceInfo` struct + `SourceInfo::new` constructor — consumed by `ops/sources/get/query.rs:3,78`. Fields `{id, name, data_type, adapter_id, item_count, last_synced, status}` derived from the `SourceInfo::new(...)` call with types inferred from sibling `CreateSourceOutput` / `SourceSyncJob`. | Same as above. |
+| `spacedrive/core/src/ops/volumes/list.rs` | Four concrete types (`VolumeFilter`, `VolumeListOutput`, `VolumeListQuery`, `VolumeListQueryInput`) because `ops/volumes/mod.rs:24` does a named re-export of them. Only `VolumeFilter::{All, TrackedOnly}` is observed in-tree via `apps/cli/src/domains/{volume,cloud,location}/`. `VolumeListOutput.volumes` uses `Vec<serde_json::Value>` so downstream TS bindings do not crash on a missing `Volume` type. | Same as above. TS client at `packages/ts-client/src/generated/types.ts:4741` defines `VolumeListOutput = { volumes: Volume[] }` — when the upstream implementation lands, the real `Volume` struct will replace the `serde_json::Value` placeholder and regenerate TS bindings. |
+| `spacedrive/core/src/ops/adapters/list.rs` | One-line `//!` doc stub. `pub mod list;` is declared in `ops/adapters/mod.rs:4` but no external importers beyond the `pub use list::*;` glob, so an empty module is enough. | Delete when upstream ships a real file. |
+| `spacedrive/core/src/ops/devices/list.rs` | Same as above. | Same. |
+| `spacedrive/core/src/ops/jobs/list.rs` | Same as above. | Same. |
+| `spacedrive/core/src/ops/locations/list.rs` | Same as above. | Same. |
+| `spacedrive/core/src/ops/spaces/list.rs` | Same as above. | Same. |
+| `spacedrive/apps/web/dist/index.html` | Placeholder `index.html` inside `apps/web/dist/`. `apps/server/src/main.rs:36` has `#[derive(Embed)] #[folder = "../web/dist/"]` which requires the folder to exist at `rustc` time, even for `--bin sd-server` where the web UI is not exercised. Contents: a single `<p>` noting the UI is not built; only the `/rpc` and `/health` endpoints are functional for Task 18. | Delete once either (a) the upstream web UI is actually built via `bun run build` in `apps/web/`, which overwrites this file with the real bundle, or (b) the `WebAssets` embed is made optional. |
+
+Scope note: the prior-session scratchpad (`.scratchpad/2026-04-17-spacedrive-fork-stub-writing.md`) predicted 9 missing files and 2 external importers. The actual scope turned out to be 10 missing files (9 sd-core + 1 web/dist placeholder) and 6 external importers (2 in-crate + 4 re-exported from `volumes/list.rs` consumed by `apps/cli`). The extra two `SourceManager` methods (`adapter_config_fields`, `update_adapter`) were surfaced by the compiler, not by the scratchpad grep, and live in `ops/adapters/` rather than `ops/sources/`.
 
 ### Build artifacts present only in-tree (not upstream)
 
@@ -58,6 +78,8 @@ These directories exist in `~/dev/spacedrive` but not in our vendored copy. They
 Investigate these next time we re-sync. They may represent upstream work we should lift, or they may be clone-side artifacts we correctly excluded.
 
 ### Directory-level exclusions (enforced by rsync, by design)
+
+Every file listed under "Fork-authored stubs for `sd-core` modules that upstream declares but has not written" above is also a hold-out: a future upstream rsync must not overwrite them unless upstream has shipped the real implementation, in which case the stub is retired per the table's "Retirement trigger" column.
 
 These upstream directories are **never** vendored, regardless of their upstream content:
 
@@ -152,3 +174,4 @@ Do not remove the guard. If `[workspace.lints]` or `[workspace.metadata]` is add
 |---|---|
 | 2026-04-16 | First draft. Recorded known divergences (3 doc banners). Upstream commit pointer is unknown. |
 | 2026-04-17 | Promoted to `spacedrive/SYNC.md` alongside the Spacedrive pairing-prerequisites PR. |
+| 2026-04-18 | Recorded fork-authored stubs for 9 unwritten `sd-core` modules plus an `apps/web/dist/index.html` placeholder so `cargo build --bin sd-server` succeeds. Needed to unblock Track A Task 18 smoke test. Scope: ~160 lines of Rust across 10 files, all placeholder-grade. |
