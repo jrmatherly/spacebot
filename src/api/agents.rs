@@ -678,21 +678,22 @@ pub async fn create_agent_internal(
     // Read defaults directly from the config we just wrote to disk rather than
     // relying on the cached `defaults_config` which may be stale (e.g. if a
     // provider was configured but the in-memory cache wasn't refreshed yet).
-    let disk_defaults = match crate::config::Config::load_from_path(&config_path) {
+    let (disk_defaults, disk_spacedrive) = match crate::config::Config::load_from_path(&config_path)
+    {
         Ok(fresh_config) => {
             // Also update the in-memory cache so subsequent operations
             // (e.g. creating another agent) don't hit stale defaults.
             state
                 .set_defaults_config(fresh_config.defaults.clone())
                 .await;
-            Some(fresh_config.defaults)
+            (Some(fresh_config.defaults), Some(fresh_config.spacedrive))
         }
         Err(error) => {
             tracing::warn!(
                 %error,
                 "failed to reload config.toml for defaults; falling back to cached defaults"
             );
-            None
+            (None, None)
         }
     };
     let cached_defaults;
@@ -841,10 +842,12 @@ pub async fn create_agent_internal(
             .clone()
     };
 
+    let spacedrive_for_runtime = disk_spacedrive.unwrap_or_default();
     let runtime_config = std::sync::Arc::new(crate::config::RuntimeConfig::new(
         &instance_dir,
         &agent_config,
         &defaults_for_runtime,
+        spacedrive_for_runtime,
         prompt_engine,
         identity,
         skills,
@@ -1872,6 +1875,7 @@ mod tests {
             instance_dir,
             &resolved,
             &config.defaults,
+            config.spacedrive.clone(),
             prompts,
             Identity::default(),
             SkillSet::default(),

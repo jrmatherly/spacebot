@@ -83,6 +83,7 @@ async fn bootstrap_deps() -> anyhow::Result<spacebot::AgentDeps> {
         &config.instance_dir,
         agent_config,
         &config.defaults,
+        config.spacedrive.clone(),
         prompts,
         identity,
         skills,

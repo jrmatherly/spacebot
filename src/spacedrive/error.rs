@@ -8,13 +8,20 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SpacedriveError {
-    #[error("spacedrive integration disabled")]
+    #[error("spacedrive pairing absent (library_id unset)")]
     Disabled,
 
     #[error("spacedrive auth token missing from secrets store for library_id={library_id}")]
     MissingAuthToken { library_id: String },
 
-    #[error("spacedrive returned 401; token may be stale")]
+    #[error("spacedrive auth token lookup failed for library_id={library_id}: {source}")]
+    SecretsLookupFailed {
+        library_id: String,
+        #[source]
+        source: Box<crate::error::SecretsError>,
+    },
+
+    #[error("spacedrive returned 401. Token may be stale.")]
     AuthFailed,
 
     #[error("spacedrive http error: {status}")]
