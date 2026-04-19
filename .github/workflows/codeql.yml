@@ -103,37 +103,15 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
-  analyze-swift:
-    name: Analyze (swift)
-    runs-on: macos-latest
-    timeout-minutes: 30
-    # Swift scan is expensive (~17 min autobuild on macos-latest) and the
-    # repo has exactly one Swift source file (30 LOC window shim). Run it
-    # only when Tauri macOS code, the workflow itself, or the CodeQL config
-    # changes — plus push-to-main, weekly cron, and manual dispatch as
-    # baseline coverage. PR-scoped label `codeql-swift` forces a run if
-    # needed for manual verification.
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.draft == false &&
-       contains(github.event.pull_request.labels.*.name, 'codeql-swift'))
-    # continue-on-error keeps Tauri dep bumps from red-gating unrelated PRs
-    # until we have enough run history to trust the Swift pipeline.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
-        with:
-          languages: swift
-          build-mode: autobuild
-          config-file: ./.github/codeql/codeql-config.yml
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
-        with:
-          category: "/language:swift"
+# Swift CodeQL analysis was removed 2026-04-19. Rationale: Spacebot itself has
+# exactly 2 Swift files (a 30-LOC Tauri macOS window shim + its Package.swift)
+# whose attack surface is nil for CodeQL's iOS-tuned query suite. The real
+# Swift source (31 files) lives in `spacedrive/apps/mobile/` — a React Native
+# + Expo iOS app. CodeQL Swift's autobuild ignored our `paths-ignore: spacedrive/**`
+# config, walked the tree to find a buildable Swift/iOS project, hit the
+# Spacedrive Podfile, and failed with "Cannot find module 'expo/package.json'"
+# because we never install those node_modules in CI. The job was running with
+# `continue-on-error: true`, so it wasn't blocking, but it was burning
+# macos-latest runner minutes (10x Linux cost) and normalizing red X's in the
+# Checks UI. If we ever want Swift scanning for the desktop shim specifically,
+# re-add with `build-mode: none` and a narrow `paths: [desktop/**/*.swift]` scope.
