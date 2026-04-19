@@ -5,7 +5,7 @@ import {
 type WikiPageSummary,
 	type WikiPageType,
 	type CreateWikiPageRequest,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import { BookBookmark, Plus, MagnifyingGlass, ArrowLeft, ClockCounterClockwise, X } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";

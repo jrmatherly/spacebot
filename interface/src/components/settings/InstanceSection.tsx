@@ -1,6 +1,6 @@
 import {useState, useEffect} from "react";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {Button, Input, LoadingDot} from "@spacedrive/primitives";
 import type {GlobalSettingsSectionProps} from "./types";
 

@@ -5,7 +5,7 @@ import {
 	Outlet,
 	useLocation,
 } from "@tanstack/react-router";
-import {BASE_PATH} from "@/api/client";
+import {BASE_PATH} from "@spacebot/api-client/client";
 import {ConnectionBanner} from "@/components/ConnectionBanner";
 import {Sidebar} from "@/components/Sidebar";
 import {Overview} from "@/routes/Overview";

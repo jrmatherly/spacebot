@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {cx} from "class-variance-authority";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {LiveDuration} from "@/components/LiveDuration";
 import {OpenCodeEmbed} from "@/components/OpenCodeEmbed";
 import type {OrchestrationWorker} from "./types";

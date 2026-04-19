@@ -5,7 +5,7 @@ import {
 	type CronJobWithStats,
 	type CreateCronRequest,
 	type ChannelInfo,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {formatCronSchedule, formatTimeAgo} from "@/lib/format";
 import {
 	Clock,

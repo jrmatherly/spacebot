@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { api } from "@/api/client";
+import { api } from "@spacebot/api-client/client";
 
 export function getPortalSessionId(agentId: string) {
 	return `portal:chat:${agentId}`;

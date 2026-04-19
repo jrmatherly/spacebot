@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {Button, Input, DialogRoot, DialogContent, DialogHeader, DialogTitle, DialogFooter} from "@spacedrive/primitives";
-import type {PortalConversationSummary} from "@/api/types";
+import type {PortalConversationSummary} from "@spacebot/api-client/types";
 
 interface ConversationsSidebarProps {
 	conversations: PortalConversationSummary[];

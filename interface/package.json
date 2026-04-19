@@ -4,7 +4,8 @@
 	"private": true,
 	"type": "module",
 	"workspaces": [
-		"../spaceui/packages/*"
+		"../spaceui/packages/*",
+		"../packages/*"
 	],
 	"scripts": {
 		"preinstall": "../scripts/check-workspace-protocol.sh",
@@ -30,6 +31,7 @@
 		"@lobehub/icons": "^5.4.0",
 		"@phosphor-icons/react": "^2.1.10",
 		"@react-sigma/core": "^5.0.6",
+		"@spacebot/api-client": "workspace:*",
 		"@spacedrive/ai": "workspace:*",
 		"@spacedrive/explorer": "workspace:*",
 		"@spacedrive/forms": "workspace:*",

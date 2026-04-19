@@ -24,7 +24,7 @@ import type {
 	RoutingUpdate,
 	SandboxUpdate,
 	TuningUpdate,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 
 // Union of every section's update type. Each instance of the editor renders
 // exactly one section, so the active section decides which fields are present.

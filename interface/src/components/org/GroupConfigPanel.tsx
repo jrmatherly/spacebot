@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {motion} from "framer-motion";
 import {Button} from "@spacedrive/primitives";
-import type {TopologyGroup} from "@/api/client";
+import type {TopologyGroup} from "@spacebot/api-client/client";
 
 interface GroupConfigPanelProps {
 	group: TopologyGroup;

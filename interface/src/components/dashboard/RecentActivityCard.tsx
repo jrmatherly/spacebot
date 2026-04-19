@@ -7,7 +7,7 @@ import {
 	CardContent,
 	FilterButton,
 } from "@spacedrive/primitives";
-import {api, type TaskItem} from "@/api/client";
+import {api, type TaskItem} from "@spacebot/api-client/client";
 
 type FilterType = "all" | "tasks" | "cortex" | "workers";
 

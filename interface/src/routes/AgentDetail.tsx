@@ -6,7 +6,7 @@ import {
 	type CortexEvent,
 	type CronJobInfo,
 	MEMORY_TYPES,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";
 import {MEMORY_TYPE_HEX_PALETTE} from "@/lib/colors";
 import {formatTimeAgo, formatCronSchedule} from "@/lib/format";

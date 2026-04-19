@@ -1,6 +1,6 @@
 import {cx} from "class-variance-authority";
 import {CheckCircle, DownloadSimple} from "@phosphor-icons/react";
-import type {RegistrySkill} from "@/api/client";
+import type {RegistrySkill} from "@spacebot/api-client/client";
 
 interface RegistrySkillRowProps {
 	skill: RegistrySkill;

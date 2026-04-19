@@ -6,7 +6,7 @@ import {
 	api,
 	type AgentConfigResponse,
 	type AgentConfigUpdateRequest,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	ConfigSidebar,
 	GeneralEditor,

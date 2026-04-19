@@ -13,7 +13,7 @@ import {
 	Button,
 } from "@spacedrive/primitives";
 import {useNotifications} from "@/hooks/useNotifications";
-import type {NotificationItem, NotificationKind} from "@/api/client";
+import type {NotificationItem, NotificationKind} from "@spacebot/api-client/client";
 import {ApprovalModal} from "@/components/ApprovalModal";
 
 const TYPE_CONFIG: Record<

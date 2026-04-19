@@ -4,7 +4,7 @@ import {Plus, Package, Books, Lightning} from "@phosphor-icons/react";
 import {SettingSidebarButton} from "@/ui/SettingSidebarButton";
 import {InstalledSkillRow} from "./InstalledSkillRow";
 import type {SkillView, SelectedSkill} from "./types";
-import type {SkillInfo} from "@/api/client";
+import type {SkillInfo} from "@spacebot/api-client/client";
 
 interface SkillsSidebarProps {
 	activeView: SkillView;

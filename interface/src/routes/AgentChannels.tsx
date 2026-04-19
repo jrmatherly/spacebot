@@ -1,6 +1,6 @@
 import {useMemo, useState} from "react";
 import {useQuery} from "@tanstack/react-query";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {ChannelCard} from "@/components/ChannelCard";
 import {Button, LoadingDot, SearchBar} from "@spacedrive/primitives";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";

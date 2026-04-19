@@ -2,7 +2,7 @@ import {useMemo, useState} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {Link} from "@tanstack/react-router";
 import {Sparkle, Lightbulb, FolderSimplePlus} from "@phosphor-icons/react";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {CreateAgentDialog} from "@/components/CreateAgentDialog";
 import {OrgGraph} from "@/components/org";
 import {Button, CircleButton, LoadingDot} from "@spacedrive/primitives";

@@ -6,7 +6,7 @@ import {
 	api,
 	type CortexChatToolCall,
 	type CortexChatThread,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	CircleButton,
 	CircleButtonGroup,

@@ -8,7 +8,7 @@ import {
 	DialogTitle,
 	DialogFooter,
 } from "@spacedrive/primitives";
-import type {TopologyAgent} from "@/api/client";
+import type {TopologyAgent} from "@spacebot/api-client/client";
 
 interface AgentEditDialogProps {
 	agent: TopologyAgent | null;

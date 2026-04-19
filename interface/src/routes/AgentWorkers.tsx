@@ -9,7 +9,7 @@ import {
 	type WorkerDetailResponse,
 	type TranscriptStep,
 	type OpenCodePart,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	ToolCall,
 	pairTranscriptSteps,

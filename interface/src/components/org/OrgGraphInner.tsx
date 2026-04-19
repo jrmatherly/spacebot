@@ -26,7 +26,7 @@ import {
 	type TopologyHuman,
 	type LinkDirection,
 	type LinkKind,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {GroupNode} from "./GroupNode";
 import {ProfileNode} from "./ProfileNode";
 import {LinkEdge} from "./LinkEdge";

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { InlineWorkerCard, type TranscriptStep } from "@spacedrive/ai";
-import { api, type WorkerListItem } from "@/api/client";
+import { api, type WorkerListItem } from "@spacebot/api-client/client";
 
 interface PortalWorkerCardProps {
 	agentId: string;

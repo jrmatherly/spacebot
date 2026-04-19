@@ -3,12 +3,12 @@ import {Link} from "@tanstack/react-router";
 import {AnimatePresence, motion} from "framer-motion";
 import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
 import {GearSix, X} from "@phosphor-icons/react";
-import {api} from "@/api/client";
-import type {ChannelInfo} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
+import type {ChannelInfo} from "@spacebot/api-client/client";
 import type {
 	ConversationSettings,
 	ConversationDefaultsResponse,
-} from "@/api/types";
+} from "@spacebot/api-client/types";
 import {isOpenCodeWorker, type ChannelLiveState} from "@/hooks/useChannelLiveState";
 import {ConversationSettingsPanel} from "@/components/ConversationSettingsPanel";
 import {

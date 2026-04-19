@@ -1,4 +1,4 @@
-import type {WorkerRunInfo} from "@/api/client";
+import type {WorkerRunInfo} from "@spacebot/api-client/client";
 
 /** A worker with agent metadata attached for cross-agent views. */
 export interface OrchestrationWorker extends WorkerRunInfo {

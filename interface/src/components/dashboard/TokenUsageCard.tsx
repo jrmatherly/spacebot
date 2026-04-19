@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {Card, CardHeader, CardContent, Button} from "@spacedrive/primitives";
-import {api, type UsageByModel} from "@/api/client";
+import {api, type UsageByModel} from "@spacebot/api-client/client";
 
 function formatTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

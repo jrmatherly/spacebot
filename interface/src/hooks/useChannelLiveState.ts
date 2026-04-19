@@ -16,7 +16,7 @@ import {
 	type WorkerStatusEvent,
 	type WorkerIdleEvent,
 	type ChannelInfo,
-} from "../api/client";
+} from "@spacebot/api-client/client";
 
 export interface ActiveWorker {
 	id: string;

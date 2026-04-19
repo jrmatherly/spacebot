@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePortal, getPortalSessionId } from "@/hooks/usePortal";
 import { useLiveContext } from "@/hooks/useLiveContext";
-import { api, type ConversationDefaultsResponse, type ConversationSettings } from "@/api/client";
+import { api, type ConversationDefaultsResponse, type ConversationSettings } from "@spacebot/api-client/client";
 import { PortalHeader } from "./PortalHeader";
 import { PortalTimeline } from "./PortalTimeline";
 import { PortalComposer } from "./PortalComposer";

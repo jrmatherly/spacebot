@@ -13,8 +13,8 @@ import {PortalHistoryPopover} from "./PortalHistoryPopover";
 import type {
 	ConversationDefaultsResponse,
 	ConversationSettings,
-} from "@/api/client";
-import type {PortalConversationSummary} from "@/api/types";
+} from "@spacebot/api-client/client";
+import type {PortalConversationSummary} from "@spacebot/api-client/types";
 import type {ActiveWorker} from "@/hooks/useChannelLiveState";
 
 interface PortalHeaderProps {

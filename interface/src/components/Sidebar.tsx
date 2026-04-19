@@ -23,7 +23,7 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import {CSS} from "@dnd-kit/utilities";
-import {api, getApiBase} from "@/api/client";
+import {api, getApiBase} from "@spacebot/api-client/client";
 import type {ChannelLiveState} from "@/hooks/useChannelLiveState";
 import {useAgentOrder} from "@/hooks/useAgentOrder";
 import {

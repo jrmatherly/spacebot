@@ -8,7 +8,7 @@ import {
 	useMemo,
 } from "react";
 import {useQuery} from "@tanstack/react-query";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {useAudioRecorder} from "@/hooks/useAudioRecorder";
 import {useTtsPlayback} from "@/hooks/useTtsPlayback";
 import {getPortalSessionId} from "@/hooks/usePortal";

@@ -2,7 +2,7 @@ import {useCallback, useEffect, useState, useRef} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {cx} from "class-variance-authority";
 import {Button, Input} from "@spacedrive/primitives";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {ProfileAvatar, seedGradient} from "@/components/ProfileAvatar";
 import {GRADIENT_PRESETS} from "./constants";
 import type {GeneralEditorProps} from "./types";
