@@ -174,7 +174,7 @@ The channel's `build_org_context()` then:
 
 ### Preset Structure
 
-Nine preset archetypes ship embedded in the binary. Each is a directory of markdown files:
+Eleven preset archetypes ship embedded in the binary. Each is a directory of markdown files:
 
 ```
 presets/
@@ -190,6 +190,8 @@ presets/
   sales-bdr/
   executive-assistant/
   project-manager/
+  integration-engineer/
+  sre/
 ```
 
 #### meta.toml

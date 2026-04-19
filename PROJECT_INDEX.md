@@ -142,7 +142,7 @@ just gate-pr
 
 ## Agent Presets
 
-Nine persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, `SOUL.md`, `meta.toml`.
+Eleven persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, `SOUL.md`, `meta.toml`.
 
 | Preset | Role |
 |---|---|
@@ -152,9 +152,11 @@ Nine persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, `S
 | **customer-support** | Support triage |
 | **engineering-assistant** | Technical pairing |
 | **executive-assistant** | Scheduling + comms |
+| **integration-engineer** | Third-party API + webhook + MCP wiring |
 | **project-manager** | Task orchestration |
 | **research-analyst** | Research synthesis |
 | **sales-bdr** | Outbound prospecting |
+| **sre** | Incident response + on-call + postmortems |
 
 ---
 
