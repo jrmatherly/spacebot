@@ -28,10 +28,11 @@ spacebot/
 │   ├── telemetry/        # Prometheus metrics (feature-gated)
 │   ├── tools/            # 49 LLM-callable tool files (64 tool implementations; `spacedrive_list_files` added 2026-04-17)
 │   └── wiki/             # Wiki pages CRUD & search
-├── interface/            # Web UI (Vite + React + TypeScript)
+├── interface/            # Web UI (Vite + React + TypeScript). No local src/api/ anymore — consumes `@spacebot/api-client` from packages/ via workspace symlink (PR #75, 2026-04-19).
 │   ├── src/              # React app, components, routes, hooks
 │   └── opencode-embed-src/  # Embeddable widget variant
-├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer). Consumed by interface/ via bun workspace protocol — interface/package.json declares "workspaces": ["../spaceui/packages/*"] and pins each @spacedrive/* dep to "workspace:*"
+├── packages/             # @spacebot/* workspace scope. Currently: api-client/ (TypeScript client for Spacebot REST API + SSE event types; codegen target for `just typegen`). Added 2026-04-19 in PR #75 as the activate-api-client-package OpenSpec change. Subpath-only exports (no root barrel): ./client, ./types, ./schema. Any future sibling here must publish under @spacebot/* to be covered by scripts/check-workspace-protocol.sh.
+├── spaceui/              # SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer). Consumed by interface/ via bun workspace protocol — interface/package.json declares "workspaces": ["../spaceui/packages/*", "../packages/*"] (symlinks both @spacedrive/* and @spacebot/*) and pins each workspace dep to "workspace:*"
 ├── spacedrive/           # Vendored Spacedrive platform (independent Cargo workspace, own toolchain `stable`). Now a real fork — PR #57 authored 10 stub files under core/src/ to unblock sd-server compile. SYNC.md LOCAL_CHANGES is load-bearing; do not overwrite via upstream rsync without consulting it.
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)

@@ -12,8 +12,8 @@
 | `just clippy-all` | `cargo clippy --all-targets` |
 | `just test-lib` | Run library unit tests (`cargo test --lib`) |
 | `just test-integration-compile` | Compile integration tests without running |
-| `just typegen` | Generate TypeScript types from OpenAPI spec |
-| `just check-typegen` | Verify TypeScript types are up-to-date |
+| `just typegen` | Generate TypeScript types from OpenAPI spec. Writes to `packages/api-client/src/schema.d.ts` (retargeted from `interface/src/api/schema.d.ts` in PR #75, 2026-04-19) |
+| `just check-typegen` | Verify TypeScript types are up-to-date. Also enforced in CI at `.github/workflows/ci.yml` `check-typegen` job (added PR #75); fails the PR if regen produces a diff. |
 | `just build-opencode-embed` | Build embeddable UI widget |
 | `just bundle-sidecar` | Build binary and copy to Tauri sidecar |
 | `just desktop-dev` | Run desktop app in dev mode |
