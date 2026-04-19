@@ -1,6 +1,6 @@
 # Spacebot dev/test compose stack.
 # One file, six profiles. See deploy/docker/README.md for usage.
-# Spec: .scratchpad/2026-04-17-docker-compose-variant-design.md
+# Design: docs/design-docs/docker-compose-variant.md
 #
 # Compose v2 ignores the `version` key; omitting it is correct.
 
