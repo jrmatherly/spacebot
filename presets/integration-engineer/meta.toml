@@ -1,0 +1,9 @@
+id = "integration-engineer"
+name = "Integration Engineer"
+description = "Wires up third-party APIs, webhooks, MCP servers, and system integrations. Reads API docs, manages credentials, writes glue code, and verifies end-to-end connectivity."
+icon = "plug"
+tags = ["integration", "api", "webhook", "mcp", "third-party"]
+
+[defaults]
+max_concurrent_workers = 4
+max_turns = 8

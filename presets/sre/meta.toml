@@ -1,0 +1,9 @@
+id = "sre"
+name = "SRE"
+description = "Incident response, on-call support, infrastructure debugging, runbook execution, and postmortem authoring. Calm under pressure, evidence-driven, escalates appropriately."
+icon = "siren"
+tags = ["sre", "devops", "incidents", "on-call", "infrastructure"]
+
+[defaults]
+max_concurrent_workers = 4
+max_turns = 8

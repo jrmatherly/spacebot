@@ -1,6 +1,6 @@
 # Preset Authoring
 
-> **Status:** Living guide. Written against the nine shipped presets under `presets/` and the factory integration documented in `docs/design-docs/agent-factory.md`. Update alongside any change to the preset file contract.
+> **Status:** Living guide. Written against the eleven shipped presets under `presets/` and the factory integration documented in `docs/design-docs/agent-factory.md`. Update alongside any change to the preset file contract.
 
 Spacebot agents are created from presets. A preset is a short, opinionated package that sets an agent's personality, role, and scope before the factory runs any per-user tailoring. It ships as a directory of markdown plus a TOML manifest embedded in the binary. This guide covers what a preset is, what goes in each file, how voice rules differ across files, and how to verify a new preset loads.
 
@@ -8,7 +8,7 @@ Spacebot agents are created from presets. A preset is a short, opinionated packa
 
 **In scope.** The four-file preset contract (`IDENTITY.md`, `ROLE.md`, `SOUL.md`, `meta.toml`), voice rules per file, the `meta.toml` schema as enforced by `src/factory/presets.rs`, the `include_dir!` embedding mechanism, and the test pattern used to verify a new preset loads.
 
-**Out of scope.** The factory flow itself (`docs/design-docs/agent-factory.md`), the 9 existing preset archetypes' domain specifics, and the runtime tailoring that happens after factory creation (per-user identity, tool gating, model routing).
+**Out of scope.** The factory flow itself (`docs/design-docs/agent-factory.md`), the 11 existing preset archetypes' domain specifics, and the runtime tailoring that happens after factory creation (per-user identity, tool gating, model routing).
 
 ## Ground truth
 
@@ -17,7 +17,7 @@ Spacebot agents are created from presets. A preset is a short, opinionated packa
 | Preset directory | `presets/<preset-id>/` |
 | Required files | `IDENTITY.md`, `ROLE.md`, `SOUL.md`, `meta.toml` |
 | Embedding | `include_dir!` macro in `src/factory/presets.rs` |
-| Nine shipped presets | `community-manager`, `content-writer`, `customer-support`, `engineering-assistant`, `executive-assistant`, `main-agent`, `project-manager`, `research-analyst`, `sales-bdr` |
+| Eleven shipped presets | `community-manager`, `content-writer`, `customer-support`, `engineering-assistant`, `executive-assistant`, `integration-engineer`, `main-agent`, `project-manager`, `research-analyst`, `sales-bdr`, `sre` |
 | Model routing | Intentionally excluded from `meta.toml`. Model selection happens during the factory conversation when the user's available providers are known. |
 | Registry API | `PresetRegistry::list() -> Vec<PresetMeta>`, `PresetRegistry::load(id) -> Option<Preset>` |
 | Three builtin skills with authoring examples | `skills/builtin/memory-writing`, `skills/builtin/task-triage`, `skills/builtin/wiki-writing` |
@@ -114,7 +114,7 @@ Things that look like preset content but are not:
 2. Author `IDENTITY.md`, `ROLE.md`, `SOUL.md` following the voice-rule table above. Match the length ranges (15-25 / 30-60 / 25-40 lines respectively).
 3. Author `meta.toml` with `id` matching the directory name.
 4. Add `<new-id>` to any preset-listing fixtures used by factory tests. Run `cargo test --lib factory::presets` to verify the preset loads. A failing `PresetRegistry::load` signals a contract violation (missing file, malformed TOML, or `id` mismatch).
-5. Update `docs/design-docs/agent-factory.md` Phase 1 preset table to include the new entry, and update the preset-count claim (currently "Nine preset archetypes" at `agent-factory.md:177`).
+5. Update `docs/design-docs/agent-factory.md` Phase 1 preset table to include the new entry, and update the preset-count claim (currently "Eleven preset archetypes" at `agent-factory.md:177`).
 6. Update CHANGELOG.md under `Added` with the new preset, its description, and its intended use case.
 
 ## Verifying a preset loads
