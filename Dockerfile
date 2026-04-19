@@ -5,12 +5,13 @@ FROM rust:trixie AS builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install build dependencies:
-#   protobuf-compiler — LanceDB protobuf codegen
+#   protobuf-compiler — ships the `protoc` binary; LanceDB protobuf codegen
 #   cmake — onig_sys (regex), lz4-sys
 #   libssl-dev — openssl-sys (reqwest TLS)
+# Note: libprotobuf-dev (C++ headers) is intentionally NOT installed; prost-build
+# only shells out to `protoc` and does not link against libprotobuf.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     protobuf-compiler \
-    libprotobuf-dev \
     cmake \
     libssl-dev \
     pkg-config \
@@ -27,11 +28,17 @@ WORKDIR /build
 
 # 1. Fetch and cache Rust dependencies.
 #    cargo fetch needs a valid target, so we create stubs that get replaced later.
+#    `--locked` prevents silent Cargo.lock drift between this stub build and the
+#    real build at step 5; without it, a lock touch between layers partially
+#    invalidates the dep cache.
+#    Cargo.toml declares no [lib] target, so we do NOT create an empty src/lib.rs
+#    — it would trigger auto-discovery of a phantom lib that gets thrown away on
+#    the real build.
 COPY Cargo.toml Cargo.lock ./
 COPY vendor/ vendor/
-RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
+RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs \
     && echo "fn main() {}" > src/bin/openapi_spec.rs \
-    && cargo build --release --features metrics \
+    && cargo build --release --locked --features metrics \
     && rm -rf src
 
 # 2. Stage SpaceUI source and build it first.
@@ -104,9 +111,10 @@ COPY migrations/ migrations/
 COPY docs/ docs/
 COPY AGENTS.md README.md CHANGELOG.md ./
 COPY src/ src/
-RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --features metrics \
-    && mv /build/target/release/spacebot /usr/local/bin/spacebot \
-    && cargo clean -p spacebot --release --target-dir /build/target
+# `cargo clean` on the builder stage was dead code — the whole stage is
+# discarded once the binary is copied into the runtime stage. Dropped.
+RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --locked --features metrics \
+    && mv /build/target/release/spacebot /usr/local/bin/spacebot
 
 # ---- Runtime stage ----
 # Minimal runtime with Chrome runtime libraries for fetcher-downloaded Chromium.
