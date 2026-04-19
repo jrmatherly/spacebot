@@ -28,10 +28,10 @@ helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
 The chart assumes the cluster already provides:
 
 - A SOPS-encrypted secret named `spacebot-secret` supplying the LLM provider and messaging adapter API keys Spacebot reads from environment variables. The cluster repo's `secret.sops.yaml.j2` creates it.
-- A `ConfigMap` named `spacebot-config` carrying `config.toml` as a data key. Required: the container mounts it read-only at `/etc/spacebot/` and passes `-c /etc/spacebot/config.toml` to the daemon. See the G3 research finding in `/Users/jason/dev/ai-k8s/talos-ai-cluster/.scratchpad/2026-04-18-k8s-G3-config-path-metrics.md` for the ConfigMap shape and the `[metrics]`, `[api]`, `[llm.provider.*]` sections that matter at cluster scope.
+- A `ConfigMap` named `spacebot-config` carrying `config.toml` as a data key. Required: the container mounts it read-only at `/etc/spacebot/` and passes `-c /etc/spacebot/config.toml` to the daemon. See [`docs/design-docs/k8s-cluster-deployment.md`](../../../docs/design-docs/k8s-cluster-deployment.md) for the ConfigMap shape and the `[metrics]`, `[api]`, `[llm.provider.*]` sections that matter at cluster scope.
 - A `StorageClass` capable of fulfilling a 5 Gi `ReadWriteOnce` PVC.
 - Ingress configured externally (the cluster repo provisions a `HTTPRoute` at `httproute.yaml.j2`; this chart does not provision ingress).
-- Optional: an Envoy `SecurityPolicy` gating the `HTTPRoute` for Entra SSO. When the ConfigMap omits `[api].auth_token`, the daemon disables its bearer-auth middleware and passes every request through, leaving Envoy as the sole authentication layer. See G1 research for the code path at `src/api/server.rs:351-353`.
+- Optional: an Envoy `SecurityPolicy` gating the `HTTPRoute` for Entra SSO. When the ConfigMap omits `[api].auth_token`, the daemon disables its bearer-auth middleware and passes every request through, leaving Envoy as the sole authentication layer. Code path at `src/api/server.rs:351-353`; full rationale in [`docs/design-docs/k8s-cluster-deployment.md`](../../../docs/design-docs/k8s-cluster-deployment.md) under G1.
 
 ## Install (local single-node cluster)
 
@@ -116,5 +116,5 @@ The values-only approach is right while Spacebot deploys to a single cluster wit
 
 - Decision record: [`docs/design-docs/k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md)
 - Upstream chart: [bjw-s-labs/helm-charts](https://github.com/bjw-s-labs/helm-charts), `app-template`
-- Cluster repo pattern: `/Users/jason/dev/ai-k8s/talos-ai-cluster/templates/config/kubernetes/apps/ai/` (litellm, langfuse)
+- Cluster repo pattern: `ai-k8s/talos-ai-cluster` → `templates/config/kubernetes/apps/ai/` (litellm, langfuse exemplars)
 - Cluster deploy workflow: `/cluster-deploy` skill
