@@ -36,6 +36,11 @@ services:
       # OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317 in `.env` (or export
       # it in the shell before `docker compose up`). Matches the cluster
       # deployment's Grafana Alloy endpoint.
+      #
+      # Footgun: if you set this in `.env` for an observability session
+      # and later run `just compose-up` (no Alloy), SpaceBot will retry
+      # OTLP exports to a dead endpoint indefinitely. Unset (or comment
+      # out) the line in `.env` when running non-observability profiles.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-spacebot}
     ports:
