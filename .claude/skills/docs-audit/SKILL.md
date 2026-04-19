@@ -24,7 +24,7 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 | SpaceUI packages | `spaceui/packages/{ai,explorer,forms,icons,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` |
 | Docs top-level | `docs/README.md`, `docs/docker.md`, `docs/mattermost.md`, `docs/metrics.md` |
 | Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
-| Design docs | `docs/design-docs/*.md` — 50 files; historical record, append-only |
+| Design docs | `docs/design-docs/*.md` — 54 files at root + `docs/design-docs/archive/` (1 file: `api-client-package-followup.md`, archived by PR #75). Historical record, append-only; archive subdir is immutable. |
 | Security policy | `docs/security/*.md` (tracked per project_overview memory) |
 | Transient plans | `docs/superpowers/plans/*.md` — completed ones should move to `.scratchpad/completed/` |
 | Deployment values | `deploy/helm/spacebot/{values.yaml,values.local.yaml,README.md}` — Kubernetes/Helm values for the Talos cluster. Consumes `bjw-s-labs/app-template` (not a wrapper chart). Drift risk: image tag vs actual release, port/env mismatches against `src/config/`, probe paths against API handlers. |
@@ -41,7 +41,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (22 top-level skills + 21 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
 | Runtime skills | `skills/builtin/*/SKILL.md` — 3 files (memory-writing, task-triage, wiki-writing). Skills the daemon ships to agents. |
-| Canonical specs | `openspec/specs/*/spec.md` — 8 files. Source-of-truth for deps/integration. **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
+| Canonical specs | `openspec/specs/*/spec.md` — 9 files. Source-of-truth for Spacebot capabilities (deps, integrations, security, frontend api-client). **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
 
 ### Explicitly Out of Scope
 
@@ -57,7 +57,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | `.claude/worktrees/*` | Git-worktree checkout on another branch; not authoritative on `main` (not gitignored but 0 files tracked) | N/A — exclude |
 | `vendor/`, `node_modules/`, `target/`, `dist/`, `.next/`, `.source/`, `.turbo/`, `.cargo/`, `.code-review-graph/` | Build artifacts / dependency caches | N/A — ignored |
 | `.scratchpad/`, `.remember/`, `.worktrees/` | Gitignored; not authoritative state | N/A — exclude |
-| `packages/api-client/` | Top-level private workspace package (`"private": true`), no README by design | Document as "intentionally undocumented" |
+| `packages/api-client/` | Live workspace package (`"private": true`, subpath-only exports, activated by PR #75 on 2026-04-19). Consumed by `interface/` via `workspace:*`. Canonical contract at `openspec/specs/frontend-api-client/spec.md`. | Not auditable as a README (there is none by design). Audit the canonical spec instead. |
 | `migrations/`, `prompts/`, `scripts/`, `nix/`, `examples/`, `tests/`, `src/`, `.archon/`, `.github/`, `.githooks/` | Zero markdown files by design — don't re-investigate | N/A |
 | `desktop/` top-level | Has `desktop/CLAUDE.md` (covered by the "Nested CLAUDE.md" Tier 2 row) — no other docs | N/A |
 | Dependency version bumps in any doc | | `/deps-update` |
@@ -392,7 +392,7 @@ This skill is itself Tier 2 documentation and goes stale as the repo evolves. Re
 - A new package is added to `spaceui/packages/` (update the package row)
 - A new agent-platform mirror is added (`.codex/`, `.windsurf/`, `.cursor/`, etc.): add to out-of-scope
 - A new route group is added under `docs/content/docs/(...)/`
-- The `packages/api-client/` policy changes (currently private, no README). If it gains a README, move to Tier 1.
+- A new workspace package is added under `packages/` alongside `api-client/`. Update the Tier 1 row and `CLAUDE.md` Package Managers guidance if the new package adds its own audit surface.
 - A new skill is created or an existing one is renamed: update `session-primer/references/skills-catalog.md` and verify this skill's scope still matches reality
 - A new nested `CLAUDE.md` is added under a subtree (not the repo root): add it to the Tier 2 "Nested CLAUDE.md" row
 - A new `.claude/rules/*.md` file is added: bump the count in the Tier 2 "Coding rules" row and check whether its `paths:` frontmatter overlaps with an existing rule
