@@ -87,10 +87,15 @@ impl PromptEngine {
             "adapters/email",
             crate::prompts::text::get("adapters/email"),
         )?;
-        env.add_template("adapters/cron", crate::prompts::text::get("adapters/cron"))?;
         env.add_template(
             "adapters/signal",
             crate::prompts::text::get("adapters/signal"),
+        )?;
+
+        // Scheduler-specific prompt fragments (time-triggered, not message-triggered)
+        env.add_template(
+            "schedulers/cron",
+            crate::prompts::text::get("schedulers/cron"),
         )?;
 
         // Fragment templates
@@ -581,7 +586,7 @@ impl PromptEngine {
     pub fn render_channel_adapter_prompt(&self, adapter: &str) -> Option<String> {
         let template_name = match adapter {
             "email" => "adapters/email",
-            "cron" => "adapters/cron",
+            "cron" => "schedulers/cron",
             "signal" => "adapters/signal",
             _ => return None,
         };
@@ -887,6 +892,38 @@ mod tests {
         assert!(
             checked >= 10,
             "expected to check at least 10 system fragments, checked {checked}",
+        );
+    }
+
+    /// Guard the cron channel-kind dispatch post-relocation.
+    ///
+    /// Cron is time-triggered, not message-triggered, so its prompt lives
+    /// under `prompts/en/schedulers/` rather than `prompts/en/adapters/`.
+    /// The public dispatch key `"cron"` must continue to resolve via
+    /// `render_channel_adapter_prompt` because 5 caller sites
+    /// (`agent/channel.rs:1852,1855,2560,2563`, `api/channels.rs:726`)
+    /// pass that literal string. This test fails if the file move, the
+    /// `text::get` registration, the MiniJinja `add_template` call, or
+    /// the dispatcher match arm drift out of sync.
+    #[test]
+    fn render_channel_adapter_prompt_handles_cron_kind() {
+        let engine = PromptEngine::new("en").expect("prompt engine should build");
+
+        let rendered = engine
+            .render_channel_adapter_prompt("cron")
+            .expect("cron channel kind must render its scheduler prompt");
+        assert!(
+            rendered.contains("automated scheduled task"),
+            "cron scheduler prompt content did not survive the relocation: {rendered:?}",
+        );
+
+        assert!(
+            engine.env.get_template("schedulers/cron").is_ok(),
+            "cron template must be registered under the 'schedulers/cron' key after relocation",
+        );
+        assert!(
+            engine.env.get_template("adapters/cron").is_err(),
+            "stale 'adapters/cron' template key must not be registered post-relocation",
         );
     }
 }

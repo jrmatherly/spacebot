@@ -52,6 +52,7 @@ Conditionally injected blocks rendered from fragment templates in `prompts/en/fr
 - **`projects_context.md.j2`** -- Active projects, repos, worktrees, root paths.
 - **`conversation_context.md.j2`** -- Platform, server name, channel name.
 - **Adapter prompt** -- Platform-specific guidance (Discord, Slack, etc.) from `prompts/en/adapters/`.
+- **Scheduler prompt** -- Time-triggered guidance (cron) from `prompts/en/schedulers/`.
 
 **Review focus:** Bloated project/worktree lists, org descriptions that are too long, capability sections that don't match actual config.
 
