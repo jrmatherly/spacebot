@@ -40,7 +40,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | Coding rules | `.claude/rules/*.md` — 10 files (`rust-essentials`, `rust-iteration-loop`, `rust-patterns`, `writing-guide`, `coding-discipline`, `async-state-safety`, `messaging-adapter-parity`, `provider-integration`, `tool-authoring`, `api-handler`). Referenced by CLAUDE.md; drift propagates into every code change. |
 | Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (22 top-level skills + 21 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
-| Runtime skills | `skills/builtin/*/SKILL.md` — 1 file (wiki-writing). Skills the daemon ships to agents. |
+| Runtime skills | `skills/builtin/*/SKILL.md` — 3 files (memory-writing, task-triage, wiki-writing). Skills the daemon ships to agents. |
 | Canonical specs | `openspec/specs/*/spec.md` — 8 files. Source-of-truth for deps/integration. **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |
 
 ### Explicitly Out of Scope

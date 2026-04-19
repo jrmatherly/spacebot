@@ -20,7 +20,7 @@ Spacebot agents are created from presets. A preset is a short, opinionated packa
 | Nine shipped presets | `community-manager`, `content-writer`, `customer-support`, `engineering-assistant`, `executive-assistant`, `main-agent`, `project-manager`, `research-analyst`, `sales-bdr` |
 | Model routing | Intentionally excluded from `meta.toml`. Model selection happens during the factory conversation when the user's available providers are known. |
 | Registry API | `PresetRegistry::list() -> Vec<PresetMeta>`, `PresetRegistry::load(id) -> Option<Preset>` |
-| Two builtin skills with authoring examples | `skills/builtin/memory-writing`, `skills/builtin/task-triage`, `skills/builtin/wiki-writing` |
+| Three builtin skills with authoring examples | `skills/builtin/memory-writing`, `skills/builtin/task-triage`, `skills/builtin/wiki-writing` |
 
 ## The four files
 
