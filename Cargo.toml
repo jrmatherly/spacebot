@@ -28,8 +28,11 @@ lancedb = "0.27"
 lance-index = "4.0"
 redb = "4.0"
 
-# Vector / embedding operations
-fastembed = "5"
+# Vector / embedding operations. Optional so non-memory-touching dev builds
+# can opt out via `--no-default-features` to skip the ~5-10 minute ort-sys
+# C++ toolchain build. `embeddings` feature is on by default; production
+# builds and CI must keep it enabled.
+fastembed = { version = "5", optional = true }
 
 # Encoding
 base64 = "0.22"
@@ -166,6 +169,15 @@ url = "2"
 moka = "0.12.13"
 
 [features]
+default = ["embeddings"]
+
+# Vector embeddings via fastembed + ort (ONNX Runtime C++ bindings). Disabling
+# this drops ~5-10 min of cold-cache compilation by skipping the ort-sys build.
+# Disabled mode is for dev iteration ONLY — vector similarity ranking degrades
+# to deterministic zero vectors, so RRF hybrid search falls back to Tantivy FTS
+# only. Release builds and CI must enable this feature.
+embeddings = ["dep:fastembed"]
+
 metrics = ["dep:prometheus"]
 
 [patch.crates-io]

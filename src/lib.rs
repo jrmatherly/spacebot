@@ -1,5 +1,16 @@
 //! Spacebot: A Rust agentic system where every LLM process has a dedicated role.
 
+// Guard: non-dev builds must ship with real embeddings. The `embeddings`
+// feature is on by default; this assertion catches release/benchmark builds
+// that accidentally pass `--no-default-features` without adding it back.
+// Dev profile is allowed to disable (intentional escape hatch).
+#[cfg(all(not(feature = "embeddings"), not(debug_assertions)))]
+compile_error!(
+    "release/bench builds must enable the `embeddings` feature. \
+     Disabling it degrades vector search to stub zero-vectors and is a \
+     dev-only shortcut to skip the ort-sys C++ build."
+);
+
 pub mod agent;
 pub mod api;
 pub mod auth;
