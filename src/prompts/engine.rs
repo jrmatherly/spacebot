@@ -84,12 +84,24 @@ impl PromptEngine {
 
         // Adapter-specific prompt fragments
         env.add_template(
+            "adapters/discord",
+            crate::prompts::text::get("adapters/discord"),
+        )?;
+        env.add_template(
             "adapters/email",
             crate::prompts::text::get("adapters/email"),
         )?;
         env.add_template(
             "adapters/signal",
             crate::prompts::text::get("adapters/signal"),
+        )?;
+        env.add_template(
+            "adapters/slack",
+            crate::prompts::text::get("adapters/slack"),
+        )?;
+        env.add_template(
+            "adapters/telegram",
+            crate::prompts::text::get("adapters/telegram"),
         )?;
 
         // Scheduler-specific prompt fragments (time-triggered, not message-triggered)
@@ -585,9 +597,12 @@ impl PromptEngine {
     /// Render optional adapter-specific channel guidance.
     pub fn render_channel_adapter_prompt(&self, adapter: &str) -> Option<String> {
         let template_name = match adapter {
-            "email" => "adapters/email",
             "cron" => "schedulers/cron",
+            "discord" => "adapters/discord",
+            "email" => "adapters/email",
             "signal" => "adapters/signal",
+            "slack" => "adapters/slack",
+            "telegram" => "adapters/telegram",
             _ => return None,
         };
 
@@ -924,6 +939,67 @@ mod tests {
         assert!(
             engine.env.get_template("adapters/cron").is_err(),
             "stale 'adapters/cron' template key must not be registered post-relocation",
+        );
+    }
+
+    /// Guard the Discord adapter-prompt dispatch.
+    ///
+    /// Verifies the dispatcher resolves `"discord"`, the rendered content
+    /// carries a Discord-specific marker, and the template is registered
+    /// under `"adapters/discord"`.
+    #[test]
+    fn render_channel_adapter_prompt_handles_discord_kind() {
+        let engine = PromptEngine::new("en").expect("prompt engine should build");
+
+        let rendered = engine
+            .render_channel_adapter_prompt("discord")
+            .expect("discord channel kind must render its adapter prompt");
+        assert!(
+            rendered.contains("Discord Adapter Guidance"),
+            "discord adapter prompt content missing: {rendered:?}",
+        );
+
+        assert!(
+            engine.env.get_template("adapters/discord").is_ok(),
+            "discord template must be registered under the 'adapters/discord' key",
+        );
+    }
+
+    /// Guard the Slack adapter-prompt dispatch.
+    #[test]
+    fn render_channel_adapter_prompt_handles_slack_kind() {
+        let engine = PromptEngine::new("en").expect("prompt engine should build");
+
+        let rendered = engine
+            .render_channel_adapter_prompt("slack")
+            .expect("slack channel kind must render its adapter prompt");
+        assert!(
+            rendered.contains("Slack Adapter Guidance"),
+            "slack adapter prompt content missing: {rendered:?}",
+        );
+
+        assert!(
+            engine.env.get_template("adapters/slack").is_ok(),
+            "slack template must be registered under the 'adapters/slack' key",
+        );
+    }
+
+    /// Guard the Telegram adapter-prompt dispatch.
+    #[test]
+    fn render_channel_adapter_prompt_handles_telegram_kind() {
+        let engine = PromptEngine::new("en").expect("prompt engine should build");
+
+        let rendered = engine
+            .render_channel_adapter_prompt("telegram")
+            .expect("telegram channel kind must render its adapter prompt");
+        assert!(
+            rendered.contains("Telegram Adapter Guidance"),
+            "telegram adapter prompt content missing: {rendered:?}",
+        );
+
+        assert!(
+            engine.env.get_template("adapters/telegram").is_ok(),
+            "telegram template must be registered under the 'adapters/telegram' key",
         );
     }
 }
