@@ -66,7 +66,14 @@ controllers:
         # semantics. `start -f` runs the daemon in the foreground; required
         # in containers since the Rust binary daemonizes by default.
         # See .scratchpad/2026-04-18-k8s-G3-config-path-metrics.md.
+        #
+        # The first element MUST be "spacebot" because the Dockerfile
+        # entrypoint is docker-entrypoint.sh which ends with `exec "$@"`.
+        # bjw-s app-template's `args:` maps to the container spec's `args`
+        # field, which fully REPLACES the Dockerfile CMD. Without the
+        # binary name the entrypoint tries to exec "-c" as a program.
         args:
+          - "spacebot"
           - "-c"
           - "/etc/spacebot/config.toml"
           - "start"

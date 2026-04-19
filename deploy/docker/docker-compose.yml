@@ -18,7 +18,12 @@ services:
     # daemon in the foreground; required in containers since the Rust
     # binary daemonizes by default. Matches the K8s deployment's args
     # pattern (see deploy/helm/spacebot/values.yaml).
-    command: ["-c", "/etc/spacebot/config.toml", "start", "-f"]
+    #
+    # The first element MUST be "spacebot" because the Dockerfile
+    # entrypoint is docker-entrypoint.sh which ends with `exec "$@"`.
+    # Compose `command:` fully REPLACES the Dockerfile CMD, so without
+    # the binary name the entrypoint tries to exec "-c" as a program.
+    command: ["spacebot", "-c", "/etc/spacebot/config.toml", "start", "-f"]
     env_file:
       - path: .env
         required: false
@@ -75,8 +80,10 @@ services:
       dockerfile: Dockerfile
     container_name: spacebot
     restart: unless-stopped
-    # Same -c flag + mount pattern as the `spacebot` service.
-    command: ["-c", "/etc/spacebot/config.toml", "start", "-f"]
+    # Same -c flag + mount pattern as the `spacebot` service. The
+    # binary name is mandatory; see the comment on the `spacebot`
+    # service's command for why.
+    command: ["spacebot", "-c", "/etc/spacebot/config.toml", "start", "-f"]
     env_file:
       - path: .env
         required: false

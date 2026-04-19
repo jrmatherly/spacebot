@@ -29,7 +29,12 @@ controllers:
         # -c /etc/spacebot/config.toml argument and let the daemon fall
         # back to its default instance_dir resolution ($SPACEBOT_DIR then
         # ~/.spacebot). Keep foreground mode.
+        #
+        # The first element MUST be "spacebot" because the Dockerfile
+        # entrypoint is docker-entrypoint.sh which ends with `exec "$@"`
+        # and app-template's `args:` fully replaces the Dockerfile CMD.
         args:
+          - "spacebot"
           - "start"
           - "-f"
         # Local dev runs without the secret-backed API keys; keep only
