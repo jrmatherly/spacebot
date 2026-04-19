@@ -36,7 +36,7 @@ spacebot/
 ├── docs/                 # Documentation site (Next.js + Fumadocs)
 ├── desktop/              # Tauri desktop app (spacebot-desktop)
 ├── migrations/           # 48 SQLite migrations: 41 flat per-agent + 7 instance-wide under global/ (2026-02 → 2026-04)
-├── presets/              # 9 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
+├── presets/              # 11 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml; integration-engineer + sre added 2026-04-19 in PR #74)
 ├── scripts/              # Build & release scripts
 ├── tests/                # 12 integration test files (added `spacedrive_client.rs` with wiremock-backed RPC envelope + 401/Bearer round-trip tests)
 ├── vendor/               # Vendored crate: imap-proto-0.10.2
