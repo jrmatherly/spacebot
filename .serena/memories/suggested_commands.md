@@ -35,7 +35,7 @@
 | `just compose-up` | Start Spacebot via published image (default profile) |
 | `just compose-up-build` | Rebuild Spacebot from root Dockerfile (build profile; mutually exclusive with default) |
 | `just compose-up-spacedrive` | Spacebot + in-tree Spacedrive integration harness |
-| `just compose-up-observability` | Default + Prometheus + Grafana stack |
+| `just compose-up-observability` | Default + Prometheus + Grafana + Grafana Alloy (OTLP collector on 4317/gRPC + 4318/HTTP) stack |
 | `just compose-up-all` | Full stack: default + spacedrive + proxy + observability + tooling |
 | `just compose-down` | Stop all services across all profiles (Compose v2.20+) |
 | `just compose-down-compat` | Fallback down for Compose < 2.20 |
