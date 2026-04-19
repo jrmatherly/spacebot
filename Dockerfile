@@ -6,12 +6,16 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install build dependencies:
 #   protobuf-compiler — ships the `protoc` binary; LanceDB protobuf codegen
+#   libprotobuf-dev — provides Google's well-known `.proto` files
+#     (e.g. /usr/include/google/protobuf/empty.proto). `lance-encoding`
+#     imports google.protobuf.Empty, so protoc needs these on its include
+#     path even though nothing in our Rust graph links against libprotobuf
+#     at runtime. Removing this package broke the v0.5.0 Docker build.
 #   cmake — onig_sys (regex), lz4-sys
 #   libssl-dev — openssl-sys (reqwest TLS)
-# Note: libprotobuf-dev (C++ headers) is intentionally NOT installed; prost-build
-# only shells out to `protoc` and does not link against libprotobuf.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     protobuf-compiler \
+    libprotobuf-dev \
     cmake \
     libssl-dev \
     pkg-config \
