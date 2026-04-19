@@ -8,15 +8,11 @@ cargo fmt --all -- --check
 ```
 Fix any formatting issues with `cargo fmt --all`.
 
-## 2. Compile Check
-```bash
-cargo check --all-targets
-```
-
-## 3. Clippy Lint
+## 2. Clippy Lint (supersets cargo check)
 ```bash
 cargo clippy --all-targets
 ```
+Clippy invokes rustc with the full lint set — running `cargo check` separately is redundant and was dropped from `just gate-pr` as of 2026-04-19 (Sprint 1 local-build-optimization). Use `just check-all` if you need a clippy-free compile check. `just gate-pr-fast` runs `cargo check` + skips clippy for tight iteration.
 Remember: `dbg!`, `todo!()`, and `unimplemented!()` are `deny`-linted.
 
 ## 4. Library Tests

@@ -15,7 +15,7 @@
 - **Serialization:** serde/serde_json 1.0
 - **Logging:** tracing 0.1
 - **Error Handling:** thiserror + anyhow
-- **Discord:** Serenity (git `next` branch — pulls rustls 0.23 + tokio-tungstenite 0.28 to resolve rustls-webpki audit advisories)
+- **Discord:** Serenity (rev-pinned from `next` branch at `1cbceb275b10566145b0bdca1c57da9502079a6a` — pulls rustls 0.23 + tokio-tungstenite 0.28 to resolve rustls-webpki audit advisories. Rev-pin replaced branch-tracking 2026-04-19 to stop `cargo update` re-fetches from invalidating incremental cache.)
 - **WebSocket:** tokio-tungstenite 0.28
 - **Metrics:** Prometheus (feature-gated behind `metrics` feature)
 - **macOS Keychain:** security-framework 3

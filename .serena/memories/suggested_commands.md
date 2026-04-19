@@ -6,7 +6,14 @@
 |---------|---------|
 | `just` | List all available recipes |
 | `just preflight` | Validate git/remote/auth state before pushing |
-| `just gate-pr` | Full PR gate: formatting, compile, clippy, unit tests, integration compile (migration-safety check disabled 2026-04-16; see CLAUDE.md Database Migrations section) |
+| `just gate-pr` | Full PR gate: formatting, clippy (supersets check), unit tests, integration compile. `cargo check` was dropped from the full gate 2026-04-19 (Sprint 1 local-build-optimization); migration-safety check disabled 2026-04-16. |
+| `just gate-pr-fast` | Fast local gate — runs cargo check (no clippy) + unit tests. For tight iteration loops; run full `just gate-pr` before pushing. Added 2026-04-19. |
+| `just check-fast` | Narrowest useful inner-loop check: `cargo clippy --lib --no-deps`. Added 2026-04-19. |
+| `just check-frontend` | Rebuild embedded frontend UI (`cd interface && bun run build`). Needed when iterating on `interface/src/` TypeScript because build.rs no longer watches that path. Added 2026-04-19. |
+| `just debug-build` | Build with full debug symbols (`CARGO_PROFILE_DEV_DEBUG=2`) for lldb/rust-gdb variable inspection. Default dev profile uses `line-tables-only`. Added 2026-04-19. |
+| `just sweep-target` | Prune stale cargo artifacts (requires `cargo install cargo-sweep`). Added 2026-04-19. |
+| `just clean-all` | Nuclear cleanup — wipes target/, interface/dist, interface/node_modules, spaceui/node_modules, spaceui/packages/*/dist, opencode-embed, .fastembed_cache. Added 2026-04-19. |
+| `just clean-frontend` | Lighter cleanup — frontend only (interface + spaceui), keeps Rust target/. Added 2026-04-19. |
 | `just fmt-check` | Check Rust formatting (`cargo fmt --all -- --check`) |
 | `just check-all` | `cargo check --all-targets` |
 | `just clippy-all` | `cargo clippy --all-targets` |

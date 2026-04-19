@@ -4,7 +4,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 ```
 spacebot/
-├── src/                  # 213 Rust source files
+├── src/                  # 215 Rust source files
 │   ├── main.rs           # CLI entry point (clap subcommands: start, stop, restart, status, skill, auth, secrets)
 │   ├── lib.rs            # Library root — 35 public modules, shared types
 │   ├── bin/              # Extra binaries: openapi-spec, cargo-bump
