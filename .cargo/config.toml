@@ -1,2 +1,18 @@
 [alias]
 bump = "run --quiet --bin cargo-bump --"
+
+# Linux bare-metal opt-in: use mold for dramatically faster linking on large
+# binaries. `nix develop` (nix/default.nix:228-232) already wires this for Nix
+# users, so these blocks are only useful on bare-metal Linux contributors who
+# aren't using the flake.
+#
+# Uncomment after installing `mold` and `clang` (package names vary per
+# distro, typically `mold` and `clang`). Verify with `which mold clang`.
+#
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+#
+# [target.aarch64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]

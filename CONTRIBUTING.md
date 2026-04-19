@@ -64,7 +64,7 @@ Two macOS system settings deliver a significant speedup and neither touches the 
 
 ### Linux tuning
 
-`nix develop` already wires `mold` via `nix/default.nix`. Bare-metal Linux contributors can opt into mold manually; see the commented template in `.cargo/config.toml` (requires `clang` + `mold` on `PATH`).
+`nix develop` already wires `mold` via `nix/default.nix` — Nix users get fast linking automatically. Bare-metal Linux contributors can opt in manually: install `mold` and `clang` (package names vary per distro), then uncomment the `[target.x86_64-unknown-linux-gnu]` or `[target.aarch64-unknown-linux-gnu]` block in `.cargo/config.toml`. Verify with `which mold clang` first.
 
 ---
 
