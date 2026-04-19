@@ -48,6 +48,32 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.5.0
+
+### Release Story
+
+v0.5.0 is the first release of Spacebot as a detached fork of the upstream project. It consolidates three weeks of deployment hardening, platform integration work, and authoring-surface expansion into a release that is ready to run against real infrastructure — Docker Compose for the dev loop, Helm on Talos for production, and the first working Spacedrive tool pinned behind an opt-in flag.
+
+The biggest technical shift is that Spacebot can now talk to Spacedrive. Track A landed across three phases: a `[spacedrive]` config section, an outbound HTTP client that enforces HTTPS for non-loopback hosts with explicit timeouts and response caps, and the first agent tool `spacedrive_list_files` wrapped in a prompt-injection defense envelope. The pairing migration is instance-wide. Everything is runtime-gated behind `enabled`. In parallel, `deploy/helm/spacebot/` now carries the concrete settings the Talos cluster needs — read-only root filesystem, emptyDir mounts for `/tmp` and Chrome cache, raised memory and CPU limits for LanceDB + FastEmbed + Chromium headroom — and `deploy/docker/` closes the gap between Helm and Compose with a ConfigMap-equivalent bind mount and a Grafana Alloy OTLP collector in the `observability` profile.
+
+Release highlights:
+
+- **Spacedrive integration — Track A** shipped across PRs #54, #55, #56, with the vendored fork unblocked via stub modules in PR #57 and documented in `spacedrive/SYNC.md`.
+- **Two new presets** — `integration-engineer` and `sre` — bringing the shipped preset set to eleven. Both are the first dogfooding of `docs/design-docs/preset-authoring.md`.
+- **Docker Compose variant** with six profiles (`default`, `build`, `spacedrive`, `proxy`, `observability`, `tooling`), Caddy proxy, Prometheus + Grafana + Alloy, and a dedicated CI workflow that validates every profile.
+- **Helm chart** at `deploy/helm/spacebot/` aligned with Talos deployment requirements — readOnlyRootFilesystem, seccomp, securityContext hardening, raised resource limits.
+- **`@spacebot/api-client`** is now a real workspace package (`packages/api-client/`) consumed by `interface/` via `workspace:*`, with a CI `check-typegen` job that fails the PR if the OpenAPI schema drifts from the generated TypeScript.
+- **Per-adapter channel prompts** for Discord, Slack, and Telegram close the parity gap with email/signal/cron.
+- **Builtin skills** `memory-writing` and `task-triage` land alongside the existing `wiki-writing` skill.
+- **rustls-webpki audit advisories** (RUSTSEC-2026-0049/-0098/-0099) resolved by pinning Serenity to the `next` branch. CI audit job is now a hard gate.
+- **Desktop sidecar fix** — the Tauri sidecar is now `spacebot-daemon-<triple>`, avoiding an APFS case-insensitive collision with the `Spacebot` host binary that spawned a duplicate app window on macOS.
+- **Release workflow timeout** bumped to 60 minutes for the Docker build matrix after the prior release hit the 30-minute ceiling.
+
+## What's Changed
+* feat(api-client): activate @spacebot/api-client package and migrate interface consumers by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/75
+
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.4.1...v0.5.0
 ## v0.4.1
 
 ### Release Story
