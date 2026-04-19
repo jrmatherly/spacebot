@@ -65,11 +65,15 @@ jobs:
             archive: tar.gz
             os: macos
             ext: ""
-          - target: x86_64-apple-darwin
-            runner: macos-15-intel
-            archive: tar.gz
-            os: macos
-            ext: ""
+          # Intel macOS (x86_64-apple-darwin) is intentionally omitted.
+          # ort-sys (ONNX Runtime bindings pulled in transitively by fastembed,
+          # which powers local embeddings for memory) does not publish prebuilt
+          # binaries for x86_64-apple-darwin. Upstream workarounds are compiling
+          # ONNX Runtime from source (adds ~30 min to every release build) or
+          # switching fastembed's backend to `ort-tract` (multi-day change, not
+          # a release-time fix). Apple deprecated Intel Macs in 2022; the ML
+          # ecosystem has largely followed. If fastembed ever adopts a pure-Rust
+          # or tract backend by default, restore this matrix entry.
           # Windows is intentionally omitted. The spacebot crate depends on
           # `daemonize` and `libc` unconditionally, which are Unix-only, so
           # `cargo build --release` would fail with ~50 errors before any
