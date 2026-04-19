@@ -51,7 +51,7 @@ Each tool exposed to the LLM has a description template:
 
 ## Agent Persona Presets
 
-Located in `presets/`. Nine persona configurations, each with four files:
+Located in `presets/`. Eleven persona configurations, each with four files:
 
 | Preset | Description |
 |--------|-------------|
@@ -61,9 +61,11 @@ Located in `presets/`. Nine persona configurations, each with four files:
 | `customer-support` | User support |
 | `engineering-assistant` | Technical work |
 | `executive-assistant` | Executive support |
+| `integration-engineer` | Third-party API, webhook, MCP wiring |
 | `project-manager` | Project coordination |
 | `research-analyst` | Research/analysis |
 | `sales-bdr` | Sales/business development |
+| `sre` | Incident response, on-call, postmortems |
 
 **Each contains:**
 - `meta.toml` — name, description, model, temperature

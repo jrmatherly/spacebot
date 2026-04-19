@@ -69,7 +69,7 @@ spacebot/
 | **tasks** | Goal/task state machine with worker delegation |
 | **skills** | Skill bundling, installation, discovery |
 | **cron** | Background job scheduler |
-| **factory** | Agent preset system (9 personas) |
+| **factory** | Agent preset system (11 personas) |
 | **mcp** | Model Context Protocol client (rmcp v1.1) |
 | **secrets** | AES-256-GCM encryption, argon2 key derivation |
 | **hooks** | Pre/post-channel hooks, loop guards, cortex events |

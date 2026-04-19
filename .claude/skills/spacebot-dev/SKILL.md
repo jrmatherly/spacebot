@@ -9,7 +9,7 @@ You are working on Spacebot, a multi-process agentic AI system built in Rust. Th
 
 ## Architecture Overview
 
-Single binary crate (`src/lib.rs` + `src/main.rs`). No workspace. 34 public modules. Three embedded databases. Five process types. 60+ LLM tools. 9 messaging platform adapters (including Portal).
+Single binary crate (`src/lib.rs` + `src/main.rs`). No workspace. 35 public modules. Three embedded databases. Five process types. 60+ LLM tools. 9 messaging platform adapters (including Portal).
 
 The core abstraction: every LLM process is a Rig `Agent<SpacebotModel, SpacebotHook>` with an isolated `ToolServer`, independent history, and typed `ProcessEvent` communication.
 
@@ -377,7 +377,7 @@ engine.render_worker_capabilities(browser_enabled, web_search_enabled)
 Live outside workspace so worker file tools cannot access them. Hot-reloaded on change.
 
 ### Presets (`presets/`)
-9 agent personas: community-manager, content-writer, customer-support, engineering-assistant, executive-assistant, main-agent, project-manager, research-analyst, sales-bdr. Each has `meta.toml`, `IDENTITY.md`, `ROLE.md`, `SOUL.md`.
+11 agent personas: community-manager, content-writer, customer-support, engineering-assistant, executive-assistant, integration-engineer, main-agent, project-manager, research-analyst, sales-bdr, sre. Each has `meta.toml`, `IDENTITY.md`, `ROLE.md`, `SOUL.md`.
 
 ## Messaging (`src/messaging/`)
 

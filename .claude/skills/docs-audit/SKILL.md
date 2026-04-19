@@ -36,7 +36,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | Area | Files |
 |------|-------|
 | Nested CLAUDE.md | `spaceui/CLAUDE.md`, `interface/CLAUDE.md`, `desktop/CLAUDE.md`, `openspec/CLAUDE.md` — subtree-scoped instructions loaded on-demand when agents edit those subtrees. Distinct from the root `CLAUDE.md` (which is owned by `/session-sync`). |
-| Agent personas | `presets/*/{IDENTITY,ROLE,SOUL}.md` — 27 files across 9 presets. Changes here shape runtime agent behavior. |
+| Agent personas | `presets/*/{IDENTITY,ROLE,SOUL}.md` — 33 files across 11 presets. Changes here shape runtime agent behavior. |
 | Coding rules | `.claude/rules/*.md` — 10 files (`rust-essentials`, `rust-iteration-loop`, `rust-patterns`, `writing-guide`, `coding-discipline`, `async-state-safety`, `messaging-adapter-parity`, `provider-integration`, `tool-authoring`, `api-handler`). Referenced by CLAUDE.md; drift propagates into every code change. |
 | Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (22 top-level skills + 21 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
@@ -172,7 +172,7 @@ For each target file, don't just read. Compare against Step 1 evidence. Specific
 - Cross-check version number in CHANGELOG top entry vs `package.json` version field
 
 **Count/inventory claims**
-- "6 packages", "40+ components", "42 migrations", "9 presets", "206 Rust source files"
+- "6 packages", "40+ components", "48 migrations", "11 presets", "213 Rust source files"
 - Each number gets a shell command to verify. Report any mismatch.
 
 **Migration / audit doc staleness**
