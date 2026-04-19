@@ -45,7 +45,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 - `interface/` — Web UI (Vite + React + TypeScript). Consumes `@spacebot/api-client` and `@spacedrive/*` packages via workspace symlink.
 - `packages/` — Internal `@spacebot/*` workspace packages. Currently: `api-client/` (TypeScript client for the Spacebot REST API + SSE event types; codegen target for `just typegen`).
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
-- `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Runtime integration lives at `src/spacedrive/` (config, HTTP client, envelope, first agent tool `spacedrive_list_files`). Track A complete on main; runtime-gated behind `[spacedrive] enabled = true`. As of PR #57 this is a real fork: 10 Spacebot-authored stub files under `spacedrive/core/src/` plus an `apps/web/dist/index.html` placeholder unblock the `sd-server` build. `spacedrive/SYNC.md` LOCAL_CHANGES is load-bearing — never overwrite it wholesale via rsync.
+- `spacedrive/` — Spacebot-owned fork of the Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Runtime integration lives at `src/spacedrive/` (config, HTTP client, envelope, first agent tool `spacedrive_list_files`). Track A complete on main; runtime-gated behind `[spacedrive] enabled = true`. As of PR #57 and the 2026-04-16 self-reliance decision, this is a genuine Spacebot fork: 10 Spacebot-authored stub files under `spacedrive/core/src/` plus an `apps/web/dist/index.html` placeholder unblock the `sd-server` build. `spacedrive/SYNC.md` LOCAL_STATE register is load-bearing — never bulk-rsync from any external source.
 - `docs/` — Documentation site (Next.js + Fumadocs)
 - `desktop/` — Tauri desktop app
 - `deploy/docker/` — Docker Compose variant (one file, six profiles: default, build, spacedrive, proxy, observability, tooling). See `deploy/docker/README.md` and `just compose-*` recipes.
@@ -70,7 +70,7 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 - `.claude/rules/coding-discipline.md` — Surface assumptions, simplicity, surgical edits, goal-driven TDD
 - `docs/design-docs/spacedrive-integration-pairing.md` — Shared-state contract between Spacebot and Spacedrive (blocks Track A and Track B)
 - `docs/design-docs/spacedrive-tool-response-envelope.md` — Prompt-injection defense envelope for Spacedrive-returned tool bytes
-- `spacedrive/SYNC.md` — Cherry-pick discipline for the vendored Spacedrive tree
+- `spacedrive/SYNC.md` — Fork provenance + reference-clone discipline for the vendored Spacedrive tree (Spacebot-owned per 2026-04-16 self-reliance decision)
 - `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
