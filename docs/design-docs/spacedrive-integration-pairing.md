@@ -210,7 +210,7 @@ These belong in the pairing OpenSpec's design/specs artifacts, not here.
 ## References
 
 - Fork-independence rationale is captured in this document and in `spacedrive/SYNC.md`; no external context is needed.
-- Upstream design docs (treat as aspirational per 2026-04-16 decision): `spacedrive/docs/core/design/spacebot-integration.md`, `spacebot-remote-execution.md`, `spacebot-spacedrive-contract.md`
+- Ancestor design docs (predate our fork; treat as starting-point reference, not authority, per 2026-04-16 self-reliance decision): `spacedrive/docs/core/design/spacebot-integration.md`, `spacebot-remote-execution.md`, `spacebot-spacedrive-contract.md`
 - Spacedrive `SpacebotConfig`: `spacedrive/core/src/config/app_config.rs:52`
 - Spacedrive update op: `spacedrive/core/src/ops/config/app/update.rs:81`
 - Spacedrive server routes: `spacedrive/apps/server/src/main.rs:351`
