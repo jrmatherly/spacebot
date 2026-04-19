@@ -19,6 +19,7 @@ Where em dashes ARE allowed (narrow list, do not extend):
 - Numbered-step labels: `1. **Claim** — verbatim quote`
 - Table cells separating a value from its description: `| Foo | path/to/foo — purpose |`
 - Section headers: `## Scale — Targets and Limits`
+- Prompt templates under `prompts/**/*.md.j2`: the rule's rationale ("would a developer think 'AI-generated'?") targets human readers. Prompts are consumed by the LLM at inference time. The credibility concern does not transfer. All other writing-guide rules still apply to prompt templates.
 
 Where em dashes are NOT allowed (these are the violations to watch for):
 - Inside a complete sentence as a substitute for a period, comma, or colon
