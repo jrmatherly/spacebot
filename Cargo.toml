@@ -198,3 +198,28 @@ path = "src/bin/openapi_spec.rs"
 [profile.release]
 lto = "thin"
 strip = true
+
+[profile.dev]
+# Incremental stays on — 2026 consensus for single-machine dev loops.
+incremental = true
+# line-tables-only keeps backtraces useful (filenames, line numbers) while
+# cutting target/debug/incremental size ~50-70% and the debug binary from
+# ~555 MB to ~170 MB. If you need full debugger variable/type inspection,
+# override per-session: CARGO_PROFILE_DEV_DEBUG=2 cargo build (or `just
+# debug-build`).
+debug = "line-tables-only"
+# Already the macOS default since Cargo 1.51; declared explicitly so Linux
+# contributors get the same fast-link behaviour by default.
+split-debuginfo = "unpacked"
+
+# Dependencies get a mild optimisation pass. opt-level=1 preserves cross-crate
+# monomorphisation sharing that opt-level=2/3 would break. One-time cost on
+# first build, pays back on every iteration.
+[profile.dev.package."*"]
+opt-level = 1
+
+# Build scripts and proc-macros compile once per toolchain. Fully optimising
+# them speeds every build.rs invocation (notably ort-sys's heavy C++ build).
+[profile.dev.build-override]
+opt-level = 3
+codegen-units = 1

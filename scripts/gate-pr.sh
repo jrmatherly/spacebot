@@ -180,10 +180,14 @@ fi
 # or migration-checksum repair when landing migration reformatting changes.
 run_step "check-sidecar-naming" ./scripts/check-sidecar-naming.sh
 run_step "cargo fmt --all -- --check" cargo fmt --all -- --check
-run_step "cargo check --all-targets" cargo check --all-targets
 
+# `cargo check` was previously run here. Clippy is a strict superset (invokes
+# rustc with the full lint set) so running both caused ~30-50s of redundant
+# work. Documented anti-pattern in .claude/rules/rust-iteration-loop.md:99.
+# For a no-clippy escape hatch during debugging, run `just check-all`.
 if $fast_mode; then
 	log "fast mode enabled: skipping clippy and integration test compile"
+	run_step "cargo check --all-targets" cargo check --all-targets
 else
 	run_step "RUSTFLAGS=\"-Dwarnings\" cargo clippy --all-targets" env RUSTFLAGS="-Dwarnings" cargo clippy --all-targets
 fi

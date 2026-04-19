@@ -41,6 +41,40 @@ spaceui-unlink:
 gate-pr: preflight
     ./scripts/gate-pr.sh
 
+# Fast local gate — skips clippy and integration-test compile. Use for tight
+# iteration loops; run `just gate-pr` before pushing.
+gate-pr-fast: preflight
+    ./scripts/gate-pr.sh --fast
+
+# Full debug-info build for deep debugger sessions (variable/type inspection).
+# Normal `cargo build` uses line-tables-only per [profile.dev] in Cargo.toml.
+debug-build:
+    CARGO_PROFILE_DEV_DEBUG=2 cargo build
+
+# Prune stale cargo artifacts (old toolchains, 30+ days untouched). Requires
+# `cargo install cargo-sweep` once. After running, consider a deeper recovery
+# via `rm -rf target/debug/incremental` — next build will be slower but disk
+# drops substantially.
+sweep-target:
+    cargo sweep --installed
+    cargo sweep --time 30
+    @echo "Deeper recovery (slower next build): rm -rf target/debug/incremental"
+
+# Nuclear cleanup — removes all workspace build state. Use after long absences,
+# heavy branch-switching, or when reproducing a build issue from scratch.
+clean-all:
+    cargo clean
+    rm -rf interface/dist interface/node_modules
+    rm -rf spaceui/node_modules spaceui/packages/*/dist
+    rm -rf interface/public/opencode-embed
+    rm -rf .fastembed_cache
+    @echo "Note: ~/.cargo/git/db/serenity-* clones are separate and survive this."
+
+# Lighter cleanup — frontend only, preserves Rust target/.
+clean-frontend:
+    rm -rf interface/dist interface/node_modules
+    rm -rf spaceui/node_modules spaceui/packages/*/dist
+
 typegen:
     cargo run --bin openapi-spec > /tmp/spacebot-openapi.json
     bunx openapi-typescript /tmp/spacebot-openapi.json -o packages/api-client/src/schema.d.ts

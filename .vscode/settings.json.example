@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy this file to .vscode/settings.json (which is gitignored) and customise. The rust-analyzer settings below give RA its own target directory so it stops invalidating the CLI's incremental cache on every save — the single biggest interactive-iteration win on this repo.",
+
+  "rust-analyzer.cargo.targetDir": true,
+  "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.check.command": "clippy",
+
+  "evenBetterToml.schema.enabled": false,
+  "typescript.tsdk": "spaceui/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

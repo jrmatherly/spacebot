@@ -6,7 +6,7 @@ Contributions welcome. Read [RUST_STYLE_GUIDE.md](RUST_STYLE_GUIDE.md) before wr
 
 ## Prerequisites
 
-- **Rust** 1.85+ with `rustfmt` and `clippy`
+- **Rust** 1.94.1 with `rustfmt` and `clippy` (pinned in `rust-toolchain.toml`; rustup installs the right channel automatically)
 - **protoc** (protobuf compiler)
 - **bun** (for frontend/interface work)
 - **just** (`brew install just` or `cargo install just --locked`)
@@ -31,16 +31,40 @@ Optional: [Nix flakes](https://nixos.org/) for isolated dev environments (`nix d
 
 Every PR must pass `just gate-pr` before merge. This mirrors CI and checks:
 
-1. **Migration safety** — new migrations only, never edit existing ones
+1. **Sidecar naming** — Tauri sidecar binary name agrees across every reference site
 2. **Formatting** — `cargo fmt --all -- --check`
-3. **Compile** — `cargo check --all-targets`
-4. **Lints** — `cargo clippy --all-targets -Dwarnings`
-5. **Tests** — `cargo test --lib`
-6. **Integration compile** — `cargo test --tests --no-run`
+3. **Lints** — `cargo clippy --all-targets -Dwarnings` (strict superset of `cargo check`)
+4. **Tests** — `cargo test --lib`
+5. **Integration compile** — `cargo test --tests --no-run`
 
-Use `just gate-pr --fast` to skip clippy and integration compile during iteration.
+Use `just gate-pr-fast` for tight iteration. Fast mode substitutes `cargo check` for clippy and skips the integration-test compile; run full `just gate-pr` before pushing.
 
 The frontend CI (`interface-ci.yml`) runs `bun ci` and `bunx tsc --noEmit` on interface changes.
+
+---
+
+## Local Build Tuning
+
+The repo ships an optimised `[profile.dev]` in `Cargo.toml` that cuts debug binary size from ~555 MB to ~170 MB and shrinks `target/debug/incremental/` by roughly half. The defaults favour iteration speed over debugger ergonomics. Two escape hatches are available when you need the full experience:
+
+- `just debug-build` — builds with `CARGO_PROFILE_DEV_DEBUG=2` for complete variable and type inspection in `lldb`/`rust-gdb`.
+- `just sweep-target` — runs `cargo sweep` to prune stale toolchain artifacts. For a deeper reset use `just clean-all` (wipes Rust + frontend build state).
+
+### Editor setup
+
+Copy `.vscode/settings.json.example` to `.vscode/settings.json` (the target file is gitignored so each contributor can customise). The example enables `rust-analyzer.cargo.targetDir = true`, which puts rust-analyzer's build artifacts in `target/rust-analyzer/` so it stops invalidating the CLI's incremental cache on every save. For Helix, Neovim, or Zed the equivalent setting is `rust-analyzer.cargo.target_dir`.
+
+### macOS tuning (one-time, per-developer)
+
+Two macOS system settings deliver a significant speedup and neither touches the repo:
+
+1. **Exclude `target/` from Spotlight indexing.** System Settings → Spotlight → Search Privacy → drag in your dev directory, or run `sudo mdutil -i off target/`.
+2. **Allow your terminal past XProtect scanning.** System Settings → Privacy & Security → Developer Tools → add Terminal.app / iTerm2 / WezTerm / Ghostty. Nethercote measured rustc test-suite runtime drop from 9m42s to 3m33s with this alone.
+3. **Confirm Homebrew deps are arm64-native** (skip if you're on an Intel Mac): `file $(brew --prefix)/lib/*.dylib | grep -v arm64`. Any x86_64 hits are running under Rosetta and will slow compilation.
+
+### Linux tuning
+
+`nix develop` already wires `mold` via `nix/default.nix`. Bare-metal Linux contributors can opt into mold manually; see the commented template in `.cargo/config.toml` (requires `clang` + `mold` on `PATH`).
 
 ---
 
