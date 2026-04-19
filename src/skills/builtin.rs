@@ -9,10 +9,20 @@ use std::path::PathBuf;
 use super::{Skill, SkillSource, parse_frontmatter};
 
 /// Each entry is `(directory_name, raw SKILL.md content)`.
-const BUILTIN_SKILLS: &[(&str, &str)] = &[(
-    "wiki-writing",
-    include_str!("../../skills/builtin/wiki-writing/SKILL.md"),
-)];
+const BUILTIN_SKILLS: &[(&str, &str)] = &[
+    (
+        "memory-writing",
+        include_str!("../../skills/builtin/memory-writing/SKILL.md"),
+    ),
+    (
+        "task-triage",
+        include_str!("../../skills/builtin/task-triage/SKILL.md"),
+    ),
+    (
+        "wiki-writing",
+        include_str!("../../skills/builtin/wiki-writing/SKILL.md"),
+    ),
+];
 
 /// Parse all built-in skills from embedded content.
 pub fn load() -> Vec<Skill> {
@@ -72,6 +82,28 @@ mod tests {
         let wiki = wiki.unwrap();
         assert!(!wiki.description.is_empty());
         assert!(wiki.content.contains("## Language"));
+    }
+
+    #[test]
+    fn memory_writing_skill_is_loaded() {
+        let skills = load();
+        let memory = skills.iter().find(|s| s.name == "memory-writing");
+        assert!(memory.is_some(), "memory-writing skill should be present");
+        let memory = memory.unwrap();
+        assert!(!memory.description.is_empty());
+        assert!(memory.content.contains("## Choosing a Memory Type"));
+        assert!(memory.content.contains("## Importance Scoring"));
+    }
+
+    #[test]
+    fn task_triage_skill_is_loaded() {
+        let skills = load();
+        let task = skills.iter().find(|s| s.name == "task-triage");
+        assert!(task.is_some(), "task-triage skill should be present");
+        let task = task.unwrap();
+        assert!(!task.description.is_empty());
+        assert!(task.content.contains("## Owner vs Assigned"));
+        assert!(task.content.contains("## Choosing Status"));
     }
 
     #[test]
