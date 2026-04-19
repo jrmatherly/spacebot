@@ -243,8 +243,17 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ env.IMAGE }}:build-${{ steps.platform.outputs.pair }}
-          cache-from: type=gha,scope=build-${{ steps.platform.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=build-${{ steps.platform.outputs.pair }}
+          # Docker build cache lives in a dedicated GHCR image rather than the
+          # GHA cache service. Rationale: `type=gha,mode=max` on this Dockerfile
+          # exports ~5-6 GB per arch; two arches exceed the 10 GB per-repo GHA
+          # cache cap, so stable layers (apt, bun install, stub deps) were
+          # getting LRU-evicted mid-release. `type=registry` has no such cap.
+          # The sidecar image `spacebot-cache:<arch>` is not a release artifact;
+          # it lives at `ghcr.io/<owner>/spacebot-cache:{build-linux-amd64,arm64}`.
+          # `cache-to` is gated on tag builds so non-tag pushes (if any ever run
+          # this job) do not poison main's cache with branch-specific layers.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/spacebot-cache:build-${{ steps.platform.outputs.pair }}
+          cache-to: ${{ startsWith(github.ref, 'refs/tags/v') && format('type=registry,ref={0}/{1}/spacebot-cache:build-{2},mode=max', env.REGISTRY, github.repository_owner, steps.platform.outputs.pair) || '' }}
 
   merge-docker:
     needs: build-docker
