@@ -56,7 +56,7 @@ As of 2026-04-18 the upstream `spacedriveapp/spacedrive` main branch declares ni
 | `spacedrive/core/src/ops/spaces/list.rs` | Same as above. | Same. |
 | `spacedrive/apps/web/dist/index.html` | Placeholder `index.html` inside `apps/web/dist/`. `apps/server/src/main.rs:36` has `#[derive(Embed)] #[folder = "../web/dist/"]` which requires the folder to exist at `rustc` time, even for `--bin sd-server` where the web UI is not exercised. Contents: a single `<p>` noting the UI is not built; only the `/rpc` and `/health` endpoints are functional for Task 18. | Delete once either (a) the upstream web UI is actually built via `bun run build` in `apps/web/`, which overwrites this file with the real bundle, or (b) the `WebAssets` embed is made optional. |
 
-Scope note: the prior-session scratchpad (`.scratchpad/2026-04-17-spacedrive-fork-stub-writing.md`) predicted 9 missing files and 2 external importers. The actual scope turned out to be 10 missing files (9 sd-core + 1 web/dist placeholder) and 6 external importers (2 in-crate + 4 re-exported from `volumes/list.rs` consumed by `apps/cli`). The extra two `SourceManager` methods (`adapter_config_fields`, `update_adapter`) were surfaced by the compiler, not by the scratchpad grep, and live in `ops/adapters/` rather than `ops/sources/`.
+Scope note: initial prediction was 9 missing files and 2 external importers. The actual scope turned out to be 10 missing files (9 sd-core + 1 web/dist placeholder) and 6 external importers (2 in-crate + 4 re-exported from `volumes/list.rs` consumed by `apps/cli`). The extra two `SourceManager` methods (`adapter_config_fields`, `update_adapter`) were surfaced by the compiler and live in `ops/adapters/` rather than `ops/sources/`.
 
 ### Build artifacts present only in-tree (not upstream)
 
@@ -86,7 +86,7 @@ These upstream directories are **never** vendored, regardless of their upstream 
 | Excluded | Reason |
 |---|---|
 | `.git/` | We are a clone, not a submodule. No upstream history kept. |
-| `.github/` | Upstream's CI workflows would conflict with Spacebot's CI and CODEOWNERS. Archived at `.scratchpad/backups/spacedrive-.github/` if ever needed. |
+| `.github/` | Upstream's CI workflows would conflict with Spacebot's CI and CODEOWNERS. Pull from upstream's tree if ever needed. |
 | `target/` | Cargo build output |
 | `node_modules/` | Bun/npm dependencies |
 | `.next/` | Next.js build output |
@@ -166,7 +166,6 @@ Do not remove the guard. If `[workspace.lints]` or `[workspace.metadata]` is add
 | `.github/CODEOWNERS` | `spacedrive/ @jrmatherly` |
 | `openspec/specs/spacedrive-in-tree/spec.md` | Structural spec for the vendoring |
 | `~/dev/spacedrive/` | Reference snapshot (not a git checkout) |
-| `.scratchpad/spacedrive-spaceui-self-reliance.md` | Strategy doc — explains the "clone, not fork" posture |
 
 ## Changelog
 

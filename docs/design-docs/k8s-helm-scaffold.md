@@ -13,7 +13,7 @@ Research and recommendations for scaffolding Spacebot's Kubernetes deployment as
 **Out of scope:**
 - Writing the cluster repo's `helmrelease.yaml.j2`, `httproute.yaml.j2`, `secret.sops.yaml.j2` — those belong in the cluster repo, guided by the existing `/cluster-deploy` skill.
 - Actual deployment.
-- Any decision on the three Spacebot-side integration gaps (icons, upstream attribution, Spacedrive runtime). Those were separate research docs authored in `.scratchpad/` at the time; they remain ungitted scratch.
+- Any decision on the three Spacebot-side integration gaps (icons, upstream attribution, Spacedrive runtime). Those are separate concerns handled by their own design docs and OpenSpec changes.
 
 ## Ground truth researched
 
@@ -313,7 +313,7 @@ Deliberately **not** in this values file:
 3. **Three probes, all point at `/api/health`.** Startup gives 155s grace for migrations; liveness and readiness are standard.
 4. **Metrics port in the Service but no custom values for the chart — the ServiceMonitor block handles scraping.**
 5. **Image pinning defers to cluster repo.** The chart's `values.yaml` pins `v0.4.1` as a *default*; Flux values in the cluster repo override this per release. Keeps the chart versioning and image versioning independent.
-6. **Resources are conservative.** Spacebot's historical footprint on Fly.io was `shared-cpu-2x / 1gb` (from the now-decommissioned `fly.toml`, archived 2026-04-18 at `.scratchpad/backups/archive/`). Requests of `250m / 256Mi` with `1000m / 1Gi` limits match that sizing and let the cluster scheduler pack efficiently.
+6. **Resources are conservative.** Spacebot's historical footprint on Fly.io was `shared-cpu-2x / 1gb` (from the now-decommissioned `fly.toml`). Requests of `250m / 256Mi` with `1000m / 1Gi` limits match that sizing and let the cluster scheduler pack efficiently.
 
 ## Open questions deferred to implementation time
 
@@ -354,4 +354,4 @@ The scaffold scope stopped short of:
 
 - **2026-04-16 (initial draft):** Option 1 recommended publishing a thin wrapper chart.
 - **2026-04-16 (post-review refinement):** Split Option 1 into 1a (values bundle, direct consumption) and 1b (wrapper chart). Changed primary recommendation to 1a after verifying the cluster's actual pattern — no `ai` namespace app publishes a wrapper. Added `imagePullSecrets` guidance (commented out, activated only if image becomes private). Updated handoff section to reflect the 1a flow.
-- **2026-04-17:** Published to `docs/design-docs/` from `.scratchpad/completed/` so the `deploy/helm/spacebot/README.md` reference points at a tracked file.
+- **2026-04-17:** Promoted to `docs/design-docs/` so the `deploy/helm/spacebot/README.md` reference points at a tracked file.

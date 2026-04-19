@@ -2,7 +2,7 @@
 
 > **Status:** Implemented 2026-04-17. This document preserves the architecture rationale. Operational guidance for running the stack lives in `deploy/docker/README.md`.
 
-Research and rationale for `deploy/docker/` — the one-file six-profile compose stack shipped to cover dev, test, integration, proxy, observability, and tooling workflows outside Kubernetes. Promoted from `.scratchpad/plans/completed/2026-04-17-docker-compose-variant-design.md` (the original `/superpowers:brainstorming` spec) after the implementation landed across twelve commits on 2026-04-17 and the four-reviewer sweep that shaped the final form.
+Research and rationale for `deploy/docker/` — the one-file six-profile compose stack shipped to cover dev, test, integration, proxy, observability, and tooling workflows outside Kubernetes. Promoted from the original `/superpowers:brainstorming` design spec after the implementation landed across twelve commits on 2026-04-17 and the four-reviewer sweep that shaped the final form.
 
 ## Scope
 

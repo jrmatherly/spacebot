@@ -26,7 +26,7 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 | Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
 | Design docs | `docs/design-docs/*.md` — 54 files at root + `docs/design-docs/archive/` (1 file: `api-client-package-followup.md`, archived by PR #75). Historical record, append-only; archive subdir is immutable. |
 | Security policy | `docs/security/*.md` (tracked per project_overview memory) |
-| Transient plans | `docs/superpowers/plans/*.md` — completed ones should move to `.scratchpad/completed/` |
+| Transient plans | `docs/superpowers/plans/*.md` (currently empty; completed plans move to `.scratchpad/completed/` which is gitignored) |
 | Deployment values | `deploy/helm/spacebot/{values.yaml,values.local.yaml,README.md}` — Kubernetes/Helm values for the Talos cluster. Consumes `bjw-s-labs/app-template` (not a wrapper chart). Drift risk: image tag vs actual release, port/env mismatches against `src/config/`, probe paths against API handlers. |
 
 ### Tier 2 — Internal / Operational Documentation
@@ -190,10 +190,11 @@ For each target file, don't just read. Compare against Step 1 evidence. Specific
 - Use `grep -rE '\]\([^)]+\.md\)' <doc>` to list, then verify each target exists
 
 **References to gitignored paths**
-- Tracked files must NOT link into `.scratchpad/`, `.remember/`, `.worktrees/`, `.serena/`, `.claude/worktrees/`, or any other gitignored directory. Those paths are invisible to everyone who clones the repo.
-- Sweep: `grep -rnE "\.scratchpad/|\.remember/|\.worktrees/|\.serena/" --include="*.md" . | grep -v "^\./\.scratchpad" | grep -v "^\./\.claude/" | grep -v "^\./\.serena/" | grep -v "^\./\.codex/" | grep -v "^\./\.windsurf/" | grep -v "^\./\.full-review/" | grep -v "^\./spacedrive/"`
-- When a tracked file needs to reference content that currently lives in `.scratchpad/completed/`, port it to `docs/design-docs/` (for decision records) or another appropriate tracked location before adding the reference.
-- Exceptions: `openspec/changes/archive/*` files are immutable — their `.scratchpad/` references are historical record and must not be edited. Transient plans at `docs/superpowers/plans/*` may reference `.scratchpad/*` source specs; those references describe historical input, not live links.
+- Tracked files must NOT link into `.scratchpad/`, `.remember/`, `.worktrees/`, `.claude/worktrees/`, or any other gitignored directory. Those paths are invisible to everyone who clones the repo.
+- Tracked files (including `.serena/memories/*.md`) must also not reference `.scratchpad/` content paths even with "historical, gitignored" caveats. Replace with tracked-location pointers (design doc, PR number, commit SHA) or remove the reference entirely.
+- Sweep: `git ls-files | xargs grep -ln '\.scratchpad/' 2>/dev/null`. Legitimate hits: `.gitignore`, `.dockerignore`, `.github/workflows/*` (path exclusions in infrastructure files), `openspec/changes/archive/*` (immutable historical record), this skill file (defining the rule). Anything else is drift to fix.
+- When a tracked file needs to reference content that currently lives in `.scratchpad/completed/`, port it to `docs/design-docs/` (for decision records), the CHANGELOG, or another appropriate tracked location before removing the `.scratchpad/` reference.
+- Exceptions: `openspec/changes/archive/*` files are immutable — their `.scratchpad/` references are historical record and must not be edited.
 
 **Upstream-repo URLs in vendored subtrees**
 - The `spacedrive/` subtree is vendored from `spacedriveapp/spacedrive` and `spaceui/` was imported from `spacedriveapp/spaceui`. Both now belong to this repo. Clone URLs, issue links, and PR workflow prose in their policy files (`spacedrive/README.md`, `spacedrive/CONTRIBUTING.md`, `spacedrive/SECURITY.md`, `spacedrive/CODE_OF_CONDUCT.md`, `spacedrive/AGENTS.md`, `spaceui/README.md`, `spaceui/CONTRIBUTING.md`) must point at `jrmatherly/spacebot`, not `spacedriveapp/*`.

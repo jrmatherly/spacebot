@@ -442,7 +442,7 @@ Summary of all variables Spacebot introduces:
 
 ## Migration from Fly.io (historical)
 
-Spacebot previously ran on Fly.io. The transition to the Talos cluster is complete; the historical Fly configs (`fly.toml`, `fly.staging.toml`) were decommissioned on 2026-04-18 and archived to `.scratchpad/backups/archive/` for reference to the original port, env, volume, and healthcheck choices.
+Spacebot previously ran on Fly.io. The transition to the Talos cluster is complete; the historical Fly configs (`fly.toml`, `fly.staging.toml`) were decommissioned on 2026-04-18.
 
 The original transition plan was:
 

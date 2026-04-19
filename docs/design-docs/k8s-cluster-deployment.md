@@ -1,6 +1,6 @@
 # Kubernetes Cluster Deployment (Talos)
 
-> **Status:** Research cycle completed 2026-04-18. All open gates resolved with existing Spacebot capability; no upstream Rust changes required. `deploy/helm/spacebot/` and `deploy/docker/` aligned with the findings in PRs #70, #71, #72. This document is the tracked decision record. Per-gate research notes live in `.scratchpad/2026-04-18-k8s-G{1-6}-*.md` (historical, gitignored) and mirrored in the cluster repo at `ai-k8s/talos-ai-cluster/.scratchpad/`.
+> **Status:** Research cycle completed 2026-04-18. All open gates resolved with existing Spacebot capability; no upstream Rust changes required. `deploy/helm/spacebot/` and `deploy/docker/` aligned with the findings in PRs #70, #71, #72. This document is the tracked decision record — all substantive rationale from the per-gate research notes has been promoted into the sections below.
 
 Research and rationale for deploying Spacebot into the Talos Kubernetes cluster (`ai-k8s/talos-ai-cluster`). Six open questions (G1-G6) surfaced during cluster-side scaffolding; this document captures the answers, the resulting deployment shape, and the verification steps.
 

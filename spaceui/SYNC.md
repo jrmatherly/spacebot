@@ -80,7 +80,7 @@ These are build outputs, gitignored but not in the reference clone:
 | Excluded | Reason |
 |---|---|
 | `.git/` | Clone, not submodule |
-| `.github/` | Upstream's CI would conflict. Archived at `.scratchpad/backups/spaceui-.github/`. Removed in commit `6ce7867`. |
+| `.github/` | Upstream's CI would conflict. Removed in commit `6ce7867`. |
 | `node_modules/` | bun deps |
 | `dist/` (at package level) | Build output |
 
@@ -184,5 +184,5 @@ If any of these get touched by an upstream pull, re-verify and restore.
 
 | Date | Change |
 |---|---|
-| 2026-04-16 | First draft authored in `.scratchpad/`. |
-| 2026-04-17 | Promoted to `spaceui/SYNC.md` alongside SpaceUI hygiene PR. |
+| 2026-04-16 | First draft authored. |
+| 2026-04-17 | Landed at `spaceui/SYNC.md` as part of the SpaceUI hygiene PR. |
