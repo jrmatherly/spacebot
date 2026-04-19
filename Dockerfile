@@ -5,12 +5,13 @@ FROM rust:trixie AS builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install build dependencies:
-#   protobuf-compiler — LanceDB protobuf codegen
+#   protobuf-compiler — ships the `protoc` binary; LanceDB protobuf codegen
 #   cmake — onig_sys (regex), lz4-sys
 #   libssl-dev — openssl-sys (reqwest TLS)
+# Note: libprotobuf-dev (C++ headers) is intentionally NOT installed; prost-build
+# only shells out to `protoc` and does not link against libprotobuf.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     protobuf-compiler \
-    libprotobuf-dev \
     cmake \
     libssl-dev \
     pkg-config \
@@ -27,11 +28,17 @@ WORKDIR /build
 
 # 1. Fetch and cache Rust dependencies.
 #    cargo fetch needs a valid target, so we create stubs that get replaced later.
+#    `--locked` prevents silent Cargo.lock drift between this stub build and the
+#    final `cargo build` below. Without it, a lock touch between layers
+#    partially invalidates the dep cache.
+#    Cargo.toml declares no [lib] target, so we do NOT create an empty src/lib.rs.
+#    Auto-discovery would build a phantom lib that gets thrown away on the real
+#    build.
 COPY Cargo.toml Cargo.lock ./
 COPY vendor/ vendor/
-RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
+RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs \
     && echo "fn main() {}" > src/bin/openapi_spec.rs \
-    && cargo build --release --features metrics \
+    && cargo build --release --locked --features metrics \
     && rm -rf src
 
 # 2. Stage SpaceUI source and build it first.
@@ -86,7 +93,7 @@ COPY interface/ interface/
 # hadolint ignore=DL3003
 RUN cd interface && bun run build
 
-# 5. Copy source and compile the real binary.
+# 6. Copy source and compile the real binary.
 #    build.rs is skipped (SPACEBOT_SKIP_FRONTEND_BUILD=1) since the
 #    frontend is already built above with the OpenCode embed included.
 #    prompts/ is needed for include_str! in src/prompts/text.rs.
@@ -104,9 +111,11 @@ COPY migrations/ migrations/
 COPY docs/ docs/
 COPY AGENTS.md README.md CHANGELOG.md ./
 COPY src/ src/
-RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --features metrics \
-    && mv /build/target/release/spacebot /usr/local/bin/spacebot \
-    && cargo clean -p spacebot --release --target-dir /build/target
+# The builder stage is discarded after the runtime stage's COPY --from=builder
+# pulls only the binary, so no cleanup of /build/target is needed here.
+# `--locked` mirrors the stub build at step 1 (see rationale there).
+RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --locked --features metrics \
+    && mv /build/target/release/spacebot /usr/local/bin/spacebot
 
 # ---- Runtime stage ----
 # Minimal runtime with Chrome runtime libraries for fetcher-downloaded Chromium.

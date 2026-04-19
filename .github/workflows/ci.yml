@@ -137,7 +137,15 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        # Fetch a prebuilt binary. `cargo install cargo-audit --locked` rebuilds
+        # from source every run (observed ~2m 50s on ubuntu-24.04 per run
+        # 24634503767); taiki-e/install-action fetches a pinned release asset
+        # in seconds.
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          # Pin tool version explicitly so upstream cargo-audit releases cannot
+          # silently change audit output between CI runs.
+          tool: cargo-audit@0.22.1
 
       - name: cargo audit
         # RUSTSEC-2023-0071: rsa Marvin Attack — pulled by sqlx-mysql but never compiled
