@@ -29,8 +29,7 @@ defaultPodOptions:
     runAsGroup: 1000
     fsGroup: 1000
     # RuntimeDefault is compatible with bubblewrap's clone3/CLONE_NEWUSER
-    # requirement. See docs/design-docs/desktop-sidecar.md and the cluster
-    # research at .scratchpad/2026-04-18-k8s-G4-worker-sandbox-k8s.md for
+    # requirement. See docs/design-docs/k8s-cluster-deployment.md §G4 for
     # the bwrap preflight verification procedure.
     seccompProfile:
       type: RuntimeDefault
@@ -65,7 +64,7 @@ controllers:
         # which preserves Stakater Reloader's pod-rollout-on-ConfigMap-change
         # semantics. `start -f` runs the daemon in the foreground; required
         # in containers since the Rust binary daemonizes by default.
-        # See .scratchpad/2026-04-18-k8s-G3-config-path-metrics.md.
+        # See docs/design-docs/k8s-cluster-deployment.md §G3.
         #
         # The first element MUST be "spacebot" because the Dockerfile
         # entrypoint is docker-entrypoint.sh which ends with `exec "$@"`.
@@ -87,7 +86,7 @@ controllers:
           RUST_LOG: info
           # Uncomment to enable OTLP tracing. SpaceBot compiles OTLP support
           # unconditionally (no feature flag). Setting the endpoint activates
-          # it. See .scratchpad/2026-04-18-k8s-G6-observability-features.md.
+          # it. See docs/design-docs/k8s-cluster-deployment.md §G6.
           # OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.observability.svc.cluster.local:4317
           # OTEL_SERVICE_NAME: spacebot
         # API keys and messaging adapter credentials come from SOPS-encrypted
@@ -99,7 +98,7 @@ controllers:
         # Restricted PodSecurity baseline compliance. readOnlyRootFilesystem
         # is safe when paired with emptyDir mounts for /tmp (bwrap temp dirs)
         # and /data/chrome_cache (browser tool); see the persistence: block
-        # below and .scratchpad/2026-04-18-k8s-G5-readonly-rootfs.md.
+        # below and docs/design-docs/k8s-cluster-deployment.md §G5.
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false

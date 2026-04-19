@@ -40,7 +40,7 @@ Research and recommendations for scaffolding Spacebot's Kubernetes deployment as
 | `.github/workflows/release.yml` | Publishes `ghcr.io/${{ github.repository_owner }}/spacebot:v<version>` | Image source for chart values (fork-aware via `github.repository_owner`) |
 | `deploy/docker/prometheus.yml` + `docs/metrics.md` §Prometheus Scrape Config | Prometheus scrape config + operator playbook | Sanity-check for metrics endpoint shape; cardinality-trimming snippet |
 
-### Cluster deployment pattern (from `/Users/jason/dev/ai-k8s/talos-ai-cluster/`)
+### Cluster deployment pattern (from the `ai-k8s/talos-ai-cluster` repo)
 
 The cluster's `ai` namespace has ~15 apps. The two closest matches to Spacebot's profile are **litellm** and **langfuse**. Both use the same pattern:
 
