@@ -13,7 +13,15 @@ export const BASE_PATH: string = window.__SPACEBOT_BASE_PATH || "";
  */
 let _serverUrl = "";
 export function setServerUrl(url: string) {
-	_serverUrl = url.replace(/\/+$/, "");
+	// Strip trailing slashes without a regex. The original `/\/+$/` has
+	// polynomial-time matching on inputs with many trailing `/`, flagged by
+	// CodeQL (js/polynomial-redos, CWE-1333/400/730). A manual loop is O(n)
+	// and has no backtracking surface.
+	let end = url.length;
+	while (end > 0 && url.charCodeAt(end - 1) === 47 /* '/' */) {
+		end--;
+	}
+	_serverUrl = end === url.length ? url : url.slice(0, end);
 }
 export function getServerUrl(): string {
 	return _serverUrl;

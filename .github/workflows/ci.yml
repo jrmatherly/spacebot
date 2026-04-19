@@ -99,6 +99,11 @@ jobs:
     # drifted.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # This job only reads source, runs cargo + bunx, and diffs files.
+          # It does not push commits, so do not persist the GITHUB_TOKEN into
+          # `.git/config`. Closes the `zizmor/artipacked` alert on this job.
+          persist-credentials: false
 
       - name: Install protoc
         # Required by prost/tonic (OpenTelemetry OTLP) and chromiumoxide_cdp
