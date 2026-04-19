@@ -15,18 +15,12 @@
 set -euo pipefail
 
 # Any package.json inside the repo, excluding dependencies we don't control.
-mapfile -t PACKAGE_JSONS < <(
-    find . \
-        -name package.json \
-        -not -path '*/node_modules/*' \
-        -not -path '*/target/*' \
-        -not -path '*/.git/*' \
-        -not -path './spacedrive/*'
-)
-
+# Use a `while read` loop instead of `mapfile` so the script runs on macOS's
+# bash 3.2 (mapfile is bash 4+). Null-delimited to survive unlikely newlines
+# in paths.
 violations=0
 
-for pj in "${PACKAGE_JSONS[@]}"; do
+while IFS= read -r -d '' pj; do
     # Find every line with a scoped dep entry. Portable ERE that works on
     # both BSD (macOS) and GNU grep. Each dep must live on its own line,
     # which is the repo's package.json formatting convention.
@@ -42,7 +36,15 @@ for pj in "${PACKAGE_JSONS[@]}"; do
         echo "$bad" | sed 's/^/  /'
         violations=$((violations + 1))
     fi
-done
+done < <(
+    find . \
+        -name package.json \
+        -not -path '*/node_modules/*' \
+        -not -path '*/target/*' \
+        -not -path '*/.git/*' \
+        -not -path './spacedrive/*' \
+        -print0
+)
 
 if [ "$violations" -gt 0 ]; then
     echo ""
