@@ -29,11 +29,11 @@ WORKDIR /build
 # 1. Fetch and cache Rust dependencies.
 #    cargo fetch needs a valid target, so we create stubs that get replaced later.
 #    `--locked` prevents silent Cargo.lock drift between this stub build and the
-#    real build at step 5; without it, a lock touch between layers partially
-#    invalidates the dep cache.
-#    Cargo.toml declares no [lib] target, so we do NOT create an empty src/lib.rs
-#    — it would trigger auto-discovery of a phantom lib that gets thrown away on
-#    the real build.
+#    final `cargo build` below. Without it, a lock touch between layers
+#    partially invalidates the dep cache.
+#    Cargo.toml declares no [lib] target, so we do NOT create an empty src/lib.rs.
+#    Auto-discovery would build a phantom lib that gets thrown away on the real
+#    build.
 COPY Cargo.toml Cargo.lock ./
 COPY vendor/ vendor/
 RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs \
@@ -93,7 +93,7 @@ COPY interface/ interface/
 # hadolint ignore=DL3003
 RUN cd interface && bun run build
 
-# 5. Copy source and compile the real binary.
+# 6. Copy source and compile the real binary.
 #    build.rs is skipped (SPACEBOT_SKIP_FRONTEND_BUILD=1) since the
 #    frontend is already built above with the OpenCode embed included.
 #    prompts/ is needed for include_str! in src/prompts/text.rs.
@@ -111,8 +111,9 @@ COPY migrations/ migrations/
 COPY docs/ docs/
 COPY AGENTS.md README.md CHANGELOG.md ./
 COPY src/ src/
-# `cargo clean` on the builder stage was dead code — the whole stage is
-# discarded once the binary is copied into the runtime stage. Dropped.
+# The builder stage is discarded after the runtime stage's COPY --from=builder
+# pulls only the binary, so no cleanup of /build/target is needed here.
+# `--locked` mirrors the stub build at step 1 (see rationale there).
 RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --locked --features metrics \
     && mv /build/target/release/spacebot /usr/local/bin/spacebot
 

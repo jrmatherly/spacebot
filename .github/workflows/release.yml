@@ -103,10 +103,10 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
-        # Per-target cache; does not collide with ci.yml (which uses the default
-        # key). Tag-scoped release builds were previously cold every time —
-        # this brings the release matrix in line with the per-push CI caching.
-        # `cache-on-failure: false` is deliberate for release builds: a poisoned
+        # Cache scope: (release, target, toolchain). Other workflows that use
+        # Swatinem/rust-cache without an explicit `key:` land in a separate
+        # per-workflow scope, so entries from this job never share with ci.yml.
+        # `cache-on-failure: false` is deliberate for release builds. A poisoned
         # cache from a partial/OOM build should NOT persist into the next release.
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -236,6 +236,33 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: echo "pair=$(echo "$PLATFORM" | tr '/' '-')" >> "$GITHUB_OUTPUT"
 
+      - name: Warn if cache-to is disabled on non-tag build
+        # `cache-to` is gated on tag builds below. An empty `cache-to` is a
+        # valid buildx disable, so non-tag runs (e.g. manual workflow_dispatch
+        # from a branch) would silently skip cache writes. Surface it as a
+        # workflow annotation so operators see why the cache did not refresh.
+        # TODO: scheduled retention prune for spacebot-cache:* versions older
+        # than 90 days. Track via actions/delete-package-versions workflow.
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::warning title=Docker cache-to skipped::build-docker is running on non-tag ref '$REF'; cache-to is disabled to protect main's cache from branch pollution. The cache image will not be refreshed by this run."
+
+      - name: Check cache image availability
+        # Emit a notice when the registry cache image exists so operators can
+        # tell "cold because missing" from "cold because 429/auth/etc." The
+        # action's cache-from is best-effort and falls through silently on any
+        # pull failure; this step makes the state explicit before the build.
+        env:
+          CACHE_REF: ${{ env.REGISTRY }}/${{ github.repository_owner }}/spacebot-cache:build-${{ steps.platform.outputs.pair }}
+        run: |
+          if docker buildx imagetools inspect "$CACHE_REF" >/dev/null 2>&1; then
+            echo "::notice title=Docker cache hit::Cache image '$CACHE_REF' is available; warm cache expected."
+          else
+            echo "::notice title=Docker cache cold::Cache image '$CACHE_REF' not found (first run, deleted, or auth failure); this build will be cold."
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -244,14 +271,15 @@ jobs:
           push: true
           tags: ${{ env.IMAGE }}:build-${{ steps.platform.outputs.pair }}
           # Docker build cache lives in a dedicated GHCR image rather than the
-          # GHA cache service. Rationale: `type=gha,mode=max` on this Dockerfile
-          # exports ~5-6 GB per arch; two arches exceed the 10 GB per-repo GHA
-          # cache cap, so stable layers (apt, bun install, stub deps) were
-          # getting LRU-evicted mid-release. `type=registry` has no such cap.
-          # The sidecar image `spacebot-cache:<arch>` is not a release artifact;
-          # it lives at `ghcr.io/<owner>/spacebot-cache:{build-linux-amd64,arm64}`.
-          # `cache-to` is gated on tag builds so non-tag pushes (if any ever run
-          # this job) do not poison main's cache with branch-specific layers.
+          # GHA cache service. `type=gha,mode=max` on this Dockerfile is capped
+          # at 10 GB per repo. For a two-arch build that ceiling is the
+          # bottleneck in practice: stable layers (apt, bun install, stub deps)
+          # get evicted before the next release can reuse them. `type=registry`
+          # has no such cap. The sidecar image `spacebot-cache:<arch>` is not a
+          # release artifact; it lives at
+          # `ghcr.io/<owner>/spacebot-cache:{build-linux-amd64,arm64}`.
+          # `cache-to` is gated on tag builds so non-tag pushes (e.g. manual
+          # workflow_dispatch) do not poison main's cache with branch layers.
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/spacebot-cache:build-${{ steps.platform.outputs.pair }}
           cache-to: ${{ startsWith(github.ref, 'refs/tags/v') && format('type=registry,ref={0}/{1}/spacebot-cache:build-{2},mode=max', env.REGISTRY, github.repository_owner, steps.platform.outputs.pair) || '' }}
 
