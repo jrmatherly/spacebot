@@ -73,7 +73,7 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 - `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
-- `SPACEUI_MIGRATION.md` — Frontend migration changelog
+- `docs/design-docs/spaceui-migration.md` — Frontend migration changelog
 - `PROJECT_INDEX.md` — Module index and dependency map
 - `CONTRIBUTING.md` — Contributor guide
 - `CHANGELOG.md` — Release history

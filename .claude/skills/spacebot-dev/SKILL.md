@@ -552,7 +552,7 @@ When implementing from scratch, follow this order:
 5. **Messaging** — `messaging/traits.rs`, `manager.rs`, `webhook.rs`, `telegram.rs`, `discord.rs`
 6. **Hardening** — `secrets/`, `settings/`, leak detection, workspace path guards, circuit breakers
 
-## Frontend Architecture (from SPACEUI_MIGRATION.md)
+## Frontend Architecture (from docs/design-docs/spaceui-migration.md)
 
 ### Component Library
 Local UI primitives replaced by SpaceUI packages:

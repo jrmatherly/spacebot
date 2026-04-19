@@ -15,7 +15,7 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 
 | Area | Files |
 |------|-------|
-| Repo root | `README.md`, `AGENTS.md`, `PROJECT_INDEX.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `METRICS.md`, `RUST_STYLE_GUIDE.md`, `SPACEUI_MIGRATION.md` (8 files) |
+| Repo root | `README.md`, `AGENTS.md`, `PROJECT_INDEX.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `METRICS.md`, `RUST_STYLE_GUIDE.md` (7 files) |
 | Interface | `interface/DRY_VIOLATIONS.md` |
 | SpaceUI root | `spaceui/README.md`, `spaceui/CONTRIBUTING.md`, `spaceui/INTEGRATION.md` (the last is a reference for external consumers, not internal workflow — audit as such) |
 | Vendored Spacedrive policy files | `spacedrive/README.md`, `spacedrive/SECURITY.md`, `spacedrive/CONTRIBUTING.md`, `spacedrive/CODE_OF_CONDUCT.md`, `spacedrive/AGENTS.md` — these 5 root-level files are IN scope because they've been reframed as Spacebot-owned policy documents for the vendored subtree (banners, clone URLs, issue/PR routing pointed at `jrmatherly/spacebot`). The rest of `spacedrive/` (crates/, core/, apps/, docs/, extensions/, adapters/, schemas/) remains out of scope as upstream-maintained source. |
@@ -176,7 +176,7 @@ For each target file, don't just read. Compare against Step 1 evidence. Specific
 - Each number gets a shell command to verify. Report any mismatch.
 
 **Migration / audit doc staleness**
-- `SPACEUI_MIGRATION.md`, `TAILWIND-V4-MIGRATION.md`, `COMPONENT-AUDIT.md`, `SHARED-UI-STRATEGY.md`
+- `docs/design-docs/spaceui-migration.md`, `spaceui/docs/TAILWIND-V4-MIGRATION.md`, `spaceui/docs/COMPONENT-AUDIT.md`, `spaceui/docs/SHARED-UI-STRATEGY.md`
 - If status says "in progress" for an area: is there a PR that closed it? `git log --grep="tailwind" --grep="migration"`
 - If it references phases/steps: which are complete per commits, which per doc?
 
@@ -261,7 +261,7 @@ Apply only what's approved. For changelog-related fixes in `spaceui/`, remember 
 - "STILL PENDING" items that grep-verify as gone → move to FIXED ✅ with a commit SHA reference
 - If the plan is fundamentally complete (everything in FIXED), suggest archival (`interface/docs/archive/` or deletion with a commit note)
 
-### Migration docs (SPACEUI_MIGRATION.md, TAILWIND-V4-MIGRATION.md)
+### Migration docs (docs/design-docs/spaceui-migration.md, spaceui/docs/TAILWIND-V4-MIGRATION.md)
 
 - These are narrative docs. Don't rewrite them wholesale. Update only the **Status** header and completion checklist items.
 - If migration is fully done, suggest moving to `docs/design-docs/` or `docs/archive/` as historical record.
