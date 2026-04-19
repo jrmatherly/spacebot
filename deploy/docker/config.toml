@@ -1,0 +1,30 @@
+# Spacebot Docker Compose config.
+#
+# Mounted read-only at /etc/spacebot/config.toml and passed to the daemon
+# via `-c /etc/spacebot/config.toml`. See deploy/docker/docker-compose.yml
+# `spacebot` and `spacebot-build` service command blocks.
+#
+# This file enables the metrics endpoint so the observability profile's
+# Prometheus scrape returns real data. Without this config the daemon
+# defaults to [metrics].enabled = false (src/config/toml_schema.rs:129),
+# which makes the Prometheus dashboard silently empty. That's a footgun when
+# the observability profile is supposed to demonstrate the metrics pipeline.
+#
+# Everything else uses the daemon's built-in defaults; add provider
+# configuration, agent topology, etc. by creating a local override file
+# and mounting it instead of this one, or by setting `SPACEBOT_DIR=/data`
+# (already set in compose) and dropping a larger config.toml into the
+# spacebot-data volume.
+
+[api]
+host = "0.0.0.0"
+port = 19898
+
+# Metrics endpoint for the `observability` profile's Prometheus to scrape.
+# Port 9090 must match the Service port and docker-compose.yml `ports:` line.
+# bind = "0.0.0.0" lets Prometheus (in a separate container on the same
+# spacebot-net bridge) reach the metrics endpoint via the service DNS name.
+[metrics]
+enabled = true
+port = 9090
+bind = "0.0.0.0"

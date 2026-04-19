@@ -7,6 +7,12 @@ scrape_configs:
     static_configs:
       - targets: [spacebot:9090]
 
+  # Grafana Alloy's own metrics. Lets the Grafana dashboard show pipeline
+  # health (received spans, export failures) alongside SpaceBot metrics.
+  - job_name: alloy
+    static_configs:
+      - targets: [alloy:12345]
+
   # Spacedrive Prometheus scrape: commented out until sd-server exports
   # Prometheus metrics. Re-enable when self-reliance doc's "Integration
   # substrate grows sharply on first call" section ships metric naming.

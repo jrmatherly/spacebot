@@ -1,0 +1,42 @@
+// Grafana Alloy config for SpaceBot's `observability` Compose profile.
+//
+// Receives OTLP traces on ports 4317 (gRPC) and 4318 (HTTP), and writes
+// them to Alloy's stdout. This is a developer-loop configuration: it
+// proves the OTLP pipeline works end-to-end and lets the operator see
+// traces by tailing `docker compose logs alloy`.
+//
+// For a richer local setup, add an otlphttp exporter pointing at a local
+// Tempo instance; or run the cluster's exact Alloy config for parity.
+// The production cluster forwards traces to Tempo; emulating that
+// locally is a nice-to-have that this file intentionally omits to keep
+// the observability profile small.
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces  = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    traces  = [otelcol.exporter.debug.default.input]
+    metrics = [otelcol.exporter.debug.default.input]
+    logs    = [otelcol.exporter.debug.default.input]
+  }
+}
+
+// Debug exporter prints span summaries to Alloy's stdout. Operators
+// viewing `docker compose logs alloy` see each received span. Swap for
+// otelcol.exporter.otlphttp pointing at a Tempo instance if you need
+// a real queryable backend.
+otelcol.exporter.debug "default" {
+  verbosity = "normal"
+}

@@ -30,7 +30,7 @@ Visit `http://localhost:19898` once `/api/health` returns 200.
 | `build` | `just compose-up-build` | Spacebot rebuilt from local source (mutually exclusive with `default`) |
 | `spacedrive` | `just compose-up-spacedrive` | Spacebot + local Spacedrive for integration testing |
 | `proxy` | Layered with any profile | Caddy with local TLS at `spacebot.localhost` |
-| `observability` | `just compose-up-observability` | Prometheus + Grafana with pre-wired dashboard |
+| `observability` | `just compose-up-observability` | Prometheus + Grafana with pre-wired dashboard + Grafana Alloy (OTLP collector on 4317 gRPC / 4318 HTTP) |
 | `tooling` | Layered | dbtools (SQLite inspection) + mcp-stub (test MCP server) |
 
 Full stack: `just compose-up-all`
@@ -45,6 +45,10 @@ See `.env.example` for the full list. Required:
 - `SPACEBOT_IMAGE_DIGEST` (digest-pinned; update per release)
 - `SD_AUTH` if the `spacedrive` profile is active (format: `user:password`)
 - `GF_ADMIN_USER` + `GF_ADMIN_PASSWORD` if the `observability` profile is active
+
+Optional:
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — set to `http://alloy:4317` when the `observability` profile is active to send OTLP traces from SpaceBot to the local Grafana Alloy instance. Defaults to empty (tracing disabled). Port 4317 is OTLP gRPC.
+- `OTEL_SERVICE_NAME` — service name attached to traces. Defaults to `spacebot`.
 
 ## Proxy profile: trust the local CA
 
@@ -83,7 +87,10 @@ Combining them produces a port collision on 19898 (both services would claim the
 | `/api/health` times out | Wait 60s on cold pull; check `just compose-logs` |
 | `bun install` failures in spacedrive build | Verify `spacedrive/.dockerignore` exists |
 | 401 from Spacedrive health | Confirm `SD_AUTH` is set in `.env` |
-| Grafana empty | Wait for Prometheus healthcheck; check `depends_on` order |
+| Grafana empty of SpaceBot metrics | `config.toml` must bind-mount at `/etc/spacebot/config.toml` with `[metrics] enabled = true`. The shipped `./config.toml` does this automatically; verify the mount exists via `docker compose exec spacebot ls /etc/spacebot/`. |
+| Grafana empty of traces | OTLP is off by default. Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317` in `.env` and `docker compose restart spacebot`. |
+| `alloy` logs show no spans | Confirm SpaceBot has `OTEL_EXPORTER_OTLP_ENDPOINT` set; check Alloy's UI at `http://localhost:12345` for pipeline health. |
+| First browser-tool call hangs for ~30s | SpaceBot lazy-downloads Chromium (~200 MB) on first `browser_*` tool invocation rather than bundling it. Subsequent calls use the cached binary under `/data/chrome_cache` (K8s) or the `spacebot-data` volume (compose). Expected on first use. |
 | Port 19898 already in use | Stop any other spacebot, or change port in `docker-compose.yml` |
 
 ## Related
