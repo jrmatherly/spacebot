@@ -74,6 +74,8 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 - `AGENTS.md` — Architecture implementation guide for coding agents
 - `METRICS.md` — Prometheus metrics reference
 - `docs/design-docs/spaceui-migration.md` — Frontend migration changelog
+- `docs/design-docs/preset-authoring.md` — Guide for adding new agent presets (4-file structure, meta.toml schema, voice rules)
+- `docs/design-docs/agent-factory.md` — Factory flow, preset system, and the Prompt Authoring section covering the Jinja2 prompt tree
 - `PROJECT_INDEX.md` — Module index and dependency map
 - `CONTRIBUTING.md` — Contributor guide
 - `CHANGELOG.md` — Release history

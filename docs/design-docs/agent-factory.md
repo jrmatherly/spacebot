@@ -500,3 +500,121 @@ Agent: [reads current SOUL.md → rewrites with casual voice → factory_update_
 5. **Memory seeding:** Should the factory optionally copy a subset of the main agent's memories to the new agent?
 
 6. **Structured content in other adapters:** Discord/Slack both support rich embeds and buttons. Map structured types to platform-native components in V2?
+
+---
+
+## Prompt Authoring
+
+> Added 2026-04-18 as part of W4-PR4. Complements the preset-authoring guide at `docs/design-docs/preset-authoring.md`. Covers the Jinja2 prompt tree that ships alongside the factory: what the directories mean, how template keys resolve to files, the tool-description paired-files rule, and where agent-level vs channel-level prompts belong.
+
+### Directory layout
+
+```
+prompts/en/
+  branch.md.j2                   # Branch process system prompt
+  channel.md.j2                  # Channel process system prompt
+  compactor.md.j2                # Compactor process system prompt
+  cortex.md.j2                   # Cortex process system prompt
+  cortex_bulletin.md.j2          # Cortex subsystem prompts
+  cortex_chat.md.j2
+  cortex_daily_summary.md.j2
+  cortex_intraday_synthesis.md.j2
+  cortex_knowledge_synthesis.md.j2
+  cortex_profile.md.j2
+  factory.md.j2                  # Factory process system prompt
+  ingestion.md.j2                # Channel ingestion prompt
+  memory_persistence.md.j2       # Memory persistence contract
+  worker.md.j2                   # Worker process system prompt
+
+  adapters/                      # Messaging-adapter-specific guidance
+    discord.md.j2
+    email.md.j2
+    signal.md.j2
+    slack.md.j2
+    telegram.md.j2
+
+  schedulers/                    # Scheduler-specific guidance
+    cron.md.j2                   # (was prompts/en/adapters/cron.md.j2 before PR #65)
+
+  fragments/                     # Reusable prompt fragments
+    worker_capabilities.md.j2
+    conversation_context.md.j2
+    ...
+    system/                      # System-injected fragments
+      truncation.md.j2
+      worker_overflow.md.j2
+      ...
+
+  tools/                         # LLM-visible tool descriptions (paired with src/tools/)
+    branch_description.md.j2
+    channel_recall_description.md.j2
+    ...
+```
+
+### Template keys
+
+Every prompt file is registered in two places:
+
+1. `src/prompts/text.rs`: an `include_str!` match arm that loads the file at compile time into the `text::get(key)` function.
+2. `src/prompts/engine.rs`: a `env.add_template(key, text::get(key))` call that registers the loaded content with the MiniJinja environment.
+
+The template `key` is the file path under `prompts/en/` with the `.md.j2` extension stripped. For example:
+
+- `prompts/en/worker.md.j2` → key `"worker"`
+- `prompts/en/adapters/slack.md.j2` → key `"adapters/slack"`
+- `prompts/en/fragments/worker_capabilities.md.j2` → key `"fragments/worker_capabilities"`
+
+A prompt file that is not registered in both places fails to render at runtime. The `system_fragment_templates_are_non_empty` test (added in W1-PR1) walks `prompts/en/fragments/system/` on disk and asserts each file is registered; extend or mirror that pattern when adding new categories.
+
+### `adapters/` vs `schedulers/`
+
+The subdirectory a prompt lives in encodes its trigger model:
+
+- `adapters/` holds prompts for channel kinds that implement the `Messaging` trait (Discord, Email, Signal, Slack, Telegram, etc.). These channels are message-triggered: a user sends something, the agent responds.
+- `schedulers/` holds prompts for channel kinds that are time-triggered or event-triggered rather than message-triggered. Cron is the only current resident; future schedulers (one-shot, event-driven) would land here.
+
+The `render_channel_adapter_prompt` dispatcher at `src/prompts/engine.rs` maps channel-kind strings (`"discord"`, `"cron"`, `"slack"`, etc.) to template keys. The public dispatch string is stable across the relocation; the internal template key is what differs.
+
+Per W4-PR1.5 (PR #65), cron moved from `adapters/cron` to `schedulers/cron` to reflect that cron is not a messaging adapter. A future channel kind that is time-triggered or event-triggered should live under `schedulers/`, not `adapters/`.
+
+### Tool-description paired files
+
+Every LLM-callable tool under `src/tools/<name>.rs` pairs with a description template at `prompts/en/tools/<name>_description.md.j2`. The Rust tool loads its description via `crate::prompts::text::get("tools/<name>")` at definition time.
+
+The paired-files rule is load-bearing, documented in `.claude/rules/tool-authoring.md`. A tool without a description template renders with an empty description, which demonstrably degrades LLM tool-selection accuracy. A description template without a corresponding tool is dead code that bloats the binary.
+
+See `.claude/rules/tool-authoring.md` for the full Rust tool shape. The description-file location and lookup convention match the tool name 1:1.
+
+### Fragments
+
+Prompts can interpolate reusable fragments via Jinja2 `{% include %}`. Fragments under `prompts/en/fragments/` are the reusable pieces; fragments under `prompts/en/fragments/system/` are system-injected (emitted programmatically when an invariant is violated, e.g. truncation or worker overflow).
+
+Two rules for authoring fragments:
+
+- Every fragment file must be non-empty and registered in both `text.rs` and `engine.rs`. The `system_fragment_templates_are_non_empty` test enforces this for the `system/` subdirectory; the same discipline applies to the broader `fragments/` tree.
+- Fragments that loop over context variables (for example `{% for result in results %}`) must not be rendered via `render_static`. They need a render path that supplies the context; see `render_system_memory_persistence_contract_retry` for the existing pattern.
+
+### Writing-guide exemption
+
+`.claude/rules/writing-guide.md` bans em-dashes in prose. Per W4-PR5 (PR #64), prompt templates under `prompts/**/*.md.j2` are exempt. The rule's stated motivation (credibility for human readers) does not apply to LLM consumption at inference time.
+
+The exemption is narrow: only prompt templates. Other writing-guide rules (banned phrases, generic improvement claims, words to avoid) continue to apply. Documentation under `docs/`, skill files under `.claude/skills/`, rule files under `.claude/rules/`, and design notes are **not** exempt.
+
+### Adding a new prompt
+
+1. Create the `.md.j2` file under the appropriate `prompts/en/` subdirectory.
+2. Add the `include_str!` match arm in `src/prompts/text.rs`, keyed by the stripped-extension path.
+3. Add the `env.add_template(key, text::get(key))` call in `src/prompts/engine.rs`.
+4. If the prompt is dispatched by channel kind, add the match arm to `render_channel_adapter_prompt` with the public dispatch string mapping to the new template key.
+5. Add a dispatcher test mirroring the `render_channel_adapter_prompt_handles_cron_kind` pattern: assert dispatch resolves, content contains a platform-specific marker, and the template is registered under the expected key.
+6. Run `just gate-pr`. The `system_fragment_templates_are_non_empty` test plus `cargo check --all-targets` catch the common drift modes.
+
+### Anti-patterns
+
+Things that look like prompts but are not:
+
+- **User-facing documentation in `prompts/en/`.** User-facing docs live under `docs/content/` or `docs/design-docs/`. A prompt that reads like an operator manual is probably misfiled.
+- **Tool documentation outside `prompts/en/tools/`.** The paired-files rule is strict; tool descriptions belong there, not in the calling agent's main prompt.
+- **Preset content leaking into channel prompts.** `channel.md.j2` sets behavior for all channels; preset files in `presets/` set behavior per agent. A channel prompt that encodes preset-specific personality breaks the separation.
+- **Hardcoded constants that duplicate a template.** The `memory_persistence_contract_retry` bug surfaced by W1-PR1 is the canonical example: the template existed but was unregistered, and a hardcoded fallback string in `src/agent/branch.rs` masked the misregistration until the non-empty-fragments test went in. When a new prompt gets a defensive fallback, document why and keep them byte-identical, or drop the fallback.
+
