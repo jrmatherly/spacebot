@@ -93,7 +93,11 @@ libc = "0.2"
 ignore = "0.4"
 
 # Discord
-serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["gateway", "model", "cache", "chrono", "rustls_backend"] }
+# Pinned to a specific commit on serenity's `next` branch. Using `branch = "next"`
+# causes `cargo update` to re-fetch on every lockfile check and invalidates
+# downstream incremental cache when the branch tip moves. Bump the rev manually
+# when we want upstream changes.
+serenity = { git = "https://github.com/serenity-rs/serenity", rev = "1cbceb275b10566145b0bdca1c57da9502079a6a", default-features = false, features = ["gateway", "model", "cache", "chrono", "rustls_backend"] }
 async-trait = "0.1"
 
 # Slack
@@ -223,3 +227,16 @@ opt-level = 1
 [profile.dev.build-override]
 opt-level = 3
 codegen-units = 1
+
+# Test profile mirrors dev's tuning: line-tables-only is plenty for panic
+# backtraces, and per-dep opt-level=1 speeds `cargo test --tests --no-run`
+# (the dominant step in gate-pr, ~30-60s warm cache).
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+opt-level = 1
+
+# Benchmarks need real optimization — inherit the release pipeline wholesale.
+[profile.bench]
+inherits = "release"

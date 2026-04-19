@@ -18,6 +18,11 @@ check-all:
 clippy-all:
     cargo clippy --all-targets
 
+# Narrowest useful check — library only, no deps recompile. For inner-loop
+# iteration (active editing). Run `just gate-pr-fast` before committing.
+check-fast:
+    cargo clippy --lib --no-deps
+
 test-lib:
     cargo test --lib
 
