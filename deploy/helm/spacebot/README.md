@@ -28,9 +28,10 @@ helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
 The chart assumes the cluster already provides:
 
 - A SOPS-encrypted secret named `spacebot-secret` supplying the LLM provider and messaging adapter API keys Spacebot reads from environment variables. The cluster repo's `secret.sops.yaml.j2` creates it.
-- A `ConfigMap` named `spacebot-config` if you want Stakater Reloader to restart the pod on config changes (optional).
+- A `ConfigMap` named `spacebot-config` carrying `config.toml` as a data key. Required: the container mounts it read-only at `/etc/spacebot/` and passes `-c /etc/spacebot/config.toml` to the daemon. See the G3 research finding in `/Users/jason/dev/ai-k8s/talos-ai-cluster/.scratchpad/2026-04-18-k8s-G3-config-path-metrics.md` for the ConfigMap shape and the `[metrics]`, `[api]`, `[llm.provider.*]` sections that matter at cluster scope.
 - A `StorageClass` capable of fulfilling a 5 Gi `ReadWriteOnce` PVC.
 - Ingress configured externally (the cluster repo provisions a `HTTPRoute` at `httproute.yaml.j2`; this chart does not provision ingress).
+- Optional: an Envoy `SecurityPolicy` gating the `HTTPRoute` for Entra SSO. When the ConfigMap omits `[api].auth_token`, the daemon disables its bearer-auth middleware and passes every request through, leaving Envoy as the sole authentication layer. See G1 research for the code path at `src/api/server.rs:351-353`.
 
 ## Install (local single-node cluster)
 
@@ -70,11 +71,16 @@ helm template ... | kubeconform -strict -summary
 
 - Image: `ghcr.io/jrmatherly/spacebot:v0.4.1` (override via cluster `HelmRelease` per release).
 - Controller: `Deployment`, `replicas: 1`, `strategy: Recreate`. Embedded databases (SQLite, LanceDB, redb) use file-level locking, so multi-replica isn't supported and `RollingUpdate` would deadlock on the RWO PVC.
-- Ports: `19898` (HTTP API + UI), `9090` (Prometheus metrics, feature-gated).
-- Volume: single `persistentVolumeClaim` at `/data` holding all three databases.
+- Container args: `["-c", "/etc/spacebot/config.toml", "start", "-f"]`. Foreground mode is required in containers; the `-c` flag decouples the config file from the data PVC so the ConfigMap can mount read-only at its own path, preserving Reloader hot-reload semantics that a `subPath` mount would break.
+- Ports: `19898` (HTTP API + UI), `9090` (Prometheus metrics; emitted when the cluster ConfigMap sets `[metrics].enabled = true`).
+- Volumes:
+  - `/data` — single `persistentVolumeClaim` (5 Gi, `ReadWriteOnce`) holding SQLite + LanceDB + redb.
+  - `/etc/spacebot` — ConfigMap mount (read-only) for `config.toml`. Directory mount, not `subPath`.
+  - `/tmp` — 100 Mi `emptyDir` for bubblewrap temp dirs and libraries expecting a writable `/tmp`.
+  - `/data/chrome_cache` — 500 Mi `emptyDir` for the browser tool's lazy-downloaded Chromium binary.
 - Probes: liveness / readiness / startup all hit `/api/health`. Startup gives 150 s grace for SQLite migrations.
-- Resources: 250 m / 256 Mi requests, 1000 m / 1 Gi limits (matches the fly.io baseline).
-- Security: non-root (UID 1000), `fsGroup: 1000`.
+- Resources: 250 m / 512 Mi requests, 2000 m / 2 Gi limits. Sized for LanceDB + FastEmbed + Chromium + spawned workers; tune down if the browser tool is disabled and the agent count is small.
+- Security: non-root (UID 1000), `fsGroup: 1000`, `readOnlyRootFilesystem: true`, `seccompProfile: RuntimeDefault`, `capabilities: drop: ["ALL"]`, `allowPrivilegeEscalation: false`. Restricted PodSecurity baseline compliance. `RuntimeDefault` is compatible with bubblewrap's `clone3`/`CLONE_NEWUSER` requirement when `[sandbox].mode = enabled` is flipped on (see G4 research; default-disabled in v1.0).
 - Stakater Reloader annotations so pods restart when `spacebot-secret` or `spacebot-config` change.
 - `ServiceMonitor` for Prometheus scraping at `/metrics`.
 

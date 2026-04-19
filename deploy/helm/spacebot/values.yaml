@@ -3,8 +3,10 @@
 # This file is the authoritative source of Spacebot's Kubernetes deployment
 # configuration. The Talos cluster repo (ai-k8s/talos-ai-cluster) consumes
 # it via a Flux HelmRelease that points at app-template and references these
-# values. Ingress (HTTPRoute), secrets (SOPS-encrypted), and network policies
-# (CiliumNetworkPolicy) are cluster-repo concerns and live there, not here.
+# values. Ingress (HTTPRoute), secrets (SOPS-encrypted), the ConfigMap
+# carrying spacebot.toml, and network policies (CiliumNetworkPolicy) are
+# cluster-repo concerns and live there, not here. This file references those
+# resources by name (spacebot-secret, spacebot-config).
 #
 # To install against a running cluster (local or otherwise):
 #   helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
@@ -24,7 +26,14 @@ defaultPodOptions:
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
+    runAsGroup: 1000
     fsGroup: 1000
+    # RuntimeDefault is compatible with bubblewrap's clone3/CLONE_NEWUSER
+    # requirement. See docs/design-docs/desktop-sidecar.md and the cluster
+    # research at .scratchpad/2026-04-18-k8s-G4-worker-sandbox-k8s.md for
+    # the bwrap preflight verification procedure.
+    seccompProfile:
+      type: RuntimeDefault
   # Uncomment if the GHCR image becomes private. The `ghcr-pull-secret`
   # already exists in the cluster's `ai` namespace (see cluster repo:
   # templates/config/kubernetes/apps/ai/ghcr-pull-secret.sops.yaml.j2).
@@ -51,16 +60,44 @@ controllers:
           repository: ghcr.io/jrmatherly/spacebot
           tag: v0.4.1  # Mirrors Cargo.toml version; no matching git tag exists in this repo. Overridden per release by the cluster repo's HelmRelease.
           pullPolicy: IfNotPresent
+        # Pass the config path explicitly. Decouples the TOML from the data
+        # PVC so the ConfigMap can be mounted read-only at a separate path,
+        # which preserves Stakater Reloader's pod-rollout-on-ConfigMap-change
+        # semantics. `start -f` runs the daemon in the foreground; required
+        # in containers since the Rust binary daemonizes by default.
+        # See .scratchpad/2026-04-18-k8s-G3-config-path-metrics.md.
+        args:
+          - "-c"
+          - "/etc/spacebot/config.toml"
+          - "start"
+          - "-f"
         env:
           SPACEBOT_DIR: /data
+          # "docker" is the safe default. "hosted" enables per-tenant agent
+          # limits via hosted_agent_limit() in src/api/agents.rs; flip only
+          # if the cluster is serving multiple isolated users on one instance.
           SPACEBOT_DEPLOYMENT: docker
           RUST_LOG: info
+          # Uncomment to enable OTLP tracing. SpaceBot compiles OTLP support
+          # unconditionally (no feature flag). Setting the endpoint activates
+          # it. See .scratchpad/2026-04-18-k8s-G6-observability-features.md.
+          # OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.observability.svc.cluster.local:4317
+          # OTEL_SERVICE_NAME: spacebot
         # API keys and messaging adapter credentials come from SOPS-encrypted
         # secret in the cluster repo. The name here must match what the
         # cluster repo's secret.sops.yaml.j2 creates.
         envFrom:
           - secretRef:
               name: spacebot-secret
+        # Restricted PodSecurity baseline compliance. readOnlyRootFilesystem
+        # is safe when paired with emptyDir mounts for /tmp (bwrap temp dirs)
+        # and /data/chrome_cache (browser tool); see the persistence: block
+        # below and .scratchpad/2026-04-18-k8s-G5-readonly-rootfs.md.
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         probes:
           liveness:
             enabled: true
@@ -95,15 +132,19 @@ controllers:
               periodSeconds: 5
               failureThreshold: 30
               timeoutSeconds: 5
-        # Conservative sizing matching fly.io profile (shared-cpu-2x / 1gb).
-        # Adjust up if the agent count grows or autonomous workers multiply.
+        # Sized for a SpaceBot instance running LanceDB (vector store) plus
+        # the FastEmbed embedding model, with headroom for Chromium (browser
+        # tool) and spawned workers. The prior profile (256Mi / 1Gi) was the
+        # Fly.io shared-cpu-2x baseline; Kubernetes workloads with sandboxed
+        # workers benefit from more headroom. Tune down if the cluster is
+        # memory-constrained and the browser tool is disabled.
         resources:
           requests:
             cpu: 250m
-            memory: 256Mi
+            memory: 512Mi
           limits:
-            cpu: 1000m
-            memory: 1Gi
+            cpu: 2000m
+            memory: 2Gi
 
 service:
   app:
@@ -113,8 +154,10 @@ service:
       http:
         port: 19898
         protocol: HTTP
-      # Prometheus metrics (feature-gated in the binary; leave the port open
-      # in the Service. ServiceMonitor won't scrape if metrics are disabled.)
+      # Prometheus metrics. Compiled into the binary (--features metrics in
+      # the production Dockerfile). ServiceMonitor only scrapes when the
+      # ConfigMap sets [metrics].enabled = true; see the cluster repo's
+      # spacebot-config ConfigMap.
       metrics:
         port: 9090
         protocol: HTTP
@@ -131,9 +174,47 @@ persistence:
     globalMounts:
       - path: /data
 
-# Prometheus Operator ServiceMonitor. Only meaningful if the binary is
-# built with the `metrics` feature. app-template renders this into the
-# monitoring namespace only when the CRD is present.
+  # ConfigMap holding spacebot.toml, owned by the cluster repo's
+  # configmap.yaml.j2. Directory mount (not subPath) so Reloader triggers
+  # a pod rollout when the ConfigMap changes. The daemon reads the file
+  # via the -c /etc/spacebot/config.toml argument (see container args).
+  config:
+    enabled: true
+    type: configMap
+    name: spacebot-config
+    globalMounts:
+      - path: /etc/spacebot
+        readOnly: true
+
+  # Writable /tmp for bubblewrap temp dirs and any library that expects a
+  # writable /tmp. Required because readOnlyRootFilesystem: true is set on
+  # the container. Small sizeLimit prevents runaway tmp growth from
+  # evicting the pod.
+  tmp:
+    enabled: true
+    type: emptyDir
+    sizeLimit: 100Mi
+    globalMounts:
+      - path: /tmp
+
+  # Chromium download target for the browser tool. SpaceBot lazy-downloads
+  # Chromium on first browser_tool invocation rather than bundling it in
+  # the image (~200 MB savings at the cost of a warm-up latency). The PVC
+  # at /data is RWO and could be reused, but keeping the cache in its own
+  # emptyDir makes pod restart semantics cleaner (Chrome cache is
+  # regenerable; real user data on the PVC must not be).
+  chrome-cache:
+    enabled: true
+    type: emptyDir
+    sizeLimit: 500Mi
+    globalMounts:
+      - path: /data/chrome_cache
+
+# Prometheus Operator ServiceMonitor. Only meaningful when the cluster
+# repo's spacebot-config ConfigMap sets [metrics].enabled = true. The
+# binary is built with --features metrics (confirmed in the production
+# Dockerfile). app-template renders this into the monitoring namespace
+# only when the CRD is present.
 serviceMonitor:
   app:
     enabled: true

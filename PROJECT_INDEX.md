@@ -34,7 +34,7 @@ spacebot/
 ├── desktop/                        (Tauri 2 app)
 ├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (9 agent persona presets)
-├── prompts/                        (88 Jinja2 system prompt templates)
+├── prompts/                        (91 Jinja2 system prompt templates)
 ├── scripts/                        (7 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)

@@ -1,9 +1,11 @@
 # Local-development overrides for Spacebot Helm values.
 #
 # Layered on top of values.yaml for single-node clusters (minikube, kind,
-# k3d, Talos-in-Docker). Replaces the PVC with an emptyDir so you don't
-# need a StorageClass, disables the ServiceMonitor (no Prometheus Operator
-# in most local setups), and relaxes probes for slower boot on laptops.
+# k3d, Talos-in-Docker). Replaces the data PVC with an emptyDir so you don't
+# need a StorageClass, disables the ConfigMap mount (no cluster-side
+# configmap.yaml.j2 to render against), disables the ServiceMonitor (no
+# Prometheus Operator in most local setups), and relaxes probes for slower
+# boot on laptops.
 #
 # Install:
 #   helm install spacebot oci://ghcr.io/bjw-s-labs/helm/app-template \
@@ -23,6 +25,13 @@ controllers:
   spacebot:
     containers:
       app:
+        # Local dev has no ConfigMap backing spacebot.toml. Drop the
+        # -c /etc/spacebot/config.toml argument and let the daemon fall
+        # back to its default instance_dir resolution ($SPACEBOT_DIR then
+        # ~/.spacebot). Keep foreground mode.
+        args:
+          - "start"
+          - "-f"
         # Local dev runs without the secret-backed API keys; keep only
         # the baseline environment. Remove envFrom so the pod doesn't wait
         # for a secret that was never created.
@@ -43,6 +52,15 @@ persistence:
     # restart. Fine for smoke tests; use PVC values for anything persistent.
     enabled: true
     type: emptyDir
+
+  # Disable the ConfigMap mount; there is no cluster-side ConfigMap in
+  # local testing. The daemon's -c flag is removed in the args override
+  # above so the daemon won't try to read from /etc/spacebot/.
+  config:
+    enabled: false
+
+  # /tmp and chrome-cache emptyDirs are still needed because the container
+  # retains readOnlyRootFilesystem: true from values.yaml. No override.
 
 serviceMonitor:
   app:
