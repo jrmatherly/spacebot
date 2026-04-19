@@ -66,7 +66,14 @@ controllers:
         # semantics. `start -f` runs the daemon in the foreground; required
         # in containers since the Rust binary daemonizes by default.
         # See .scratchpad/2026-04-18-k8s-G3-config-path-metrics.md.
+        #
+        # The first element MUST be "spacebot" because the Dockerfile
+        # entrypoint is docker-entrypoint.sh which ends with `exec "$@"`.
+        # bjw-s app-template's `args:` maps to the container spec's `args`
+        # field, which fully REPLACES the Dockerfile CMD. Without the
+        # binary name the entrypoint tries to exec "-c" as a program.
         args:
+          - "spacebot"
           - "-c"
           - "/etc/spacebot/config.toml"
           - "start"
@@ -203,6 +210,19 @@ persistence:
   # at /data is RWO and could be reused, but keeping the cache in its own
   # emptyDir makes pod restart semantics cleaner (Chrome cache is
   # regenerable; real user data on the PVC must not be).
+  #
+  # Path: /data/chrome_cache matches the daemon's default
+  # `chrome_cache_dir = instance_dir.join("chrome_cache")` at
+  # src/config/load.rs:944. When SPACEBOT_DIR=/data, the resolved
+  # path is /data/chrome_cache. Do NOT rename this mount without also
+  # overriding `[browser].chrome_cache_dir` in the ConfigMap.
+  #
+  # Migration note for upgraders: pods before this PR wrote Chromium
+  # into the PVC at /data/chrome_cache. On first pod start after
+  # upgrading, the emptyDir here shadows whatever the PVC had at that
+  # subpath. The PVC's cache becomes unreachable and a fresh download
+  # starts on first browser tool use. The download is idempotent and
+  # takes ~30 seconds. No data loss; cache is regenerable by design.
   chrome-cache:
     enabled: true
     type: emptyDir

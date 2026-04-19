@@ -90,6 +90,7 @@ Combining them produces a port collision on 19898 (both services would claim the
 | Grafana empty of SpaceBot metrics | `config.toml` must bind-mount at `/etc/spacebot/config.toml` with `[metrics] enabled = true`. The shipped `./config.toml` does this automatically; verify the mount exists via `docker compose exec spacebot ls /etc/spacebot/`. |
 | Grafana empty of traces | OTLP is off by default. Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317` in `.env` and `docker compose restart spacebot`. |
 | `alloy` logs show no spans | Confirm SpaceBot has `OTEL_EXPORTER_OTLP_ENDPOINT` set; check Alloy's UI at `http://localhost:12345` for pipeline health. |
+| SpaceBot log spam "failed to export OTLP traces" after switching profiles | `OTEL_EXPORTER_OTLP_ENDPOINT` is still set in `.env` but Alloy is no longer running. Comment out the line in `.env` and `docker compose restart spacebot`, or re-run with the `observability` profile. |
 | First browser-tool call hangs for ~30s | SpaceBot lazy-downloads Chromium (~200 MB) on first `browser_*` tool invocation rather than bundling it. Subsequent calls use the cached binary under `/data/chrome_cache` (K8s) or the `spacebot-data` volume (compose). Expected on first use. |
 | Port 19898 already in use | Stop any other spacebot, or change port in `docker-compose.yml` |
 

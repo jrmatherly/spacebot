@@ -5,6 +5,14 @@
 // proves the OTLP pipeline works end-to-end and lets the operator see
 // traces by tailing `docker compose logs alloy`.
 //
+// Traces only. SpaceBot emits OTLP traces today; it does NOT emit OTLP
+// metrics (those go through the Prometheus scrape path at :9090) or
+// OTLP logs (those go to stdout/stderr for `docker compose logs`).
+// If SpaceBot starts emitting OTLP metrics or logs, add the
+// corresponding `metrics`/`logs` lines to the receiver + processor +
+// exporter output blocks below. Until then, wiring unused pipelines
+// would create a false expectation for future maintainers.
+//
 // For a richer local setup, add an otlphttp exporter pointing at a local
 // Tempo instance; or run the cluster's exact Alloy config for parity.
 // The production cluster forwards traces to Tempo; emulating that
@@ -19,17 +27,13 @@ otelcol.receiver.otlp "default" {
     endpoint = "0.0.0.0:4318"
   }
   output {
-    traces  = [otelcol.processor.batch.default.input]
-    metrics = [otelcol.processor.batch.default.input]
-    logs    = [otelcol.processor.batch.default.input]
+    traces = [otelcol.processor.batch.default.input]
   }
 }
 
 otelcol.processor.batch "default" {
   output {
-    traces  = [otelcol.exporter.debug.default.input]
-    metrics = [otelcol.exporter.debug.default.input]
-    logs    = [otelcol.exporter.debug.default.input]
+    traces = [otelcol.exporter.debug.default.input]
   }
 }
 
