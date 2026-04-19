@@ -552,7 +552,7 @@ When implementing from scratch, follow this order:
 5. **Messaging** — `messaging/traits.rs`, `manager.rs`, `webhook.rs`, `telegram.rs`, `discord.rs`
 6. **Hardening** — `secrets/`, `settings/`, leak detection, workspace path guards, circuit breakers
 
-## Frontend Architecture (from SPACEUI_MIGRATION.md)
+## Frontend Architecture (from docs/design-docs/spaceui-migration.md)
 
 ### Component Library
 Local UI primitives replaced by SpaceUI packages:
@@ -664,3 +664,9 @@ cd docs && bun install && bun run dev         # Docs site
 2. Register in router in `src/api/server.rs`
 3. Add OpenAPI annotations via utoipa macros
 4. Run `just typegen` to regenerate TypeScript types
+
+## Related Reference Skills
+
+- `rust-async-patterns` (from the `systems-programming` plugin). Broader Rust async tutorial covering `JoinSet`, `tokio_util::sync::CancellationToken`, `Semaphore`-based resource pools, and `futures::stream` patterns Spacebot does not document inline.
+
+  The skill's Pattern 5 demonstrates `#[async_trait]`. Spacebot uses native RPITIT instead, which avoids the `Box<dyn Future>` allocation that `#[async_trait]` introduces. When you reach for Pattern 5, substitute the RPITIT pattern documented in `.claude/rules/rust-patterns.md` Trait Design and `RUST_STYLE_GUIDE.md:459`.

@@ -19,6 +19,31 @@ Parameter order: `&self`/`&mut self`, primary data, shared resource handles, con
 - `tokio::select!` for racing operations
 - `watch::channel` for state signaling, `mpsc::channel` for event streams, `broadcast::channel` for multi-consumer
 
+For patterns Spacebot doesn't use day-to-day (`JoinSet`, `tokio_util::sync::CancellationToken`, `Semaphore`-based resource pools, `futures::stream` and `async-stream`), see the `rust-async-patterns` skill from the `systems-programming` plugin.
+
+The skill's Pattern 5 demonstrates `#[async_trait]`. Spacebot uses native RPITIT instead, which avoids the `Box<dyn Future>` allocation that `#[async_trait]` introduces. When you reach for Pattern 5, substitute the RPITIT pattern documented in the Trait Design section below and in `RUST_STYLE_GUIDE.md:459`.
+
+## Streams
+
+When a stream is needed, prefer wrapping an existing mpsc receiver:
+
+- `tokio_stream::wrappers::ReceiverStream::new(rx)` wraps `mpsc::Receiver<T>` as `Stream<Item = T>`. Used by every `Messaging::inbound_stream()` implementation.
+- `futures::TryStreamExt` for iterating over `Stream<Item = Result<T, E>>` (e.g., LanceDB query results). Prefer `.try_next().await?` over `.next().await` to preserve error propagation.
+- `futures::StreamExt` only when a third-party crate exposes a `Stream` directly (e.g., `chromiumoxide` browser events).
+
+Do not build streams from scratch with `async_stream::stream! {}`. If you need a producer-consumer pattern, use an `mpsc` channel and wrap with `ReceiverStream`. Reserve `stream::iter()` + `.buffer_unordered()` for bounded-concurrency parallel iteration over a known finite collection. Even then, prefer `tokio::spawn` + `JoinHandle` storage for parity with the rest of the codebase.
+
+## Resource Pools
+
+For any pooled resource (database connection, HTTP client, etc.), use the crate's built-in pool. Do not hand-roll a `Semaphore` + `Mutex<Vec<Resource>>` pattern.
+
+- `sqlx::SqlitePool::connect()` for SQLite (per-agent and instance-wide databases)
+- `reqwest::Client` for HTTP, which does built-in connection pooling; just clone the client
+- `lancedb::Connection` for vector storage, as a single connection wrapped in `Arc`
+- `Arc<redb::Database>` for redb, which is already `Send + Sync`
+
+If you find a third-party crate that genuinely lacks a pool, reach for the `rust-async-patterns` skill's Pattern 7 (`Semaphore` + `Drop`-released `PooledConnection`). Verify the crate does not already expose pool semantics first; most do.
+
 ## Trait Design
 
 Native RPITIT for async traits (not `#[async_trait]`). Add companion `Dyn` trait with blanket impl only when `dyn Trait` is needed. Group inherent methods first, then trait impls. `Arc<dyn Trait>` for shared cross-task, `Box<dyn Trait>` for owned single-use. Bounds: `Send + Sync + 'static` when crossing task boundaries.

@@ -233,7 +233,7 @@ Recently archived:
 | AGENTS.md | Architecture implementation guide |
 | METRICS.md | Prometheus metrics reference |
 | RUST_STYLE_GUIDE.md | Coding conventions |
-| SPACEUI_MIGRATION.md | Frontend migration changelog |
+| docs/design-docs/spaceui-migration.md | Frontend migration changelog |
 | CLAUDE.md | AI assistant context |
 | docs/design-docs/ | 47 architecture + implementation notes |
 | openspec/ | Active change proposals + archived specs |

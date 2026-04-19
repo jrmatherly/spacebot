@@ -12,7 +12,7 @@ These files are the source of truth for their respective domains. Rules and Sere
 | `AGENTS.md` | ~300 lines | Implementation guide for coding agents — module map, process types, memory system, Rig integration, build order, anti-patterns |
 | `RUST_STYLE_GUIDE.md` | ~31KB | Full Rust coding conventions — all patterns, naming, error handling, async, traits, serde, testing |
 | `METRICS.md` | ~16KB | Prometheus metrics reference — all metric names, labels, cardinality, feature gate |
-| `SPACEUI_MIGRATION.md` | ~30KB | Frontend migration changelog — 50 detailed commit entries, breaking changes, component history |
+| `docs/design-docs/spaceui-migration.md` | ~30KB | Frontend migration changelog — 50 detailed commit entries, breaking changes, component history |
 | `PROJECT_INDEX.md` | ~6KB | Module index — 206 .rs files, module purposes, entry points, dependencies |
 | `CONTRIBUTING.md` | ~7KB | Contributor workflow — PR gates, SpaceUI linking, standards |
 | `CHANGELOG.md` | ~50KB | Version history through v0.4.1 |
