@@ -32,7 +32,7 @@ Single binary. No server dependencies. Runs on tokio. All data lives in embedded
 Run these checks in this order for code changes before pushing or updating a PR:
 
 1. `just preflight` — validate git/remote/auth state and avoid push-loop churn.
-2. `just gate-pr` — enforce formatting, compile checks, migration safety, lib tests, and integration test compile.
+2. `just gate-pr` — enforce formatting, clippy (supersets cargo check), lib tests, and integration test compile. Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile). Migration-safety check is defined but disabled; see `scripts/gate-pr.sh:173-180`.
 
 If `just` is unavailable, run the equivalent scripts directly in the same order: `./scripts/preflight.sh` then `./scripts/gate-pr.sh`.
 

@@ -10,7 +10,7 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (213 .rs files)
+├── src/                           (215 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
@@ -137,7 +137,7 @@ just gate-pr
 
 - 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
 - 12 dedicated integration test files in tests/
-- CI gate: `just gate-pr` enforces fmt + clippy + tests + migration safety
+- CI gate: `just gate-pr` enforces fmt + clippy (supersets cargo check) + lib tests + integration test compile. Migration-safety check is defined but disabled (see `scripts/gate-pr.sh:173-180`). Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile).
 
 ---
 
@@ -238,5 +238,5 @@ Recently archived:
 | RUST_STYLE_GUIDE.md | Coding conventions |
 | docs/design-docs/spaceui-migration.md | Frontend migration changelog |
 | CLAUDE.md | AI assistant context |
-| docs/design-docs/ | 47 architecture + implementation notes |
+| docs/design-docs/ | 55 architecture + implementation notes (1 archived under `docs/design-docs/archive/`) |
 | openspec/ | Active change proposals + archived specs |

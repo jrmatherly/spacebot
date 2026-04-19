@@ -58,6 +58,14 @@ Copy `.vscode/settings.json.example` to `.vscode/settings.json` (the target file
 
 The Rust build no longer re-runs the frontend build on TypeScript source edits — `build.rs` only watches `interface/`'s config files (`package.json`, `bun.lock`, `index.html`, `vite.config.ts`, `tailwind.config.ts`). When iterating on frontend code, run the Vite dev server (`cd interface && bun run dev` at `:19840`) so changes hot-reload independently of the daemon. Before testing the embedded UI served by `cargo run`, run `just check-frontend` (or `cd interface && bun run build` directly). Release CI keeps the full frontend build.
 
+### Environment flags
+
+Three env flags control `build.rs` behaviour. All are off by default; toggling any of them takes effect without `cargo clean` because `build.rs` declares each via `cargo:rerun-if-env-changed`.
+
+- `SPACEBOT_SKIP_FRONTEND_BUILD=1` — skip the frontend bun build entirely and emit an empty `interface/dist/`. Useful in CI workflows that build the frontend out-of-band, or in Docker multi-stage builds that stage `dist/` separately.
+- `SPACEBOT_REQUIRE_FRONTEND_BUILD=1` — escalate `bun`-missing or `bun run build` failures from a `cargo:warning=` to a hard panic. Release CI (`.github/workflows/release.yml` "Build binary" step) sets this so a silently-broken frontend can't ship as an empty UI.
+- `SPACEBOT_DEV_FRONTEND=1` — make `build.rs` invoke `bun run build:dev` instead of `bun run build`. The dev variant disables vite sourcemaps for 30-40% smaller output during local iteration. Release builds keep sourcemaps via the default path.
+
 ### macOS tuning (one-time, per-developer)
 
 Two macOS system settings deliver a significant speedup and neither touches the repo:
