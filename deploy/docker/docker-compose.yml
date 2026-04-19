@@ -13,6 +13,12 @@ services:
     image: ghcr.io/jrmatherly/spacebot@${SPACEBOT_IMAGE_DIGEST}
     container_name: spacebot
     restart: unless-stopped
+    # The -c flag decouples the config file from the /data volume so
+    # ./config.toml can be bind-mounted read-only. `start -f` runs the
+    # daemon in the foreground; required in containers since the Rust
+    # binary daemonizes by default. Matches the K8s deployment's args
+    # pattern (see deploy/helm/spacebot/values.yaml).
+    command: ["-c", "/etc/spacebot/config.toml", "start", "-f"]
     env_file:
       - path: .env
         required: false
@@ -20,6 +26,13 @@ services:
       SPACEBOT_DIR: /data
       SPACEBOT_DEPLOYMENT: docker
       RUST_LOG: ${RUST_LOG:-info}
+      # OTLP tracing. Empty by default so tracing is off in the `default`
+      # profile. When the `observability` profile brings up Alloy, set
+      # OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4317 in `.env` (or export
+      # it in the shell before `docker compose up`). Matches the cluster
+      # deployment's Grafana Alloy endpoint.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-spacebot}
     ports:
       - "${SPACEBOT_BIND:-127.0.0.1}:19898:19898"
       - "${SPACEBOT_BIND:-127.0.0.1}:9090:9090"
@@ -28,6 +41,11 @@ services:
       - "${SPACEBOT_BIND:-127.0.0.1}:18789:18789"
     volumes:
       - spacebot-data:/data
+      # config.toml enables the [metrics] endpoint so the `observability`
+      # profile's Prometheus scrape returns real data. Without this mount
+      # the daemon's [metrics].enabled defaults to false and the Grafana
+      # dashboard silently shows no data.
+      - ./config.toml:/etc/spacebot/config.toml:ro
     networks:
       - spacebot-net
       - mcp-net
@@ -57,6 +75,8 @@ services:
       dockerfile: Dockerfile
     container_name: spacebot
     restart: unless-stopped
+    # Same -c flag + mount pattern as the `spacebot` service.
+    command: ["-c", "/etc/spacebot/config.toml", "start", "-f"]
     env_file:
       - path: .env
         required: false
@@ -64,12 +84,15 @@ services:
       SPACEBOT_DIR: /data
       SPACEBOT_DEPLOYMENT: docker
       RUST_LOG: ${RUST_LOG:-info}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-spacebot}
     ports:
       - "${SPACEBOT_BIND:-127.0.0.1}:19898:19898"
       - "${SPACEBOT_BIND:-127.0.0.1}:9090:9090"
       - "${SPACEBOT_BIND:-127.0.0.1}:18789:18789"
     volumes:
       - spacebot-data:/data
+      - ./config.toml:/etc/spacebot/config.toml:ro
     networks:
       - spacebot-net
       - mcp-net
@@ -172,6 +195,45 @@ services:
       - spacebot-net
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ====================================================================
+  # alloy — observability profile. OTLP collector matching the production
+  # cluster's Grafana Alloy deployment. SpaceBot emits OTLP traces when
+  # OTEL_EXPORTER_OTLP_ENDPOINT is set (src/config/load.rs:975-977);
+  # the envvar is set on the `spacebot` service only when this profile
+  # is activated (see the x-spacebot-alloy-env extension below).
+  #
+  # Grafana Alloy is the successor to Grafana Agent / otel-collector for
+  # Grafana-native stacks. Port 4317 is OTLP gRPC (used by SpaceBot);
+  # port 4318 is OTLP HTTP, exposed for external integrations.
+  # ====================================================================
+  alloy:
+    profiles: [observability]
+    image: grafana/alloy:v1.11.2
+    container_name: spacebot-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "/etc/alloy/config.alloy"
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:4317:4317"  # OTLP gRPC (internal + host)
+      - "${SPACEBOT_BIND:-127.0.0.1}:4318:4318"  # OTLP HTTP
+      - "${SPACEBOT_BIND:-127.0.0.1}:12345:12345"  # Alloy UI (troubleshooting)
+    volumes:
+      - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
+    networks:
+      - spacebot-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:12345/-/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
