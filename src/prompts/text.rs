@@ -76,8 +76,11 @@ fn lookup(lang: &str, key: &str) -> &'static str {
         ("en", "factory") => include_str!("../../prompts/en/factory.md.j2"),
 
         // Adapter-specific prompt fragments
+        ("en", "adapters/discord") => include_str!("../../prompts/en/adapters/discord.md.j2"),
         ("en", "adapters/email") => include_str!("../../prompts/en/adapters/email.md.j2"),
         ("en", "adapters/signal") => include_str!("../../prompts/en/adapters/signal.md.j2"),
+        ("en", "adapters/slack") => include_str!("../../prompts/en/adapters/slack.md.j2"),
+        ("en", "adapters/telegram") => include_str!("../../prompts/en/adapters/telegram.md.j2"),
 
         // Scheduler-specific prompt fragments (time-triggered, not message-triggered)
         ("en", "schedulers/cron") => include_str!("../../prompts/en/schedulers/cron.md.j2"),
