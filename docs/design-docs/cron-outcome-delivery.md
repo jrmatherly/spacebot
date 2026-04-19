@@ -108,6 +108,6 @@ This surfaces the buffering behavior in tool results, so if the agent calls repl
 - `src/cron/scheduler.rs` — create `CronReplyBuffer` when `delivery_target` is set; pass to channel; call `buffer.take_all()` and deliver after run
 - `src/tools/reply.rs` — add `ReplyTarget` enum; branch on live vs buffered in `call()`
 - `src/agent/channel.rs` — accept `ReplyTarget` parameter in channel construction; thread through to reply tool registration
-- `prompts/cron.md.j2` (or equivalent) — add delivery section as above
+- `prompts/en/schedulers/cron.md.j2` — add delivery section as above
 
 No schema changes. No API changes. No UI changes.
