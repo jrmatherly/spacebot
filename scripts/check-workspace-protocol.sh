@@ -27,18 +27,16 @@ mapfile -t PACKAGE_JSONS < <(
 violations=0
 
 for pj in "${PACKAGE_JSONS[@]}"; do
-    # Skip files with no @spacedrive/* or @spacebot/* entries at all.
-    if ! grep -qE '"@(spacedrive|spacebot)/' "$pj"; then
-        continue
-    fi
-    # Look for matching entries whose value does not start with "workspace:".
-    # Multi-line JSON means a simple grep works when each dep is on its own line,
-    # which is the convention we use.
-    bad=$(grep -E '"@(spacedrive|spacebot)/[^"]+":\s*"(?!workspace:)' "$pj" 2>/dev/null || true)
-    # Fallback for grep without PCRE (BSD grep on macOS):
-    if [ -z "$bad" ]; then
-        bad=$(grep -E '"@(spacedrive|spacebot)/[^"]+":[[:space:]]*"[^w]' "$pj" || true)
-    fi
+    # Find every line with a scoped dep entry. Portable ERE that works on
+    # both BSD (macOS) and GNU grep. Each dep must live on its own line,
+    # which is the repo's package.json formatting convention.
+    scoped_lines=$(grep -E '"@(spacedrive|spacebot)/[^"]+":[[:space:]]*"[^"]*"' "$pj" || true)
+    [ -z "$scoped_lines" ] && continue
+
+    # Filter out every line where the value literally starts with "workspace:".
+    # `grep -v` with a fixed-literal value substring survives on all platforms.
+    bad=$(printf '%s\n' "$scoped_lines" | grep -v '"workspace:' || true)
+
     if [ -n "$bad" ]; then
         echo "ERROR: non-workspace @spacedrive/* or @spacebot/* dep in $pj:"
         echo "$bad" | sed 's/^/  /'

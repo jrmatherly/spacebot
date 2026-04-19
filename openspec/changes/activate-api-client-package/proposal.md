@@ -17,12 +17,12 @@ Locked during exploration (see `design.md`):
 
 **Phase 1 — Lift-and-shift the migration**
 
-- `packages/api-client/package.json`: `name` changes from `@spacedrive/api-client` to `@spacebot/api-client`. `exports` block updated to expose the new file layout.
+- `packages/api-client/package.json`: `name` changes from `@spacedrive/api-client` to `@spacebot/api-client`. `exports` block trimmed to subpath-only (`./client`, `./types`, `./schema`; no root `.` entry). See design.md §D5 for the rationale.
 - `packages/api-client/src/client.ts`: replaced with the content of `interface/src/api/client.ts` (hand-rolled 2,781-line client with `fetchJson`, endpoint helpers, and inline SSE event type definitions).
 - `packages/api-client/src/types.ts`: replaced with the content of `interface/src/api/types.ts` (511-line type re-export module from the generated schema).
 - `packages/api-client/src/schema.d.ts`: replaced with the content of `interface/src/api/schema.d.ts` (10,382-line generated OpenAPI type declarations).
 - `packages/api-client/src/events.ts`: deleted. The aspirational SSE event catalog is supplanted by the inline event types in the new `client.ts`.
-- `packages/api-client/src/index.ts`: updated to `export * from ./client + ./types` (drops the `./events` re-export since the file no longer exists).
+- `packages/api-client/src/index.ts`: deleted. The package is subpath-only because `client.ts` and `types.ts` share ~120 overlapping named exports; a root barrel via `export * from "./client"; export * from "./types";` would surface as `TS2308` ambiguity errors on any root-path consumer.
 - `interface/src/api/client.ts`, `types.ts`, `schema.d.ts`: removed. Content moved into the package.
 - `interface/src/api/client-typed.ts`: removed. Dead code with zero importers.
 - `interface/src/api/` directory: removed entirely after the above.

@@ -21,7 +21,7 @@
 - [x] 2.9 `git mv interface/src/api/types.ts packages/api-client/src/types.ts`
 - [x] 2.10 `git mv interface/src/api/schema.d.ts packages/api-client/src/schema.d.ts`
 - [x] 2.11 Verify `interface/src/api/` directory is empty; `rmdir interface/src/api/`
-- [x] 2.12 Replace `packages/api-client/src/index.ts` content with: `export * from "./client";\nexport * from "./types";\n` (drops the `./events` re-export since the file no longer exists)
+- [x] 2.12 Replace `packages/api-client/src/index.ts` content with: `export * from "./client";\nexport * from "./types";\n` (drops the `./events` re-export since the file no longer exists). **Post-review update (see design.md §D5):** the barrel was removed entirely. A root `export *` across `./client` + `./types` produces ~120 `TS2308` ambiguity errors because the two files share overlapping named exports. `index.ts` was deleted and the `"."` entry removed from `package.json` exports. Consumers must use subpath imports.
 - [x] 2.13 Verify inter-file relative imports still resolve: the moved files contain `./types` and `./schema` imports (`client.ts:27,89,98,103`; `types.ts:2`). Because all three files move together into `packages/api-client/src/` preserving their `./` relatives, no rewrite is required. Verified post-move via tsc (task §5.1).
 
 ## 3. Phase 1 — Workspace wiring

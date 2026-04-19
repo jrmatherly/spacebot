@@ -16,7 +16,7 @@ The package MUST declare its name as `@spacebot/api-client`. The `@spacedrive/` 
 - **THEN** the `name` field equals `"@spacebot/api-client"`
 - **AND** the `private` field equals `true`
 - **AND** the `type` field equals `"module"`
-- **AND** the `exports` field declares the `.`, `./client`, `./types`, and `./schema` entry points
+- **AND** the `exports` field declares the `./client`, `./types`, and `./schema` entry points (subpath-only; no root `.` entry; see the "Package export surface" requirement for rationale)
 
 ### Requirement: Package is the single source of truth for API types
 
@@ -74,16 +74,15 @@ The `just typegen` recipe MUST regenerate the TypeScript schema from the Utoipa-
 
 ### Requirement: Package export surface
 
-The package MUST expose the following entry points via its `exports` field. Consumers SHOULD import from subpath exports (`/client`, `/types`, `/schema`) rather than the root to enable tree-shaking and to signal intent.
+The package MUST expose **subpath-only** entry points via its `exports` field. No root (`.`) entry is declared, so `import X from "@spacebot/api-client"` fails with a module-not-found error. Consumers MUST import from explicit subpaths. The rationale: `client.ts` and `types.ts` share overlapping named exports (hand-rolled type aliases in `client.ts` parallel generated ones in `types.ts`), and a root barrel would produce ~120 TypeScript `TS2308` ambiguity errors. A subpath-only surface avoids that class of error and signals consumer intent clearly.
 
 | Entry point | Source file | Contents |
 |---|---|---|
-| `.` | `./src/index.ts` | Re-exports from `./client` and `./types` (the default surface). |
 | `./client` | `./src/client.ts` | The hand-rolled `api` object with per-endpoint helpers, `fetchJson`, `setServerUrl`, `getApiBase`, and inline SSE event interfaces (`InboundMessageEvent`, `OutboundMessageEvent`, and the full `ApiEvent` union). |
 | `./types` | `./src/types.ts` | Friendly type aliases derived from the generated schema (`StatusResponse`, `HealthResponse`, etc.). |
 | `./schema` | `./src/schema.d.ts` | Raw generated types (`paths`, `components`, `operations`) from `openapi-typescript`. |
 
-SSE event interfaces MUST be exported from `./client` only, not from a dedicated `./events` subpath. The package does not declare an `./events` export and importing `@spacebot/api-client/events` will fail with a module-not-found error.
+SSE event interfaces MUST be exported from `./client` only, not from a dedicated `./events` subpath. The package does not declare an `./events` export.
 
 #### Scenario: Subpath import
 
@@ -91,12 +90,11 @@ SSE event interfaces MUST be exported from `./client` only, not from a dedicated
 - **THEN** TypeScript resolves the import to `packages/api-client/src/client.ts`
 - **AND** the `api` export is available at runtime after `bun run build`
 
-#### Scenario: Root entry point import
+#### Scenario: Root entry point import fails
 
 - **WHEN** a consumer writes `import { api } from "@spacebot/api-client"` (root, no subpath)
-- **THEN** TypeScript resolves the import to `packages/api-client/src/index.ts`, which re-exports from `./client` and `./types`
-- **AND** all exports from `./client` and `./types` are available
-- **AND** this form is permitted but subpath imports are preferred for tree-shaking and intent-signaling
+- **THEN** module resolution fails because no `.` entry is declared in `exports`
+- **AND** the TypeScript compiler reports a module-not-found error
 
 #### Scenario: Raw schema import
 

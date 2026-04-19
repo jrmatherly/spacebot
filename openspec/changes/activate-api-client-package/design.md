@@ -93,6 +93,26 @@ The file appears to be an experimental second client path that was staged alongs
 
 ---
 
+### D5. Subpath-only package surface (barrel removed)
+
+**Decision:** delete `packages/api-client/src/index.ts` and drop the `"."` entry from `package.json` `exports`. Consumers MUST import from `@spacebot/api-client/client`, `/types`, or `/schema` explicitly. No root import.
+
+**Evidence (added during code review):**
+
+An initial draft kept an `index.ts` that did `export * from "./client"; export * from "./types";`. Running `bunx tsc --noEmit` against the package in isolation surfaced roughly 120 `TS2308` ambiguity errors: `client.ts` (2,781 lines, hand-rolled) and `types.ts` (511 lines, generated schema re-exports) independently declare type names like `RoutingSection`, `AgentConfigResponse`, `Project`, `MemoryType`, `CortexEvent`, and about 30 others. A `export *` barrel cannot disambiguate those; each collision is a compile error.
+
+The errors were masked in the full build because zero consumers imported from the root path. The 84-file bulk rename moved everyone to `/client` or `/types`. But the trap was real: any future developer reaching for the ergonomic `import { X } from "@spacebot/api-client"` would hit 120 compile errors with no obvious fix path.
+
+**Alternatives considered:**
+
+- **Keep the broken barrel.** Relies on consumer discipline. Rejected: traps future work.
+- **Explicit named re-exports with deduplication.** Hand-maintained `export { Foo, Bar } from "./client"; export { Baz } from "./types";` listing every symbol once. Rejected: hundreds of lines of mechanical re-export code to maintain, no consumer uses it.
+- **Reconcile the duplicate definitions between `client.ts` and `types.ts`.** Pick one as authoritative (likely `types.ts`, since it is generated from the schema), delete the hand-rolled parallels from `client.ts`. Out of scope for this PR. Would risk wire-format drift without a dedicated review. Track as follow-up.
+
+**Consequence:** the package's consumption surface is narrower but honest. The spec's "SHOULD prefer subpaths" becomes "MUST use subpaths" by construction. Consumers get cleaner error messages if they reach for the wrong import.
+
+---
+
 ### D4. Migration mechanics: bulk find-and-replace in one commit
 
 **Decision:** rename `@/api/client` → `@spacebot/api-client/client` and `@/api/types` → `@spacebot/api-client/types` across all 85 affected files in a single commit. Do not migrate incrementally.

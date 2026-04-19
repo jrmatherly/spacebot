@@ -945,7 +945,7 @@ This rename touches:
 - `interface/src/components/WebChatPanel.tsx` → `PortalChatPanel.tsx`
 - `interface/src/hooks/useWebChat.ts` → `usePortal.ts`
 - `packages/api-client/src/client.ts`: all `webchat*` methods → `portal*`
-- Generated types in `interface/src/api/schema.d.ts` and `types.ts`
+- Generated types in `packages/api-client/src/schema.d.ts` and `types.ts`
 - Import references in `interface/src/routes/AgentChat.tsx`
 
 **API endpoints:**
