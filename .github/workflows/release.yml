@@ -44,6 +44,10 @@ jobs:
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     strategy:
+      # One target's failure should not cancel the other five. A Windows
+      # runner crashing the macOS and Linux jobs (as it did in the first
+      # v0.5.0 attempt) wastes runner minutes and hides downstream issues.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -66,16 +70,16 @@ jobs:
             archive: tar.gz
             os: macos
             ext: ""
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            archive: zip
-            os: windows
-            ext: .exe
-          - target: aarch64-pc-windows-msvc
-            runner: windows-latest
-            archive: zip
-            os: windows
-            ext: .exe
+          # Windows is intentionally omitted. The spacebot crate depends on
+          # `daemonize` and `libc` unconditionally, which are Unix-only, so
+          # `cargo build --release` would fail with ~50 errors before any
+          # artifact is produced. Separately, bun on Windows cannot execute
+          # the `.sh` preinstall hook or resolve `workspace:*` symlinks on
+          # the first install, both of which block the frontend build step.
+          # See `.scratchpad/2026-04-18-windows-build-gap.md` for the full
+          # write-up and the re-enablement checklist. Mirrors the same
+          # exclusion in `desktop-ci.yml`. When the Cargo.toml cfg-gating
+          # lands, restore the Windows matrix entries here.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     defaults:
@@ -102,11 +106,6 @@ jobs:
       - name: Install system dependencies (macOS)
         if: matrix.os == 'macos'
         run: brew install protobuf
-
-      - name: Install system dependencies (Windows)
-        if: matrix.os == 'windows'
-        shell: pwsh
-        run: choco install protoc -y
 
       - name: Install Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
