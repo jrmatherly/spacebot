@@ -54,6 +54,10 @@ The repo ships an optimised `[profile.dev]` in `Cargo.toml` that cuts debug bina
 
 Copy `.vscode/settings.json.example` to `.vscode/settings.json` (the target file is gitignored so each contributor can customise). The example enables `rust-analyzer.cargo.targetDir = true`, which puts rust-analyzer's build artifacts in `target/rust-analyzer/` so it stops invalidating the CLI's incremental cache on every save. For Helix, Neovim, or Zed the equivalent setting is `rust-analyzer.cargo.target_dir`.
 
+### Frontend iteration
+
+The Rust build no longer re-runs the frontend build on TypeScript source edits — `build.rs` only watches `interface/`'s config files (`package.json`, `bun.lock`, `index.html`, `vite.config.ts`, `tailwind.config.ts`). When iterating on frontend code, run the Vite dev server (`cd interface && bun run dev` at `:19840`) so changes hot-reload independently of the daemon. Before testing the embedded UI served by `cargo run`, run `just check-frontend` (or `cd interface && bun run build` directly). Release CI keeps the full frontend build.
+
 ### macOS tuning (one-time, per-developer)
 
 Two macOS system settings deliver a significant speedup and neither touches the repo:

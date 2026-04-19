@@ -23,6 +23,13 @@ clippy-all:
 check-fast:
     cargo clippy --lib --no-deps
 
+# Rebuild the embedded frontend UI. Needed when iterating on interface/src
+# TypeScript and verifying via `cargo run -- start` (build.rs no longer
+# watches interface/src/ to avoid invalidating the Rust incremental cache
+# on every TS save). Use `cd interface && bun run dev` for live HMR instead.
+check-frontend:
+    cd interface && bun run build
+
 test-lib:
     cargo test --lib
 

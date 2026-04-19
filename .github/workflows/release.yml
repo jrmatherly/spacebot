@@ -156,6 +156,10 @@ jobs:
       - name: Build binary
         env:
           TARGET: ${{ matrix.target }}
+          # Escalate bun-missing or bun-failed conditions to a hard failure
+          # during the release cargo build. Prevents shipping a binary with
+          # an empty UI if the frontend build silently fails.
+          SPACEBOT_REQUIRE_FRONTEND_BUILD: "1"
         run: cargo build --release --target "$TARGET"
 
       - name: Package binary
