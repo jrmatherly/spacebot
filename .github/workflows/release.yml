@@ -170,6 +170,10 @@ jobs:
     needs: [verify-version]
     if: always() && (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
     strategy:
+      # One architecture's failure should not cancel the other. Each
+      # architecture is a separate deliverable; we'd rather surface both
+      # failures in one run than mask one behind the other.
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04

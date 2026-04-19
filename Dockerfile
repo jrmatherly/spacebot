@@ -59,10 +59,16 @@ COPY spaceui/examples/showcase/package.json spaceui/examples/showcase/
 # hadolint ignore=DL3003
 RUN cd spaceui && bun install --frozen-lockfile && bunx turbo run build --filter="./packages/*"
 
-# 3. Install frontend dependencies (resolves @spacedrive/* as workspace
-#    symlinks into the spaceui packages copied above).
+# 3. Install frontend dependencies (resolves @spacedrive/* and @spacebot/*
+#    as workspace symlinks into the packages copied above).
+#    interface/package.json declares `"workspaces": ["../spaceui/packages/*",
+#    "../packages/*"]`, so bun looks for @spacebot/api-client under
+#    ../packages/api-client/. It must exist on disk before `bun install`.
+#    The api-client package is TypeScript source with no build step (subpath
+#    exports point at `.ts` files directly), so a source copy is sufficient.
 #    The preinstall hook in interface/package.json invokes
 #    scripts/check-workspace-protocol.sh, so copy that script first.
+COPY packages/api-client/ packages/api-client/
 COPY scripts/check-workspace-protocol.sh scripts/
 COPY interface/package.json interface/bun.lock interface/
 # hadolint ignore=DL3003

@@ -28,7 +28,12 @@ scripts/
 !scripts/build-opencode-embed.sh
 !scripts/check-workspace-protocol.sh
 desktop/
+# Exclude packages/ by default, but allow @spacebot/api-client through
+# because interface/package.json declares it as a workspace member
+# (`"workspaces": ["../packages/*"]`) and `bun install` must resolve
+# `@spacebot/api-client@workspace:*` to its on-disk source.
 packages/
+!packages/api-client/
 spacedrive/
 
 # Exclude docs except what's needed for self_awareness.rs embeds
