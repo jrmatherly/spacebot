@@ -19,6 +19,10 @@ Parameter order: `&self`/`&mut self`, primary data, shared resource handles, con
 - `tokio::select!` for racing operations
 - `watch::channel` for state signaling, `mpsc::channel` for event streams, `broadcast::channel` for multi-consumer
 
+For patterns Spacebot doesn't use day-to-day (`JoinSet`, `tokio_util::sync::CancellationToken`, `Semaphore`-based resource pools, `futures::stream` and `async-stream`), see the `rust-async-patterns` skill from the `systems-programming` plugin.
+
+The skill's Pattern 5 demonstrates `#[async_trait]`. Spacebot uses native RPITIT instead, which avoids the `Box<dyn Future>` allocation that `#[async_trait]` introduces. When you reach for Pattern 5, substitute the RPITIT pattern documented in the Trait Design section below and in `RUST_STYLE_GUIDE.md:459`.
+
 ## Trait Design
 
 Native RPITIT for async traits (not `#[async_trait]`). Add companion `Dyn` trait with blanket impl only when `dyn Trait` is needed. Group inherent methods first, then trait impls. `Arc<dyn Trait>` for shared cross-task, `Box<dyn Trait>` for owned single-use. Bounds: `Send + Sync + 'static` when crossing task boundaries.
