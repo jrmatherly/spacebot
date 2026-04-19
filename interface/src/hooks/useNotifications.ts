@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type NotificationItem } from "@/api/client";
+import { api, type NotificationItem } from "@spacebot/api-client/client";
 
 export const NOTIFICATIONS_QUERY_KEY = ["notifications"];
 

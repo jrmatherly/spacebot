@@ -7,7 +7,7 @@ import {
 	useRef,
 	type ReactNode,
 } from "react";
-import { setServerUrl as setClientServerUrl } from "@/api/client";
+import { setServerUrl as setClientServerUrl } from "@spacebot/api-client/client";
 import {
 	HAS_BUNDLED_SERVER,
 	IS_DESKTOP,

@@ -1,4 +1,4 @@
-import type {AgentConfigResponse, AgentConfigUpdateRequest} from "@/api/client";
+import type {AgentConfigResponse, AgentConfigUpdateRequest} from "@spacebot/api-client/client";
 
 export type SectionId =
 	| "general"

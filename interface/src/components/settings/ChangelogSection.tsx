@@ -1,6 +1,6 @@
 import {useQuery} from "@tanstack/react-query";
 import {LoadingDot} from "@spacedrive/primitives";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {Markdown} from "@/components/Markdown";
 import type {ChangelogRelease} from "./types";
 

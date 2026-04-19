@@ -1,6 +1,6 @@
 import {useState, useRef, useCallback} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
-import {api, type IngestFileInfo} from "@/api/client";
+import {api, type IngestFileInfo} from "@spacebot/api-client/client";
 import {formatTimeAgo} from "@/lib/format";
 import {Badge, LoadingDot} from "@spacedrive/primitives";
 import {clsx} from "clsx";

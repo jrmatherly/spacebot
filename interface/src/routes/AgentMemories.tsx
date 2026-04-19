@@ -8,7 +8,7 @@ import {
 	type MemoryItem,
 	type MemorySort,
 	type MemoryType,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {MemoryGraph} from "@/components/MemoryGraph";
 import {
 	CircleButton,

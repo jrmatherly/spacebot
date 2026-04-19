@@ -1,6 +1,6 @@
 import {useState, useRef, useCallback} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {
 	SkillsSidebar,
 	SkillInspector,
@@ -10,7 +10,7 @@ import {
 	type SkillView,
 	type SelectedSkill,
 } from "@/components/skills";
-import type {SkillInfo, RegistrySkill} from "@/api/client";
+import type {SkillInfo, RegistrySkill} from "@spacebot/api-client/client";
 
 interface AgentSkillsProps {
 	agentId: string;

@@ -1,4 +1,4 @@
-import type {SkillInfo, RegistrySkill} from "@/api/client";
+import type {SkillInfo, RegistrySkill} from "@spacebot/api-client/client";
 
 export type SkillView = "directory" | "bundled" | "create";
 

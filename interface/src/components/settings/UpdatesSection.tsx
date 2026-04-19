@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
-import {api, type UpdateStatus} from "@/api/client";
+import {api, type UpdateStatus} from "@spacebot/api-client/client";
 import {Button, LoadingDot} from "@spacedrive/primitives";
 
 function formatCheckedAt(checkedAt: string | null): string {

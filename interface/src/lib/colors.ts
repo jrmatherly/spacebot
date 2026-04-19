@@ -10,7 +10,7 @@
 // Keep additions here rather than re-declaring another ad-hoc map at
 // a call site — that's the whole point of this file.
 
-import type {MemoryType} from "@/api/client";
+import type {MemoryType} from "@spacebot/api-client/client";
 
 type Pigment =
 	| "blue"

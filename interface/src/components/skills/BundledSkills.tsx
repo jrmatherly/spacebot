@@ -1,7 +1,7 @@
 import {cx} from "class-variance-authority";
 import {Package, Lightning} from "@phosphor-icons/react";
 import type {SelectedSkill} from "./types";
-import type {SkillInfo} from "@/api/client";
+import type {SkillInfo} from "@spacebot/api-client/client";
 
 interface BundledSkillsProps {
 	installedSkills: SkillInfo[];

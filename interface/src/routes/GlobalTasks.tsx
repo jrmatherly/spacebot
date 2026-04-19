@@ -5,7 +5,7 @@ import {
 	type CreateTaskRequest,
 	type TaskItem,
 	type TaskStatus,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {useLiveContext} from "@/hooks/useLiveContext";
 import {
 	Button,

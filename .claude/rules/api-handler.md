@@ -52,7 +52,7 @@ When adding a new route:
 2. Annotate with `#[utoipa::path(method, path = "/api/...", ...)]`.
 3. Register the route in `src/api/server.rs` router.
 4. Register the handler in the utoipa `OpenApi` derive list (same file region).
-5. `just typegen` to regenerate `interface/src/api/schema.d.ts`.
+5. `just typegen` to regenerate `packages/api-client/src/schema.d.ts`.
 6. Commit all three: the handler, the router registration, and the updated `schema.d.ts`.
 
 CI runs `just check-typegen` which diffs regenerated schema against committed. A new route without `just typegen` = red gate.
@@ -78,6 +78,6 @@ Some handlers check `SPACEBOT_DEPLOYMENT=hosted` and apply limits (e.g. `hosted_
 ## Verification Before Calling It Done
 
 - `cargo check --all-targets`
-- `just typegen` then check `git status`. If `interface/src/api/schema.d.ts` changed, commit it.
+- `just typegen` then check `git status`. If `packages/api-client/src/schema.d.ts` changed, commit it.
 - `just check-typegen` must pass.
 - Hit the endpoint manually against a running daemon (curl to `http://localhost:19898/api/<route>`) to confirm the status codes and shape.

@@ -13,7 +13,7 @@ import {
 	type WorkerDetailResponse,
 	type TranscriptStep,
 	type OpenCodePart,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {useLiveContext} from "@/hooks/useLiveContext";
 import {formatTimeAgo} from "@/lib/format";
 import {LiveDuration} from "@/components/LiveDuration";

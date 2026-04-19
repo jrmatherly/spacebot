@@ -1,6 +1,6 @@
 import {cx} from "class-variance-authority";
 import {Badge} from "@spacedrive/primitives";
-import type {SkillInfo} from "@/api/client";
+import type {SkillInfo} from "@spacebot/api-client/client";
 
 interface InstalledSkillRowProps {
 	skill: SkillInfo;

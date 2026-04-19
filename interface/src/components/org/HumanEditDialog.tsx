@@ -9,7 +9,7 @@ import {
 	DialogContent,
 	DialogTitle,
 } from "@spacedrive/primitives";
-import {api, type TopologyHuman} from "@/api/client";
+import {api, type TopologyHuman} from "@spacebot/api-client/client";
 import {Markdown} from "@/components/Markdown";
 
 interface HumanEditDialogProps {

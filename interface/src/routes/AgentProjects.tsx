@@ -28,7 +28,7 @@ import {
 	type CreateWorktreeRequest,
 	type UpdateProjectRequest,
 	getApiBase,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	Badge,
 	Button,

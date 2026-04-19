@@ -9,7 +9,7 @@ import {
 } from "react";
 import {useQuery} from "@tanstack/react-query";
 import {SelectPill} from "@spacedrive/primitives";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {IS_DESKTOP, IS_MACOS, startDragging} from "@/platform";
 
 // ── Context ──────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type CortexChatMessage, type CortexChatToolCall } from "@/api/client";
+import { api, type CortexChatMessage, type CortexChatToolCall } from "@spacebot/api-client/client";
 import { generateId } from "@/lib/id";
 
 export interface ToolActivity {

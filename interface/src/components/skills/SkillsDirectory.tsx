@@ -3,7 +3,7 @@ import {useQuery, useInfiniteQuery, useMutation, useQueryClient} from "@tanstack
 import {useVirtualizer} from "@tanstack/react-virtual";
 import {MagnifyingGlass, ArrowSquareOut, DownloadSimple} from "@phosphor-icons/react";
 import {Button} from "@spacedrive/primitives";
-import {api, type RegistrySkill, type RegistryView} from "@/api/client";
+import {api, type RegistrySkill, type RegistryView} from "@spacebot/api-client/client";
 import {RegistrySkillRow} from "./RegistrySkillRow";
 import {REGISTRY_VIEWS} from "./constants";
 import type {SelectedSkill} from "./types";

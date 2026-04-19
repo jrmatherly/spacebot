@@ -10,7 +10,7 @@ import {
 } from "@spacedrive/primitives";
 import {TaskDetail} from "@spacedrive/ai";
 import {CheckCircle, XCircle, WarningCircle} from "@phosphor-icons/react";
-import {api, type NotificationItem, type NotificationKind} from "@/api/client";
+import {api, type NotificationItem, type NotificationKind} from "@spacebot/api-client/client";
 import {NOTIFICATIONS_QUERY_KEY} from "@/hooks/useNotifications";
 
 interface ApprovalModalProps {

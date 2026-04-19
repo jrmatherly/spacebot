@@ -1,6 +1,6 @@
 import {ReactFlowProvider} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type {AgentSummary} from "@/api/client";
+import type {AgentSummary} from "@spacebot/api-client/client";
 import {OrgGraphInner} from "./OrgGraphInner";
 
 export interface OrgGraphProps {

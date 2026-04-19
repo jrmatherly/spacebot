@@ -1,7 +1,7 @@
 import {useMemo, useEffect, useRef} from "react";
 import {useQuery, useQueryClient, useQueries} from "@tanstack/react-query";
 import {LoadingDot} from "@spacedrive/primitives";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import {useLiveContext} from "@/hooks/useLiveContext";
 import {
 	EmptyState,

@@ -27,7 +27,7 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 
 - Rust: `cargo`
 - Frontend (`interface/`): `bun` (NEVER npm/pnpm/yarn)
-- SpaceUI (`spaceui/`): `bun` (its own workspace + bun.lock; `interface/` declares `"workspaces": ["../spaceui/packages/*"]` so `bun install` in interface symlinks `@spacedrive/*` to local source). **Never remove the `workspaces` declaration or change a `workspace:*` dep to a semver range** — bun will silently fall back to the public npm registry and overwrite local customizations. The `scripts/check-workspace-protocol.sh` guard runs on every `interface/` preinstall and in CI (`.github/workflows/spaceui.yml`) to catch this class of regression. See `spaceui/SYNC.md` for the full provenance and drift discipline.
+- SpaceUI (`spaceui/`): `bun` (its own workspace + bun.lock; `interface/` declares `"workspaces": ["../spaceui/packages/*", "../packages/*"]` so `bun install` in interface symlinks both `@spacedrive/*` and `@spacebot/*` to local source). **Never remove the `workspaces` declaration or change a `workspace:*` dep to a semver range** — bun will silently fall back to the public npm registry and overwrite local customizations. The `scripts/check-workspace-protocol.sh` guard runs on every `interface/` preinstall and in CI (`.github/workflows/spaceui.yml`) to catch this class of regression (covers both `@spacedrive/*` and `@spacebot/*` scopes). See `spaceui/SYNC.md` for the full provenance and drift discipline.
 - Desktop (`desktop/`): `cargo tauri`
 
 ## Database Migrations
@@ -42,7 +42,8 @@ Single binary crate with no workspace **members**. The root `Cargo.toml` carries
 - `presets/` — Agent persona presets (IDENTITY.md, ROLE.md, SOUL.md, meta.toml)
 - `migrations/` — SQLite migrations (append-only by default; reformatting allowed with checksum-repair awareness)
 - `vendor/` — Vendored crates (imap-proto)
-- `interface/` — Web UI (Vite + React + TypeScript)
+- `interface/` — Web UI (Vite + React + TypeScript). Consumes `@spacebot/api-client` and `@spacedrive/*` packages via workspace symlink.
+- `packages/` — Internal `@spacebot/*` workspace packages. Currently: `api-client/` (TypeScript client for the Spacebot REST API + SSE event types; codegen target for `just typegen`).
 - `spaceui/` — SpaceUI design system (6 packages: tokens, primitives, forms, icons, ai, explorer)
 - `spacedrive/` — Spacedrive platform (independent Cargo workspace, own toolchain). Always `cd spacedrive` before running cargo commands inside it. Runtime integration lives at `src/spacedrive/` (config, HTTP client, envelope, first agent tool `spacedrive_list_files`). Track A complete on main; runtime-gated behind `[spacedrive] enabled = true`. As of PR #57 this is a real fork: 10 Spacebot-authored stub files under `spacedrive/core/src/` plus an `apps/web/dist/index.html` placeholder unblock the `sd-server` build. `spacedrive/SYNC.md` LOCAL_CHANGES is load-bearing — never overwrite it wholesale via rsync.
 - `docs/` — Documentation site (Next.js + Fumadocs)

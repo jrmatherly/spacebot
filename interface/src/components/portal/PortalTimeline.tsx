@@ -2,7 +2,7 @@ import {useEffect, useRef} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {InlineBranchCard, MessageBubble} from "@spacedrive/ai";
 import {File as FileIcon} from "@phosphor-icons/react";
-import {api, type AttachmentMeta, type TimelineBranchRun, type TimelineItem, type WorkerListItem} from "@/api/client";
+import {api, type AttachmentMeta, type TimelineBranchRun, type TimelineItem, type WorkerListItem} from "@spacebot/api-client/client";
 import {ToolCall, type ToolCallPair, tryParseJson, isErrorResult} from "@/components/ToolCall";
 import {PortalWorkerCard} from "./PortalWorkerCard";
 import clsx from "clsx";

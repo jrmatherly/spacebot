@@ -1,4 +1,4 @@
-import type {LinkKind} from "@/api/client";
+import type {LinkKind} from "@spacebot/api-client/client";
 
 /** Pick source/target handle IDs based on link kind and node positions. */
 export function getHandlesForKind(

@@ -28,8 +28,9 @@ spacebot/
 │   └── main.rs, lib.rs            - CLI daemon + module exports
 ├── interface/                      (Vite + React + TypeScript)
 │   ├── src/components/            - 60+ React components
-│   ├── src/api/                   - OpenAPI client (code-gen from Rust spec)
 │   └── package.json               - React 19, Tailwind 4, React Router
+├── packages/                       (Workspace packages under the @spacebot/* scope)
+│   └── api-client/                - OpenAPI TypeScript client (code-gen from Rust spec; consumed by interface/)
 ├── docs/                           (38 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
 ├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
@@ -175,7 +176,7 @@ Eleven persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, 
 | **Integrations** | mcp, stereos-integration, slash-commands, skill-authoring, projects |
 | **Secrets & security** | secret-store, sandbox-hardening |
 | **Observability** | live-logs, token-usage-tracking, production-worker-failures |
-| **Frontend** | openapi-migration, api-client-package-followup, wiki |
+| **Frontend** | openapi-migration, frontend-api-client, wiki |
 | **Prompts** | prompt-routing, tool-nudging |
 
 ---

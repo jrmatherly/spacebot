@@ -6,7 +6,7 @@ import {
 	type AdapterInstanceStatus,
 	type BindingInfo,
 	type CreateMessagingInstanceRequest,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	Button,
 	Input,

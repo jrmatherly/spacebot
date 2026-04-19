@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
 import {AnimatePresence, motion} from "framer-motion";
-import {api, type CortexEvent, type CortexEventType} from "@/api/client";
+import {api, type CortexEvent, type CortexEventType} from "@spacebot/api-client/client";
 import {eventCategoryClass} from "@/lib/colors";
 import {formatTimeAgo} from "@/lib/format";
 import {FilterButton, LoadingDot} from "@spacedrive/primitives";

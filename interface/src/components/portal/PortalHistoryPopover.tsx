@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { SearchBar } from "@spacedrive/primitives";
-import type { PortalConversationSummary } from "@/api/types";
+import type { PortalConversationSummary } from "@spacebot/api-client/types";
 
 interface PortalHistoryPopoverProps {
 	conversations: PortalConversationSummary[];

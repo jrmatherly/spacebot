@@ -1,4 +1,4 @@
-import type {GlobalSettingsResponse} from "@/api/client";
+import type {GlobalSettingsResponse} from "@spacebot/api-client/client";
 
 export type SectionId =
 	| "instance"

@@ -5,7 +5,7 @@ import {
 	type SecretCategory,
 	type SecretListItem,
 	type StoreState,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	Badge,
 	Button,

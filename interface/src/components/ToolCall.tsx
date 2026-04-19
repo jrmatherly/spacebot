@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {cx} from "class-variance-authority";
-import type {TranscriptStep, OpenCodePart} from "@/api/client";
+import type {TranscriptStep, OpenCodePart} from "@spacebot/api-client/client";
 
 // ---------------------------------------------------------------------------
 // Types

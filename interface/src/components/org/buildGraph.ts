@@ -4,7 +4,7 @@ import {
 	type AgentSummary,
 	type TopologyResponse,
 	type TopologyGroup,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	EDGE_COLOR,
 	GROUP_COLORS,

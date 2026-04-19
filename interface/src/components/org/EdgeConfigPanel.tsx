@@ -2,7 +2,7 @@ import {useState} from "react";
 import {motion} from "framer-motion";
 import type {Edge} from "@xyflow/react";
 import {Button} from "@spacedrive/primitives";
-import type {LinkDirection, LinkKind} from "@/api/client";
+import type {LinkDirection, LinkKind} from "@spacebot/api-client/client";
 
 interface EdgeConfigPanelProps {
 	edge: Edge;

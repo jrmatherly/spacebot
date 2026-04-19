@@ -43,16 +43,12 @@ gate-pr: preflight
 
 typegen:
     cargo run --bin openapi-spec > /tmp/spacebot-openapi.json
-    cd interface && bunx openapi-typescript /tmp/spacebot-openapi.json -o src/api/schema.d.ts
+    bunx openapi-typescript /tmp/spacebot-openapi.json -o packages/api-client/src/schema.d.ts
 
 check-typegen:
     cargo run --bin openapi-spec > /tmp/spacebot-openapi-check.json
-    cd interface && bunx openapi-typescript /tmp/spacebot-openapi-check.json -o /tmp/spacebot-schema-check.d.ts
-    diff interface/src/api/schema.d.ts /tmp/spacebot-schema-check.d.ts
-
-typegen-package:
-	cargo run --bin openapi-spec > /tmp/spacebot-openapi-package.json
-	cd interface && bunx openapi-typescript /tmp/spacebot-openapi-package.json -o src/api/schema.d.ts
+    bunx openapi-typescript /tmp/spacebot-openapi-check.json -o /tmp/spacebot-schema-check.d.ts
+    diff packages/api-client/src/schema.d.ts /tmp/spacebot-schema-check.d.ts
 
 gate-pr-ci: preflight-ci
     ./scripts/gate-pr.sh --ci

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Enforce that every @spacedrive/* dependency in any package.json under the
-# repo uses the `workspace:*` protocol. Prevents silent npm fallbacks if a
-# `package.json` is edited incorrectly.
+# Enforce that every @spacedrive/* and @spacebot/* dependency in any package.json
+# under the repo uses the `workspace:*` protocol. Prevents silent npm fallbacks
+# if a `package.json` is edited incorrectly.
 #
 # Why this exists: our spaceui/packages/*/package.json files declare names
 # like `@spacedrive/primitives`, which is also the upstream scope on npm.
 # `workspace:*` makes bun resolve locally. Any non-workspace spec (e.g., a
-# semver range) would silently resolve to the public registry.
+# semver range) would silently resolve to the public registry. The same risk
+# applies to @spacebot/api-client once activated (no npm package exists, so
+# fallback would fail — but with an opaque error rather than a clear guard hit).
 #
 # Usage: run via `just spaceui-check-workspace` or as an interface/ preinstall.
 
@@ -25,20 +27,20 @@ mapfile -t PACKAGE_JSONS < <(
 violations=0
 
 for pj in "${PACKAGE_JSONS[@]}"; do
-    # Skip files with no @spacedrive/* entries at all.
-    if ! grep -q '"@spacedrive/' "$pj"; then
+    # Skip files with no @spacedrive/* or @spacebot/* entries at all.
+    if ! grep -qE '"@(spacedrive|spacebot)/' "$pj"; then
         continue
     fi
-    # Look for @spacedrive/* entries whose value does not start with "workspace:".
+    # Look for matching entries whose value does not start with "workspace:".
     # Multi-line JSON means a simple grep works when each dep is on its own line,
     # which is the convention we use.
-    bad=$(grep -E '"@spacedrive/[^"]+":\s*"(?!workspace:)' "$pj" 2>/dev/null || true)
+    bad=$(grep -E '"@(spacedrive|spacebot)/[^"]+":\s*"(?!workspace:)' "$pj" 2>/dev/null || true)
     # Fallback for grep without PCRE (BSD grep on macOS):
     if [ -z "$bad" ]; then
-        bad=$(grep -E '"@spacedrive/[^"]+":[[:space:]]*"[^w]' "$pj" || true)
+        bad=$(grep -E '"@(spacedrive|spacebot)/[^"]+":[[:space:]]*"[^w]' "$pj" || true)
     fi
     if [ -n "$bad" ]; then
-        echo "ERROR: non-workspace @spacedrive/* dep in $pj:"
+        echo "ERROR: non-workspace @spacedrive/* or @spacebot/* dep in $pj:"
         echo "$bad" | sed 's/^/  /'
         violations=$((violations + 1))
     fi
@@ -46,10 +48,10 @@ done
 
 if [ "$violations" -gt 0 ]; then
     echo ""
-    echo "Found $violations package.json file(s) with @spacedrive/* deps that"
+    echo "Found $violations package.json file(s) with @spacedrive/* or @spacebot/* deps that"
     echo "do not use the workspace:* protocol. Fix by changing each value to"
     echo "\"workspace:*\"."
     exit 1
 fi
 
-echo "OK — all @spacedrive/* deps use workspace:* protocol."
+echo "OK — all @spacedrive/* and @spacebot/* deps use workspace:* protocol."

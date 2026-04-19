@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
-import {api, type PlatformStatus, type BindingInfo} from "@/api/client";
+import {api, type PlatformStatus, type BindingInfo} from "@spacebot/api-client/client";
 import {
 	isValidE164,
 	E164_ERROR_TEXT,

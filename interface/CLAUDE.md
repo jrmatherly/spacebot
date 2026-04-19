@@ -1,6 +1,6 @@
 # Spacebot Control UI
 
-Vite + React + TypeScript web app served by the Rust daemon via an embedded Axum HTTP server. Has its own `bun.lock`. Declares `../spaceui/packages/*` as workspace members so `@spacedrive/*` packages resolve to local source via symlink.
+Vite + React + TypeScript web app served by the Rust daemon via an embedded Axum HTTP server. Has its own `bun.lock`. Declares `../spaceui/packages/*` and `../packages/*` as workspace members so `@spacedrive/*` and `@spacebot/*` packages resolve to local source via symlink.
 
 ## Package Manager
 
@@ -16,18 +16,20 @@ For styling and component patterns, invoke `/spaceui-dev`.
 
 ## API Client (OpenAPI → TypeScript)
 
-The OpenAPI spec is **generated from Rust code**, not hand-edited. Run `just typegen` to regenerate `interface/src/api/schema.d.ts`. Never hand-edit that file.
+The API client lives at `packages/api-client/` as the workspace-resolved package `@spacebot/api-client`. Import types from the package (e.g., `import { api } from "@spacebot/api-client/client"`) rather than a local `api/` module. The old `interface/src/api/` directory is gone.
+
+The OpenAPI spec is **generated from Rust code**, not hand-edited. Run `just typegen` to regenerate `packages/api-client/src/schema.d.ts`. Never hand-edit that file.
 
 Under the hood `just typegen` runs two steps:
 
 1. `cargo run --bin openapi-spec > /tmp/spacebot-openapi.json`, which emits the spec from `utoipa` annotations on handlers in `src/api/*.rs`.
-2. `bunx openapi-typescript <spec> -o src/api/schema.d.ts`, which produces the typed client schema.
+2. `bunx openapi-typescript <spec> -o packages/api-client/src/schema.d.ts`, which produces the typed client schema.
 
 Before claiming types are correct, run `just check-typegen`. It regenerates the spec and schema to a temp location and diffs against the committed `schema.d.ts`. CI fails if they differ.
 
 When adding a new route:
 - Annotate the handler with `#[utoipa::path(...)]` and register it in `src/api/server.rs`
-- Run `just typegen` to regenerate `schema.d.ts`
+- Run `just typegen` to regenerate `packages/api-client/src/schema.d.ts`
 - Commit both the Rust change and the updated `schema.d.ts`
 
 ## Build & Serve

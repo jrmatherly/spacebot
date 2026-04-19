@@ -8,7 +8,7 @@ import {
 	type TimelineBranchRun,
 	type TimelineWorkerRun,
 	type TranscriptStep,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	isOpenCodeWorker,
 	type ChannelLiveState,

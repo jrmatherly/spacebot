@@ -11,7 +11,7 @@ import {
 	type MemorySort,
 	type MemoryType,
 	type RelationType,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {formatTimeAgo} from "@/lib/format";
 import {Button, CircleButton, LoadingDot} from "@spacedrive/primitives";
 import {

@@ -1,6 +1,6 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type AgentMessageEvent, type ChannelInfo, type ToolStartedEvent, type ToolCompletedEvent, type TranscriptStep, type OpenCodePart, type OpenCodePartUpdatedEvent, type WorkerTextEvent } from "@/api/client";
+import { api, type AgentMessageEvent, type ChannelInfo, type ToolStartedEvent, type ToolCompletedEvent, type TranscriptStep, type OpenCodePart, type OpenCodePartUpdatedEvent, type WorkerTextEvent } from "@spacebot/api-client/client";
 import { generateId } from "@/lib/id";
 import { useEventSource, type ConnectionState } from "@/hooks/useEventSource";
 import { useChannelLiveState, type ChannelLiveState, type ActiveWorker } from "@/hooks/useChannelLiveState";

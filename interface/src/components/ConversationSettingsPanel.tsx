@@ -9,7 +9,7 @@ import {
 import type {
 	ConversationSettings,
 	ConversationDefaultsResponse,
-} from "@/api/types";
+} from "@spacebot/api-client/types";
 
 interface ConversationSettingsPanelProps {
 	defaults: ConversationDefaultsResponse;

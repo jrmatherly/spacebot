@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardHeader, CardContent, Button } from "@spacedrive/primitives";
-import { api, type ActivityDay } from "@/api/client";
+import { api, type ActivityDay } from "@spacebot/api-client/client";
 import {
 	ResponsiveContainer,
 	AreaChart,

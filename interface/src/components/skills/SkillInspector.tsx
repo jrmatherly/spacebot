@@ -1,7 +1,7 @@
 import {X, ArrowSquareOut, Trash} from "@phosphor-icons/react";
 import {useQuery} from "@tanstack/react-query";
 import {Button, Badge} from "@spacedrive/primitives";
-import {api} from "@/api/client";
+import {api} from "@spacebot/api-client/client";
 import type {SelectedSkill} from "./types";
 
 interface SkillInspectorProps {

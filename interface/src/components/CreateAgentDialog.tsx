@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {useQuery} from "@tanstack/react-query";
-import {api, type PresetMeta} from "@/api/client";
+import {api, type PresetMeta} from "@spacebot/api-client/client";
 import {DialogRoot, DialogContent} from "@spacedrive/primitives";
 import {CortexChatPanel} from "@/components/CortexChatPanel";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";

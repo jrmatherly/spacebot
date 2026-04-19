@@ -6,7 +6,7 @@ import {
 	type PromptSnapshotSummary,
 	type PromptHistoryBlock,
 	type PromptHistoryMessage,
-} from "@/api/client";
+} from "@spacebot/api-client/client";
 import {
 	Button,
 	DialogRoot,
