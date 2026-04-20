@@ -336,14 +336,16 @@ fn parse_mcp_server_config(raw: TomlMcpServerConfig) -> Result<McpServerConfig> 
 
 impl Config {
     /// Resolve the instance directory from env or default (~/.spacebot).
+    ///
+    /// Empty `SPACEBOT_DIR` is treated as unset to avoid returning
+    /// `PathBuf::from("")` which silently breaks downstream path joins.
     pub fn default_instance_dir() -> PathBuf {
-        std::env::var("SPACEBOT_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                dirs::home_dir()
-                    .map(|d| d.join(".spacebot"))
-                    .unwrap_or_else(|| PathBuf::from("./.spacebot"))
-            })
+        match std::env::var("SPACEBOT_DIR") {
+            Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => dirs::home_dir()
+                .map(|d| d.join(".spacebot"))
+                .unwrap_or_else(|| PathBuf::from("./.spacebot")),
+        }
     }
 
     /// Resolve the instance directory honoring SPACEBOT_DIR env, then optional

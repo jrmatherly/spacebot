@@ -2304,4 +2304,16 @@ tool_use_enforcement = ["gemini", "deepseek"]
         // default_instance_dir returns ~/.spacebot or ./.spacebot — never "".
         assert_ne!(result, PathBuf::from(""));
     }
+
+    #[test]
+    fn default_instance_dir_ignores_empty_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "") };
+
+        let result = Config::default_instance_dir();
+        // Empty env must fall through to the home-dir/CWD default,
+        // never to PathBuf::from("").
+        assert_ne!(result, PathBuf::from(""));
+    }
 }
