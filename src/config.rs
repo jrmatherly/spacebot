@@ -70,6 +70,8 @@ mod tests {
                 "ANTHROPIC_AUTH_TOKEN",
                 "ANTHROPIC_OAUTH_TOKEN",
                 "OPENAI_API_KEY",
+                "OPENAI_API_BASE",
+                "OPENAI_BASE_URL",
                 "OPENROUTER_API_KEY",
                 "KILO_API_KEY",
                 "ZHIPU_API_KEY",
@@ -2325,5 +2327,64 @@ tool_use_enforcement = ["gemini", "deepseek"]
         // Empty env must fall through to the home-dir/CWD default,
         // never to PathBuf::from("").
         assert_ne!(result, PathBuf::from(""));
+    }
+
+    #[test]
+    fn openai_base_url_env_var_is_honored() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_API_BASE", "http://litellm.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider populated from OPENAI_API_KEY");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+    }
+
+    #[test]
+    fn openai_base_url_env_var_alias_works() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_BASE_URL", "http://alt.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider");
+        assert_eq!(openai.base_url, "http://alt.example.com/v1");
+    }
+
+    #[test]
+    fn openai_api_base_wins_over_openai_base_url_when_both_set() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_API_BASE", "http://primary.example.com/v1");
+            std::env::set_var("OPENAI_BASE_URL", "http://secondary.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider");
+        // OPENAI_API_BASE is the canonical OpenAI SDK var; takes precedence.
+        assert_eq!(openai.base_url, "http://primary.example.com/v1");
     }
 }

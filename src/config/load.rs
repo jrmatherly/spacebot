@@ -629,11 +629,14 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
+            let base_url = std::env::var("OPENAI_API_BASE")
+                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
                     api_type: ApiType::OpenAiCompletions,
-                    base_url: OPENAI_PROVIDER_BASE_URL.to_string(),
+                    base_url,
                     api_key: openai_key,
                     name: None,
                     use_bearer_auth: false,
@@ -1258,11 +1261,14 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
+            let base_url = std::env::var("OPENAI_API_BASE")
+                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
                     api_type: ApiType::OpenAiCompletions,
-                    base_url: OPENAI_PROVIDER_BASE_URL.to_string(),
+                    base_url,
                     api_key: openai_key,
                     name: None,
                     use_bearer_auth: false,
