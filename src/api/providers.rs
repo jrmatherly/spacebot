@@ -74,6 +74,28 @@ pub(super) struct ProvidersResponse {
     has_any: bool,
 }
 
+/// LiteLLM modal sends extra_headers as named objects `{name, value}`
+/// for TypeScript ergonomics. Handler converts to `Vec<(String, String)>`
+/// at the TOML write boundary via `HeaderEntry::entries_to_tuples`.
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
+pub(super) struct HeaderEntry {
+    pub(super) name: String,
+    pub(super) value: String,
+}
+
+impl HeaderEntry {
+    /// Convert a `Vec<HeaderEntry>` from a request into the tuple form
+    /// used by `ProviderConfig.extra_headers`. Empty-named rows are dropped
+    /// (UI submits blank rows when the user adds-then-removes a header).
+    pub(super) fn entries_to_tuples(entries: Vec<HeaderEntry>) -> Vec<(String, String)> {
+        entries
+            .into_iter()
+            .filter(|h| !h.name.trim().is_empty())
+            .map(|h| (h.name.trim().to_string(), h.value))
+            .collect()
+    }
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct ProviderUpdateRequest {
     provider: String,
@@ -86,6 +108,13 @@ pub(super) struct ProviderUpdateRequest {
     api_version: Option<String>,
     #[serde(default)]
     deployment: Option<String>,
+    // LiteLLM-specific fields (optional). `use_bearer_auth` defaults to true
+    // for LiteLLM on first write; if None on re-save, existing value is preserved.
+    // `extra_headers` empty/None on re-save preserves existing headers.
+    #[serde(default)]
+    use_bearer_auth: Option<bool>,
+    #[serde(default)]
+    extra_headers: Option<Vec<HeaderEntry>>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -106,6 +135,12 @@ pub(super) struct ProviderModelTestRequest {
     api_version: Option<String>,
     #[serde(default)]
     deployment: Option<String>,
+    // LiteLLM-specific fields (optional). Probe uses these values exactly
+    // so Test Model reflects what Save will write.
+    #[serde(default)]
+    use_bearer_auth: Option<bool>,
+    #[serde(default)]
+    extra_headers: Option<Vec<HeaderEntry>>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -167,6 +202,7 @@ fn provider_toml_key(provider: &str) -> Option<&'static str> {
         "moonshot" => Some("moonshot_key"),
         "zai-coding-plan" => Some("zai_coding_plan_key"),
         "github-copilot" => Some("github_copilot_key"),
+        "litellm" => Some("litellm_api_key"),
         _ => None,
     }
 }
@@ -877,8 +913,14 @@ pub(super) async fn update_provider(
             base_url: request.base_url,
             api_version: request.api_version,
             deployment: request.deployment,
+            use_bearer_auth: request.use_bearer_auth,
+            extra_headers: request.extra_headers,
         };
         return update_azure_provider(state, azure_request, &normalized_model).await;
+    }
+
+    if normalized_provider == "litellm" {
+        return update_litellm_provider(state, request, &normalized_model).await;
     }
 
     let Some(key_name) = provider_toml_key(&normalized_provider) else {
@@ -1136,6 +1178,155 @@ async fn update_azure_provider(
         message: format!(
             "Azure provider configured. Deployment '{}' with model '{}' verified and applied to defaults and the default agent routing.",
             deployment, normalized_model
+        ),
+    }))
+}
+
+async fn update_litellm_provider(
+    state: Arc<ApiState>,
+    request: ProviderUpdateRequest,
+    normalized_model: &str,
+) -> Result<Json<ProviderUpdateResponse>, StatusCode> {
+    let base_url = match request.base_url.as_ref() {
+        Some(u) if !u.trim().is_empty() => u.trim().trim_end_matches('/').to_string(),
+        _ => {
+            return Ok(Json(ProviderUpdateResponse {
+                success: false,
+                message: "Base URL is required for LiteLLM".into(),
+            }));
+        }
+    };
+
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return Ok(Json(ProviderUpdateResponse {
+            success: false,
+            message: "Base URL must start with http:// or https://".into(),
+        }));
+    }
+
+    if normalized_model.is_empty() {
+        return Ok(Json(ProviderUpdateResponse {
+            success: false,
+            message: "Model cannot be empty".into(),
+        }));
+    }
+
+    if !model_matches_provider("litellm", normalized_model) {
+        return Ok(Json(ProviderUpdateResponse {
+            success: false,
+            message: format!(
+                "Model '{}' does not match provider 'litellm'.",
+                normalized_model
+            ),
+        }));
+    }
+
+    let config_path = state.config_path.read().await.clone();
+    let content = if config_path.exists() {
+        tokio::fs::read_to_string(&config_path).await.map_err(|error| {
+            tracing::error!(%error, path = %config_path.display(), "failed to read config.toml for litellm setup");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+    } else {
+        String::new()
+    };
+
+    let mut doc: toml_edit::DocumentMut = content.parse().map_err(|error| {
+        tracing::error!(%error, "failed to parse config.toml for litellm setup");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Determine the API key: empty input on re-save reuses existing
+    // (same pattern as Azure — prevents accidentally wiping a secret:
+    // reference value that the UI can't safely prefill).
+    let api_key = if request.api_key.trim().is_empty() {
+        match doc
+            .get("llm")
+            .and_then(|llm| llm.get("providers"))
+            .and_then(|providers| providers.get("litellm"))
+            .and_then(|litellm| litellm.get("api_key"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+        {
+            Some(existing) => existing,
+            None => {
+                return Ok(Json(ProviderUpdateResponse {
+                    success: false,
+                    message: "API key is required but no existing key found".to_string(),
+                }));
+            }
+        }
+    } else {
+        request.api_key.trim().to_string()
+    };
+
+    if doc.get("llm").is_none() {
+        doc["llm"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    if doc["llm"].get("providers").is_none() {
+        doc["llm"]["providers"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    if doc["llm"]["providers"].get("litellm").is_none() {
+        doc["llm"]["providers"]["litellm"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+
+    let litellm_table = doc["llm"]["providers"]["litellm"]
+        .as_table_mut()
+        .expect("litellm table must exist after initialization above");
+    litellm_table["api_type"] = toml_edit::value("openai_completions");
+    litellm_table["base_url"] = toml_edit::value(&base_url);
+    litellm_table["api_key"] = toml_edit::value(&api_key);
+
+    // use_bearer_auth: write request value if present; otherwise leave
+    // existing (preserves operator-set value on re-save). On first write
+    // (no existing value), default to true.
+    match request.use_bearer_auth {
+        Some(v) => {
+            litellm_table["use_bearer_auth"] = toml_edit::value(v);
+        }
+        None => {
+            if litellm_table.get("use_bearer_auth").is_none() {
+                litellm_table["use_bearer_auth"] = toml_edit::value(true);
+            }
+        }
+    }
+
+    // extra_headers: non-empty supplied list overwrites. Empty/None preserves
+    // existing values (dual-empty-is-no-change rule from §7-Q2 of the audit).
+    let requested_headers = request.extra_headers.unwrap_or_default();
+    let headers_tuples = HeaderEntry::entries_to_tuples(requested_headers);
+    if !headers_tuples.is_empty() {
+        let mut arr = toml_edit::Array::new();
+        for (name, value) in &headers_tuples {
+            let mut row = toml_edit::Array::new();
+            row.push(name.as_str());
+            row.push(value.as_str());
+            arr.push(row);
+        }
+        litellm_table["extra_headers"] = toml_edit::value(arr);
+    }
+
+    apply_model_routing(&mut doc, normalized_model);
+
+    tokio::fs::write(&config_path, doc.to_string())
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, path = %config_path.display(), "failed to write config.toml for litellm setup");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    refresh_defaults_config(&state).await;
+
+    state
+        .provider_setup_tx
+        .try_send(crate::ProviderSetupEvent::ProvidersConfigured)
+        .ok();
+
+    Ok(Json(ProviderUpdateResponse {
+        success: true,
+        message: format!(
+            "LiteLLM provider configured. Model '{}' verified and applied to defaults and the default agent routing.",
+            normalized_model
         ),
     }))
 }
@@ -1470,6 +1661,113 @@ pub(super) async fn test_provider_model(
         };
     }
 
+    if normalized_provider == "litellm" {
+        let base_url = match request.base_url.as_ref() {
+            Some(u) if !u.trim().is_empty() => u.trim().trim_end_matches('/').to_string(),
+            _ => {
+                return Ok(Json(ProviderModelTestResponse {
+                    success: false,
+                    message: "Base URL is required for LiteLLM".to_string(),
+                    provider: request.provider,
+                    model: request.model,
+                    sample: None,
+                }));
+            }
+        };
+
+        if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+            return Ok(Json(ProviderModelTestResponse {
+                success: false,
+                message: "Base URL must start with http:// or https://".to_string(),
+                provider: request.provider,
+                model: request.model,
+                sample: None,
+            }));
+        }
+
+        let use_bearer_auth = request.use_bearer_auth.unwrap_or(true);
+        let extra_headers = HeaderEntry::entries_to_tuples(
+            request.extra_headers.clone().unwrap_or_default(),
+        );
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "litellm".to_string(),
+            crate::config::ProviderConfig {
+                api_type: crate::config::ApiType::OpenAiCompletions,
+                base_url,
+                api_key: api_key.trim().to_string(),
+                name: Some("LiteLLM".to_string()),
+                use_bearer_auth,
+                extra_headers,
+                api_version: None,
+                deployment: None,
+            },
+        );
+
+        let llm_config = crate::config::LlmConfig {
+            anthropic_key: None,
+            openai_key: None,
+            openrouter_key: None,
+            kilo_key: None,
+            zhipu_key: None,
+            groq_key: None,
+            together_key: None,
+            fireworks_key: None,
+            deepseek_key: None,
+            xai_key: None,
+            mistral_key: None,
+            gemini_key: None,
+            ollama_key: None,
+            ollama_base_url: None,
+            opencode_zen_key: None,
+            opencode_go_key: None,
+            nvidia_key: None,
+            minimax_key: None,
+            minimax_cn_key: None,
+            moonshot_key: None,
+            zai_coding_plan_key: None,
+            github_copilot_key: None,
+            litellm_api_key: Some(api_key.trim().to_string()),
+            providers,
+        };
+
+        let llm_manager = match crate::llm::LlmManager::new(llm_config).await {
+            Ok(manager) => Arc::new(manager),
+            Err(error) => {
+                return Ok(Json(ProviderModelTestResponse {
+                    success: false,
+                    message: format!("Failed to initialize provider: {error}"),
+                    provider: request.provider,
+                    model: request.model,
+                    sample: None,
+                }));
+            }
+        };
+
+        let model = crate::llm::SpacebotModel::make(&llm_manager, normalized_model);
+        let agent = AgentBuilder::new(model)
+            .preamble("You are running a provider connectivity check. Reply with exactly: OK")
+            .build();
+
+        return match agent.prompt("Connection test").await {
+            Ok(sample) => Ok(Json(ProviderModelTestResponse {
+                success: true,
+                message: "Model responded successfully".to_string(),
+                provider: request.provider,
+                model: request.model,
+                sample: Some(sample),
+            })),
+            Err(error) => Ok(Json(ProviderModelTestResponse {
+                success: false,
+                message: format!("Model test failed: {error}"),
+                provider: request.provider,
+                model: request.model,
+                sample: None,
+            })),
+        };
+    }
+
     let llm_config = build_test_llm_config(&normalized_provider, api_key.trim());
     let llm_manager = match crate::llm::LlmManager::new(llm_config).await {
         Ok(manager) => Arc::new(manager),
@@ -1604,6 +1902,49 @@ pub(super) async fn delete_provider(
         }));
     }
 
+    if provider == "litellm" {
+        let config_path = state.config_path.read().await.clone();
+        if !config_path.exists() {
+            return Ok(Json(ProviderUpdateResponse {
+                success: false,
+                message: "No config file found".into(),
+            }));
+        }
+
+        let content = tokio::fs::read_to_string(&config_path).await.map_err(|error| {
+            tracing::error!(%error, path = %config_path.display(), "failed to read config.toml for litellm removal");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        let mut doc: toml_edit::DocumentMut = content.parse().map_err(|error| {
+            tracing::error!(%error, "failed to parse config.toml for litellm removal");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        if let Some(llm) = doc.get_mut("llm")
+            && let Some(llm_table) = llm.as_table_mut()
+            && let Some(providers_item) = llm_table.get_mut("providers")
+            && let Some(providers_tbl) = providers_item.as_table_mut()
+        {
+            providers_tbl.remove("litellm");
+            if providers_tbl.is_empty() {
+                llm_table.remove("providers");
+            }
+        }
+
+        tokio::fs::write(&config_path, doc.to_string())
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "failed to write config after litellm removal");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        return Ok(Json(ProviderUpdateResponse {
+            success: true,
+            message: "Provider 'litellm' removed".into(),
+        }));
+    }
+
     let Some(key_name) = provider_toml_key(&provider) else {
         return Ok(Json(ProviderUpdateResponse {
             success: false,
@@ -1662,5 +2003,63 @@ mod tests {
 
         assert_eq!(provider.base_url, "http://remote-ollama.local:11434");
         assert_eq!(provider.api_key, "");
+    }
+
+    #[test]
+    fn provider_toml_key_recognizes_litellm() {
+        assert_eq!(
+            super::provider_toml_key("litellm"),
+            Some("litellm_api_key"),
+            "litellm must be a known provider so Update/Test/Delete handlers don't short-circuit"
+        );
+    }
+
+    /// The LiteLLM branch validates base_url before any handler work. A pure-
+    /// function shape test guards the predicate — a full handler test requires
+    /// an ApiState harness we do not have at this layer.
+    #[test]
+    fn litellm_base_url_validator_rejects_empty_and_non_http_urls() {
+        fn is_valid(u: Option<&str>) -> bool {
+            u.map(|u| {
+                !u.trim().is_empty() && (u.starts_with("http://") || u.starts_with("https://"))
+            })
+            .unwrap_or(false)
+        }
+        assert!(!is_valid(None), "None must fail");
+        assert!(!is_valid(Some("")), "empty must fail");
+        assert!(!is_valid(Some("   ")), "whitespace must fail");
+        assert!(!is_valid(Some("ftp://example.com")), "ftp must fail");
+        assert!(is_valid(Some("http://localhost:4000")), "http is valid");
+        assert!(
+            is_valid(Some("https://litellm.internal.example.com")),
+            "https is valid"
+        );
+    }
+
+    #[test]
+    fn header_entry_tuples_conversion_drops_empty_names() {
+        use super::HeaderEntry;
+        let entries = vec![
+            HeaderEntry {
+                name: "x-good".to_string(),
+                value: "v1".to_string(),
+            },
+            HeaderEntry {
+                name: "   ".to_string(),
+                value: "v2".to_string(),
+            },
+            HeaderEntry {
+                name: "".to_string(),
+                value: "v3".to_string(),
+            },
+            HeaderEntry {
+                name: "x-keep".to_string(),
+                value: "v4".to_string(),
+            },
+        ];
+        let tuples = HeaderEntry::entries_to_tuples(entries);
+        assert_eq!(tuples.len(), 2);
+        assert_eq!(tuples[0], ("x-good".to_string(), "v1".to_string()));
+        assert_eq!(tuples[1], ("x-keep".to_string(), "v4".to_string()));
     }
 }
