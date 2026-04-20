@@ -382,11 +382,13 @@ fn build_otlp_provider(telemetry: &TelemetryConfig) -> Option<SdkTracerProvider>
         .with_sampler(sampler)
         .build();
 
-    tracing::info!(
-        endpoint = %endpoint,
-        transport = %protocol,
-        service_name = %telemetry.service_name,
-        "OTLP exporter initialized"
+    // Use `eprintln!` rather than `tracing::info!` because `build_otlp_provider`
+    // runs before `tracing_subscriber::registry().init()` — tracing events here
+    // would be silently dropped. The adjacent error paths in this function use
+    // the same convention for the same reason.
+    eprintln!(
+        "OTLP exporter initialized: endpoint={endpoint} transport={protocol} service_name={}",
+        telemetry.service_name
     );
 
     Some(provider)
@@ -394,6 +396,10 @@ fn build_otlp_provider(telemetry: &TelemetryConfig) -> Option<SdkTracerProvider>
 
 /// Warn when `OTEL_EXPORTER_OTLP_PROTOCOL` implies a different port than was
 /// configured. 4317 is the gRPC convention; 4318 is the HTTP convention.
+///
+/// Uses `eprintln!` rather than `tracing::warn!` because this runs before the
+/// tracing subscriber is initialized (via `build_otlp_provider`, called from
+/// `init_background_tracing` / `init_foreground_tracing` before `.init()`).
 fn warn_on_port_protocol_mismatch(endpoint: &str, protocol: &str) {
     let port = endpoint
         .rsplit(':')
@@ -402,11 +408,11 @@ fn warn_on_port_protocol_mismatch(endpoint: &str, protocol: &str) {
         .and_then(|p| p.parse::<u16>().ok());
 
     match (protocol, port) {
-        ("grpc", Some(4318)) => tracing::warn!(
-            "OTEL_EXPORTER_OTLP_PROTOCOL=grpc but endpoint port is 4318 (HTTP convention); did you mean port 4317?"
+        ("grpc", Some(4318)) => eprintln!(
+            "warning: OTEL_EXPORTER_OTLP_PROTOCOL=grpc but endpoint port is 4318 (HTTP convention); did you mean port 4317?"
         ),
-        ("http/protobuf" | "http/json", Some(4317)) => tracing::warn!(
-            "OTEL_EXPORTER_OTLP_PROTOCOL={protocol} but endpoint port is 4317 (gRPC convention); did you mean port 4318?"
+        ("http/protobuf" | "http/json", Some(4317)) => eprintln!(
+            "warning: OTEL_EXPORTER_OTLP_PROTOCOL={protocol} but endpoint port is 4317 (gRPC convention); did you mean port 4318?"
         ),
         _ => {}
     }
@@ -444,6 +450,49 @@ mod otlp_protocol_tests {
         // When the feature is missing, build_otlp_provider must NOT panic and
         // must return None (operator gets a clear log entry, no crash).
         let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("grpc")));
+        assert!(p.is_none());
+    }
+
+    #[cfg(feature = "otlp-grpc")]
+    #[test]
+    fn grpc_protocol_with_feature_builds_exporter() {
+        // When the feature is enabled, build_otlp_provider must NOT panic and
+        // must return Some (the exporter builds even if the endpoint is not
+        // actually reachable — gRPC connection is lazy until the first export).
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("grpc")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn http_json_protocol_builds_exporter() {
+        // http/json shares the HTTP transport arm with http/protobuf; this
+        // test pins the case-sensitivity-insensitive match on the distinct
+        // input string so a future refactor can't drop one arm silently.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("http/json")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn protocol_matching_is_case_insensitive() {
+        // Operators frequently set OTEL_EXPORTER_OTLP_PROTOCOL=GRPC (uppercase).
+        // Without the feature, the uppercase form must still match the grpc
+        // arm and return None rather than falling through to the "unsupported"
+        // arm with a different error message.
+        #[cfg(not(feature = "otlp-grpc"))]
+        {
+            let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("GRPC")));
+            assert!(p.is_none());
+        }
+        // HTTP/protobuf uppercase works in every build.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("HTTP/Protobuf")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn unsupported_protocol_returns_none() {
+        // The `other =>` arm should disable OTLP rather than silently falling
+        // back to HTTP/protobuf. "xyz" is deliberately not a known transport.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("xyz")));
         assert!(p.is_none());
     }
 }

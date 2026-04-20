@@ -2461,6 +2461,36 @@ api_key = "key"
     }
 
     #[test]
+    fn openai_base_url_env_is_honored_at_from_toml_site() {
+        // The OpenAI populator is duplicated at two sites in load.rs:
+        // load_from_env (~:646) and from_toml_inner (~:1306). The three
+        // existing env tests go through load_from_env via Config::load_from_env;
+        // this test covers the from_toml_inner site via Config::load_from_path
+        // with a TOML that has only `openai_key` (so the populator runs) and
+        // no [llm.providers.openai] table (so entry().or_insert_with() fires).
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_BASE", "http://litellm.example.com/v1");
+        }
+
+        let toml = r#"
+[llm]
+openai_key = "test-key"
+"#;
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider populated from openai_key at from_toml_inner site");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+    }
+
+    #[test]
     fn needs_onboarding_for_config_honors_config_path() {
         let _lock = env_test_lock().lock();
         let _env = EnvGuard::new();

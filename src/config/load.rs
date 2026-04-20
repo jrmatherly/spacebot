@@ -1057,11 +1057,12 @@ impl Config {
         strict_bindings: bool,
     ) -> Result<Self> {
         // Merge top-level [[providers]] array entries (cluster-friendly form)
-        // into toml.llm.providers BEFORE validation runs. The struct-literal
-        // at ~:1207 consumes toml.llm.providers via .into_iter(), so the
-        // merge must happen here. entry().or_insert_with() ensures the table
-        // form ([llm.providers.<id>]) wins on conflict because serde populated
-        // it first.
+        // into toml.llm.providers BEFORE validation runs. The `providers:`
+        // field initializer later in this function consumes toml.llm.providers
+        // via .into_iter(), so the merge must happen here. entry().or_insert_with()
+        // ensures the table form ([llm.providers.<id>]) wins on conflict because
+        // serde populated it first; on conflict, the array entry is dropped and
+        // we log a breadcrumb so operators can tell which form won.
         for entry in toml.top_level_providers.drain(..) {
             let normalized_id = entry.name.to_lowercase();
             if normalized_id.is_empty()
@@ -1074,10 +1075,17 @@ impl Config {
                 ))
                 .into());
             }
-            toml.llm
-                .providers
-                .entry(normalized_id)
-                .or_insert_with(|| entry.into());
+            match toml.llm.providers.entry(normalized_id) {
+                std::collections::hash_map::Entry::Occupied(occupied) => {
+                    tracing::info!(
+                        provider = %occupied.key(),
+                        "[[providers]] array entry shadowed by [llm.providers.<id>] table form; table form wins"
+                    );
+                }
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    vacant.insert(entry.into());
+                }
+            }
         }
 
         // Validate providers before processing
