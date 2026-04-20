@@ -17,8 +17,26 @@ name: CodeQL
 on:
   push:
     branches: [main]
+    # Skip docs-only / markdown / preset-text pushes. These never change source
+    # CodeQL can analyze, and queueing them up was causing back-to-back pushes
+    # to cancel still-running Rust analyses (~8 min) on main, which surfaces
+    # in the Security tab as "CodeQL exited with errors". The codeql-config.yml
+    # paths-ignore scopes what the extractor SEES; this scopes whether the
+    # workflow RUNS at all.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "openspec/**"
+      - "presets/**"
+      - "prompts/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "openspec/**"
+      - "presets/**"
+      - "prompts/**"
   schedule:
     # Weekly baseline — catches newly-published queries against untouched code.
     - cron: "0 6 * * 1"
@@ -31,7 +49,12 @@ permissions:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches (rapid review iteration), but let
+  # main-branch runs complete. Cancelling on main makes the Security tab show
+  # "CodeQL exited with errors" because GitHub treats any non-success terminal
+  # state as a configuration failure, even when the cancellation was our own
+  # concurrency policy firing on a still-running run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   analyze-rust:

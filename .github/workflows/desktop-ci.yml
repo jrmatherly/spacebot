@@ -50,7 +50,11 @@ permissions:
 
 concurrency:
   group: desktop-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches (rapid review iteration), but let
+  # main-branch runs complete. Keeps the Checks history on main free of
+  # `cancelled` terminal states caused by our own concurrency policy. See
+  # ci.yml for the same rationale.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   guard:

@@ -26,6 +26,12 @@ on:
         required: true
         default: 'latest'
 
+concurrency:
+  group: docker-compose-${{ github.ref }}
+  # Cancel superseded runs on PR branches (rapid review iteration), but let
+  # main-branch runs complete. See ci.yml for the same rationale.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   validate:
     name: Validate compose config for every profile

@@ -16,6 +16,18 @@ on:
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
+    # Mirror the push-side path filter on the negative side. Without this, any
+    # docs-only PR triggers the full Rust check/clippy/test/typegen/audit
+    # matrix on every push to the PR branch — wasted runner minutes and noisy
+    # Checks UI. The push-side already path-FILTERS positively; PRs use
+    # paths-ignore because PR diffs typically span more file types than push
+    # commits, and an allow-list would be brittle as new code paths land.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "openspec/**"
+      - "presets/**"
+      - "prompts/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,7 +38,13 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches (rapid review iteration), but let
+  # main-branch runs complete. Same rationale as codeql.yml: cancellation on
+  # main produces a non-success terminal state that obscures whether the
+  # latest code actually passes CI. Branch-protection isn't currently
+  # enforced, but if/when it is added, completed-on-main runs are required
+  # for the "required status check" model to work.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
