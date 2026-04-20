@@ -89,3 +89,29 @@ async fn constant_time_compare_is_used_for_token() {
     let _ = r1.into_body().collect().await;
     let _ = r2.into_body().collect().await;
 }
+
+#[tokio::test]
+async fn cors_does_not_advertise_credentials() {
+    let state = Arc::new(ApiState::new_for_tests(None));
+    let app = build_test_router(state);
+    // OPTIONS preflight from an arbitrary origin:
+    let preflight = Request::builder()
+        .method("OPTIONS")
+        .uri("/api/status")
+        .header("Origin", "https://attacker.example")
+        .header("Access-Control-Request-Method", "GET")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(preflight).await.unwrap();
+    // The CORS config uses mirror_request(); credentials MUST NOT be allowed.
+    // If a future change introduces session cookies, read research §12 I-6
+    // before removing this test.
+    assert!(
+        res.headers()
+            .get("access-control-allow-credentials")
+            .is_none(),
+        "CORS must not advertise credentials (src/api/server.rs start_http_server). \
+         If you're changing this, you're probably adopting session cookies — \
+         read research §12 I-6 before removing this test."
+    );
+}
