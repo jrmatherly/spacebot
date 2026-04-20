@@ -125,7 +125,7 @@ api_version = "2025-04-01-preview"
 deployment = "gpt-5-nano"
 
 [llm.providers.litellm]
-api_type = "openai_chat_completions"
+api_type = "openai_completions"                    # /v1/chat/completions (canonical for LiteLLM)
 base_url = "http://localhost:4000/v1"
 api_key = "secret:LITELLM_API_KEY"
 use_bearer_auth = true
