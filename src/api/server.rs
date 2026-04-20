@@ -374,6 +374,11 @@ async fn api_auth_middleware(
     if is_authorized {
         next.run(request).await
     } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .auth_failures_total
+            .with_label_values(&["static_token", "bearer_mismatch"])
+            .inc();
         (
             StatusCode::UNAUTHORIZED,
             Json(json!({"error": "unauthorized"})),

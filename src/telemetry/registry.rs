@@ -73,6 +73,10 @@ pub struct Metrics {
     /// Labels: agent_id, process_type, error_type, worker_type.
     pub process_errors_total: IntCounterVec,
 
+    /// Auth-middleware rejections, counted per branch and reason.
+    /// Labels: `branch` (`static_token` | `entra_jwt`), `reason` (machine-readable cause).
+    pub auth_failures_total: IntCounterVec,
+
     // -- Memory audit --
     /// Memory mutation operations.
     /// Labels: agent_id, operation (save/update/delete/forget).
@@ -302,6 +306,15 @@ impl Metrics {
         let process_errors_total = IntCounterVec::new(
             Opts::new("spacebot_process_errors_total", "Process errors by type"),
             &["agent_id", "process_type", "error_type", "worker_type"],
+        )
+        .expect("hardcoded metric descriptor");
+
+        let auth_failures_total = IntCounterVec::new(
+            Opts::new(
+                "spacebot_auth_failures_total",
+                "Auth-middleware rejections by branch and reason",
+            ),
+            &["branch", "reason"],
         )
         .expect("hardcoded metric descriptor");
 
@@ -577,6 +590,9 @@ impl Metrics {
             .register(Box::new(process_errors_total.clone()))
             .expect("hardcoded metric");
         registry
+            .register(Box::new(auth_failures_total.clone()))
+            .expect("hardcoded metric");
+        registry
             .register(Box::new(memory_updates_total.clone()))
             .expect("hardcoded metric");
         registry
@@ -686,6 +702,7 @@ impl Metrics {
             active_branches,
             worker_duration_seconds,
             process_errors_total,
+            auth_failures_total,
             memory_updates_total,
             dispatch_while_cold_count,
             event_receiver_lagged_events_total,
