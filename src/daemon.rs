@@ -332,8 +332,7 @@ fn build_otlp_provider(telemetry: &TelemetryConfig) -> Option<SdkTracerProvider>
                 .with_http()
                 .with_endpoint(endpoint);
             if !telemetry.otlp_headers.is_empty() {
-                exporter_builder =
-                    exporter_builder.with_headers(telemetry.otlp_headers.clone());
+                exporter_builder = exporter_builder.with_headers(telemetry.otlp_headers.clone());
             }
             match exporter_builder.build() {
                 Ok(exp) => exp,

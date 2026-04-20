@@ -2315,10 +2315,7 @@ tool_use_enforcement = ["gemini", "deepseek"]
             "spacedrive must be a known key"
         );
         assert!(keys.contains(&"instance"), "instance must be a known key");
-        assert!(
-            keys.contains(&"providers"),
-            "providers must be a known key"
-        );
+        assert!(keys.contains(&"providers"), "providers must be a known key");
     }
 
     #[test]
@@ -2363,11 +2360,7 @@ tool_use_enforcement = ["gemini", "deepseek"]
 
         let temp = tempfile::tempdir().expect("tempdir");
         let config = Config::load_from_env(temp.path()).expect("env load");
-        let openai = config
-            .llm
-            .providers
-            .get("openai")
-            .expect("openai provider");
+        let openai = config.llm.providers.get("openai").expect("openai provider");
         assert_eq!(openai.base_url, "http://alt.example.com/v1");
     }
 
@@ -2502,11 +2495,7 @@ api_key = "key"
 
         let temp = tempfile::tempdir().expect("tempdir");
         let config = Config::load_from_env(temp.path()).expect("env load");
-        let openai = config
-            .llm
-            .providers
-            .get("openai")
-            .expect("openai provider");
+        let openai = config.llm.providers.get("openai").expect("openai provider");
         // OPENAI_API_BASE is the canonical OpenAI SDK var; takes precedence.
         assert_eq!(openai.base_url, "http://primary.example.com/v1");
     }

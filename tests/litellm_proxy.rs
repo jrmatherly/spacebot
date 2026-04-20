@@ -33,8 +33,7 @@ api_key = "test-key"
     let temp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(temp.path(), &toml).expect("write");
 
-    let config =
-        spacebot::config::Config::load_from_path(temp.path()).expect("load config");
+    let config = spacebot::config::Config::load_from_path(temp.path()).expect("load config");
 
     let provider = config
         .llm
@@ -63,8 +62,7 @@ api_key = "test-key"
     let temp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(temp.path(), &toml).expect("write");
 
-    let config =
-        spacebot::config::Config::load_from_path(temp.path()).expect("load config");
+    let config = spacebot::config::Config::load_from_path(temp.path()).expect("load config");
 
     let provider = config
         .llm

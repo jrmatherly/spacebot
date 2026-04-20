@@ -47,8 +47,12 @@ See `.env.example` for the full list. Required:
 - `GF_ADMIN_USER` + `GF_ADMIN_PASSWORD` if the `observability` profile is active
 
 Optional:
-- `OTEL_EXPORTER_OTLP_ENDPOINT` — set to `http://alloy:4317` when the `observability` profile is active to send OTLP traces from SpaceBot to the local Grafana Alloy instance. Defaults to empty (tracing disabled). Port 4317 is OTLP gRPC.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP collector URL (e.g. `http://alloy:4318` for HTTP, `http://alloy:4317` for gRPC). Defaults to empty (tracing disabled).
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` — signal-specific override; takes precedence per OTel spec.
+- `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (default), `http/json`, or `grpc`. The `grpc` value requires building the image with `--features otlp-grpc`; without it, `grpc` disables OTLP with a clear error in the logs rather than silently falling back to HTTP.
+- `OTEL_EXPORTER_OTLP_HEADERS` — auth headers (e.g. `authorization=Bearer X`). Not propagated to the gRPC exporter.
 - `OTEL_SERVICE_NAME` — service name attached to traces. Defaults to `spacebot`.
+- `SPACEBOT_DIR` — override the instance directory (SQLite, LanceDB, redb, PID/socket). Wins over `--config` path's parent. Useful for mounting config read-only while keeping data on a writable volume. Empty value is treated as unset.
 
 ## Proxy profile: trust the local CA
 
@@ -71,6 +75,44 @@ just compose-proxy-untrust
 - `just compose-up-build` → rebuilds from the root `Dockerfile`
 
 Combining them produces a port collision on 19898 (both services would claim the same port).
+
+## Routing through a proxy (LiteLLM)
+
+Override each provider's `base_url` in `config.toml` to route LLM traffic
+through a local proxy. Two equivalent TOML forms are accepted.
+
+**Table form (canonical):**
+
+```toml
+[llm.providers.anthropic]
+api_type = "anthropic"
+base_url = "http://litellm:4000/anthropic"
+api_key = "env:ANTHROPIC_API_KEY"
+
+[llm.providers.openai]
+api_type = "openai_completions"
+base_url = "http://litellm:4000/v1"
+api_key = "env:OPENAI_API_KEY"
+```
+
+**Top-level array form (also accepted; merged into the table form at load time):**
+
+```toml
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://litellm:4000/anthropic"
+api_key = "env:ANTHROPIC_API_KEY"
+```
+
+Valid `api_type` values: `openai_completions`, `openai_chat_completions`,
+`kilo_gateway`, `openai_responses`, `anthropic`, `gemini`, `azure`.
+**`api_type = "openai"` is invalid.** Use `openai_completions` when proxying
+OpenAI.
+
+Env var parity for proxy setups: `ANTHROPIC_BASE_URL`, `OPENAI_API_BASE`
+(canonical OpenAI SDK var), and `OPENAI_BASE_URL` (alias) are honored. User
+TOML still wins over env.
 
 ## Security notes
 

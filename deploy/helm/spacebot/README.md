@@ -112,6 +112,101 @@ The `HelmRelease`'s `spec.values:` block is populated from `deploy/helm/spacebot
 
 The values-only approach is right while Spacebot deploys to a single cluster with this deployment pattern. Switch to a publishable wrapper chart (see [`k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md) Option 1b) only when a second independent operator wants to deploy Spacebot outside this cluster. Until then, the values bundle is the lower-overhead option.
 
+## Volume layout
+
+Spacebot needs a writable directory for SQLite, LanceDB, redb, and the IPC
+socket / PID file. The recommended Kubernetes pattern is:
+
+- ConfigMap mounted **read-only** at `/etc/spacebot/` (directory mount, not
+  `subPath`, so live updates propagate via Stakater Reloader)
+- PersistentVolumeClaim mounted **read-write** at `/data`
+- Container args: `["spacebot", "-c", "/etc/spacebot/config.toml", "start", "--foreground"]`
+- Env: `SPACEBOT_DIR=/data`
+
+`SPACEBOT_DIR` wins over the `--config` path's parent, so the daemon writes
+data to `/data` while reading config from `/etc/spacebot/`. Empty
+`SPACEBOT_DIR` is treated as unset.
+
+## Routing through a proxy (LiteLLM)
+
+Spacebot can route LLM traffic through a proxy like LiteLLM by overriding
+each provider's `base_url`. Two equivalent TOML forms are accepted.
+
+**Table form (canonical):**
+
+```toml
+[llm.providers.anthropic]
+api_type = "anthropic"
+base_url = "http://litellm.ai.svc.cluster.local:4000/anthropic"
+api_key = "env:ANTHROPIC_API_KEY"
+
+[llm.providers.openai]
+api_type = "openai_completions"
+base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
+api_key = "env:OPENAI_API_KEY"
+```
+
+**Top-level array form (also accepted; merged into the table form at load time):**
+
+```toml
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://litellm.ai.svc.cluster.local:4000/anthropic"
+api_key = "env:ANTHROPIC_API_KEY"
+```
+
+Valid `api_type` values: `openai_completions`, `openai_chat_completions`,
+`kilo_gateway`, `openai_responses`, `anthropic`, `gemini`, `azure`.
+**`api_type = "openai"` is invalid.** Use `openai_completions` for proxying
+OpenAI through LiteLLM.
+
+If both forms exist for the same provider, the table form wins because it
+lives at the more specific TOML path.
+
+Env var parity for common proxy setups:
+
+| Env var | Effect |
+|---|---|
+| `ANTHROPIC_BASE_URL` | Overrides Anthropic provider `base_url` when populated from `ANTHROPIC_API_KEY` |
+| `OPENAI_API_BASE` | Overrides OpenAI provider `base_url` (canonical OpenAI SDK var) |
+| `OPENAI_BASE_URL` | Alias for `OPENAI_API_BASE` (lower precedence) |
+
+User TOML still wins over env via the internal `or_insert_with` pattern.
+
+## Observability (OTLP)
+
+Spacebot exports traces via OTLP. Default transport is HTTP/protobuf
+(port 4318 convention). To use gRPC (port 4317 convention), the image
+must be built with `--features otlp-grpc`.
+
+| Env var | Effect |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector URL (e.g. `http://alloy:4318`) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Signal-specific override (takes precedence per OTel spec) |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` (default), `http/json`, or `grpc` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Auth headers (e.g. `authorization=Bearer X`) |
+| `OTEL_SERVICE_NAME` | Resource service name (defaults to `spacebot`) |
+
+To **disable** OTLP entirely, leave `OTEL_EXPORTER_OTLP_ENDPOINT` unset AND
+leave `[telemetry].otlp_endpoint` unset in config.toml. There is no
+`telemetry.enabled` field.
+
+Setting `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` against an image built without
+`otlp-grpc` disables OTLP with a clear error in the startup logs rather
+than silently falling back to HTTP.
+
+**gRPC limitations** (current; tracked as follow-up issues):
+
+- gRPC over HTTPS is not supported. The `--features otlp-grpc` build
+  enables plaintext gRPC over HTTP only. For in-cluster collectors
+  (typical Alloy/Tempo deployments using `http://` service URLs), this is
+  sufficient. For external collectors requiring TLS, use OTLP/HTTP at
+  port 4318 instead.
+- `OTEL_EXPORTER_OTLP_HEADERS` are not propagated to the gRPC exporter.
+  The HTTP exporter honors them. Workaround: use OTLP/HTTP if you need
+  auth headers (e.g., for Honeycomb, Datadog, or other SaaS collectors).
+
 ## References
 
 - Decision record: [`docs/design-docs/k8s-helm-scaffold.md`](../../../docs/design-docs/k8s-helm-scaffold.md)
