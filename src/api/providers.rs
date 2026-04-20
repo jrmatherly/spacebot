@@ -62,8 +62,9 @@ pub(super) struct ProviderStatus {
     zai_coding_plan: bool,
     github_copilot: bool,
     azure: bool,
-    /// True when `[llm.providers.litellm]` block is configured OR
-    /// `litellm_api_key` is set in LlmConfig.
+    /// True when any of: `[llm.providers.litellm]` table-form block is
+    /// configured, a top-level `[[providers]]` array entry with
+    /// `name = "litellm"` is present, or `litellm_api_key` is set in LlmConfig.
     litellm: bool,
 }
 

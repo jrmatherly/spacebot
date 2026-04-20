@@ -3751,8 +3751,9 @@ export interface components {
             groq: boolean;
             kilo: boolean;
             /**
-             * @description True when `[llm.providers.litellm]` block is configured OR
-             *     `litellm_api_key` is set in LlmConfig.
+             * @description True when any of: `[llm.providers.litellm]` table-form block is
+             *     configured, a top-level `[[providers]]` array entry with
+             *     `name = "litellm"` is present, or `litellm_api_key` is set in LlmConfig.
              */
             litellm: boolean;
             minimax: boolean;

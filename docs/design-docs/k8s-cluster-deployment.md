@@ -157,7 +157,7 @@ base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
 > LiteLLM as the model gateway, but the in-tree Spacebot implementation has
 > not yet shipped the `[providers.litellm]` configuration surface. The
 > LiteLLM Phase 1 plan at `.scratchpad/plans/2026-04-19-litellm-phase-0-and-1.md`
-> is the reconciliation work — bringing the in-tree config schema in line with
+> is the reconciliation work: bringing the in-tree config schema in line with
 > the already-deployed posture. No k8s-side changes are needed here; the
 > block above is the target operators should use once Phase 1 lands.
 
