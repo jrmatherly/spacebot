@@ -54,6 +54,22 @@ pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     }
 }
 
+/// Resolve OpenAI's `base_url` from env, falling back to the provider default.
+///
+/// Honors `OPENAI_API_BASE` (canonical OpenAI SDK var) first, then
+/// `OPENAI_BASE_URL` as an alias. Symmetric with the Anthropic pattern
+/// (`ANTHROPIC_BASE_URL`) and consistent across both the `load_from_env` and
+/// `from_toml_inner` populator sites.
+///
+/// User TOML still wins over env via the existing `or_insert_with` pattern
+/// in the caller — this helper only controls the default when no TOML block
+/// exists.
+fn openai_base_url() -> String {
+    std::env::var("OPENAI_API_BASE")
+        .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+        .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string())
+}
+
 /// Process-wide reference to the secrets store for use during config resolution.
 ///
 /// Uses `ArcSwap` so it is accessible from any thread (file watcher, API
@@ -643,9 +659,7 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
-            let base_url = std::env::var("OPENAI_API_BASE")
-                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
+            let base_url = openai_base_url();
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
@@ -1311,9 +1325,7 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
-            let base_url = std::env::var("OPENAI_API_BASE")
-                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
+            let base_url = openai_base_url();
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
