@@ -68,16 +68,19 @@ jobs:
         with:
           components: clippy
 
-      # Explicit `key:` forces this cache to share a slot with the `test` job
-      # below (same prefix, same hash inputs). Both jobs compile the same dep
-      # graph against the same target profile; sharing the cache avoids the
-      # LRU-eviction trap that emptied the Test-job cache repeatedly when the
-      # per-job auto-keys pushed the repo cache total over GitHub's 10 GB cap.
-      # See .scratchpad/2026-04-20-ci-cache-eviction-fix.md for the full
-      # writeup and cache inventory that surfaced this.
+      # Job-specific cache slot. Attempted to share with the `test` job below
+      # in commit f4645a6, but that exposed a latent ort-sys link failure:
+      # `cargo check --all-targets` never invokes the linker, so it caches
+      # `.rmeta` files that reference native-library search paths which never
+      # actually get populated with `libonnxruntime.a` on disk. When `test`
+      # restored the shared cache and tried to link its test binary, rustc
+      # failed with "could not find native static library `onnxruntime`".
+      # Reverted 2026-04-20 (commit TODO). Job-specific caches are correct
+      # here despite the duplicate ~1.3 GB storage cost — they're actually
+      # structurally different artifacts (check doesn't link, test must).
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-rust-build
+          shared-key: ci-rust-check
           key: ${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
 
       - name: cargo check
@@ -103,17 +106,12 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    # 40 min, not 20. Test-job cache has been LRU-evicted repeatedly under
-    # the 10 GB per-repo cap, forcing cold rebuilds of ~1000 dep crates. The
-    # 20-min wall was killing the job mid-link on cold caches. With the
-    # shared-key below, the Test job now reads from the same cache as
-    # `check` (which runs first in the DAG and warms it), so warm-cache
-    # runs finish in <5 min and the 40 min is cold-start headroom that
-    # only burns on the first post-deduplication run. Mirrors the same
-    # 30→60 min bump applied to `build-binaries` in release.yml for the
-    # same class of cache-deadlock.
+    # 40 min, not 20. Cold-cache cargo build of the full dep graph (~1000
+    # crates + ort-sys C++ compilation) takes ~25 min; the original 20-min
+    # wall was killing jobs that LRU-lost their cache slot. Once the cache
+    # is warm, test runs finish in <5 min and the 40-min headroom is unused.
+    # Same pattern as release.yml's 30→60 bump on build-binaries.
     timeout-minutes: 40
-    needs: check
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -123,14 +121,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      # Shared cache slot with the `check` job above. `shared-key` makes the
-      # auto-generated `add-job-id-key` segment use the same value for both
-      # jobs, while the `key` adds the Cargo.lock-sensitive content hash so
-      # dep updates invalidate correctly. See the `check` job comment for
-      # rationale.
+      # Job-specific cache slot (NOT shared with `check` — see its comment
+      # for why). The Test job's cache captures artifacts from `cargo test
+      # --lib` which fully links the test binary, so the native-library
+      # search paths ort-sys's build script emits actually point at the
+      # extracted `libonnxruntime.a` on disk. Check's cache does NOT, because
+      # `cargo check` never links.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-rust-build
+          shared-key: ci-rust-test
           key: ${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
 
       - name: cargo test (lib)
