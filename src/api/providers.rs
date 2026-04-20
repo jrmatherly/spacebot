@@ -1410,13 +1410,11 @@ pub(super) async fn get_provider_config(
     // Get Azure config from [llm.providers.azure] (plural); fall back to
     // singular [llm.provider.azure] for backward compatibility with configs
     // written before 2026-04-20.
-    let azure_config = doc
-        .get("llm")
-        .and_then(|llm| {
-            llm.get("providers")
-                .and_then(|p| p.get("azure"))
-                .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
-        });
+    let azure_config = doc.get("llm").and_then(|llm| {
+        llm.get("providers")
+            .and_then(|p| p.get("azure"))
+            .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
+    });
 
     if let Some(azure_table) = azure_config.and_then(|item| item.as_table_like()) {
         let base_url = azure_table
@@ -1706,9 +1704,8 @@ pub(super) async fn test_provider_model(
         }
 
         let use_bearer_auth = request.use_bearer_auth.unwrap_or(true);
-        let extra_headers = HeaderEntry::entries_to_tuples(
-            request.extra_headers.clone().unwrap_or_default(),
-        );
+        let extra_headers =
+            HeaderEntry::entries_to_tuples(request.extra_headers.clone().unwrap_or_default());
 
         let mut providers = HashMap::new();
         providers.insert(
