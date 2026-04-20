@@ -1,0 +1,675 @@
+---
+title: Config Reference
+description: Exhaustive field-by-field reference for every option in config.toml, generated from the Rust schema.
+---
+
+# Config Reference
+
+Every option accepted by Spacebot's TOML configuration schema, with defaults, types, and examples. Companion to [Configuration](/docs/config) which covers how config loads, resolves, and hot-reloads.
+
+**Source of truth:** `src/config/toml_schema.rs` in the spacebot crate. If a field exists in the schema but not on this page, the page is stale. File an issue or open a PR.
+
+## How to Read This Page
+
+Every field row has a type annotation. Common types:
+
+| Type | Meaning |
+|---|---|
+| `bool` | `true` / `false` |
+| `u8`, `u16`, `u32`, `u64`, `usize` | Non-negative integers |
+| `i64` | Signed integer |
+| `f32`, `f64` | Floating-point |
+| `string` | UTF-8 string. May use `secret:NAME`, `env:VAR`, or literal. |
+| `Option<T>` | Field may be omitted |
+| `Vec<T>` | TOML array |
+| `HashMap<K, V>` | TOML table |
+| `UUID` | RFC 4122 UUID string |
+| `PathBuf` | Filesystem path |
+
+**Defaults shown in the "Default" column.** A default of `—` means the field is truly optional with no implicit value. Omitting it disables the feature.
+
+## Value Resolution
+
+Any string field supports three resolution modes:
+
+```toml
+api_key = "secret:ANTHROPIC_API_KEY"    # Secret store lookup (recommended)
+api_key = "env:ANTHROPIC_API_KEY"       # Process environment
+api_key = "sk-ant-..."                  # Literal (not recommended for credentials)
+```
+
+The secret store is the preferred path. See [Secret Store](/docs/secrets) for the category system and output scrubbing.
+
+---
+
+## Top-Level Sections
+
+The root of `config.toml` accepts these sections. Each is documented in full below.
+
+| Section | Purpose | Array or Table |
+|---|---|---|
+| `[llm]` | Flat provider keys (legacy) and routing | Table |
+| `[llm.providers.<id>]` | Structured provider definitions | Tables |
+| `[[providers]]` | Array form of providers (cluster-friendly) | Array |
+| `[defaults]` | Agent defaults (overridden per-agent) | Table |
+| `[defaults.routing]`, `[defaults.compaction]`, ... | Nested defaults subsections | Tables |
+| `[[agents]]` | One or more agent definitions | Array |
+| `[[links]]` | Who-can-message-whom relationships | Array |
+| `[[groups]]` | Visual agent containers (UI-only) | Array |
+| `[[humans]]` | People the agents interact with | Array |
+| `[messaging.discord]`, `[messaging.slack]`, ... | Messaging adapter config | Tables |
+| `[[bindings]]` | Platform channel → agent mappings | Array |
+| `[api]` | HTTP API + embedded Web UI | Table |
+| `[metrics]` | Prometheus scrape endpoint | Table |
+| `[telemetry]` | OpenTelemetry OTLP export | Table |
+| `[spacedrive]` | Spacedrive integration (runtime-gated) | Table |
+
+---
+
+## `[llm]` — Flat provider keys
+
+Legacy per-provider keys. Prefer structured `[llm.providers.<id>]` blocks below for new setups. These flat keys exist for backward compatibility and auto-populate the provider registry.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `anthropic_key` | `Option<string>` | — | Direct Anthropic API key |
+| `openai_key` | `Option<string>` | — | Direct OpenAI API key |
+| `openrouter_key` | `Option<string>` | — | OpenRouter unified API key |
+| `kilo_key` | `Option<string>` | — | Kilo Gateway |
+| `zhipu_key` | `Option<string>` | — | Zhipu AI (GLM models) |
+| `groq_key` | `Option<string>` | — | Groq LPU inference |
+| `together_key` | `Option<string>` | — | Together.ai |
+| `fireworks_key` | `Option<string>` | — | Fireworks AI |
+| `deepseek_key` | `Option<string>` | — | DeepSeek |
+| `xai_key` | `Option<string>` | — | xAI (Grok) |
+| `mistral_key` | `Option<string>` | — | Mistral AI |
+| `gemini_key` | `Option<string>` | — | Google Gemini |
+| `ollama_key` | `Option<string>` | — | Ollama local (any non-empty string works) |
+| `ollama_base_url` | `Option<string>` | `http://localhost:11434` | Ollama server URL |
+| `opencode_zen_key` | `Option<string>` | — | OpenCode Zen |
+| `opencode_go_key` | `Option<string>` | — | OpenCode Go |
+| `nvidia_key` | `Option<string>` | — | NVIDIA NIM |
+| `minimax_key` | `Option<string>` | — | MiniMax (global) |
+| `minimax_cn_key` | `Option<string>` | — | MiniMax (China region) |
+| `moonshot_key` | `Option<string>` | — | Moonshot AI (Kimi) |
+| `zai_coding_plan_key` | `Option<string>` | — | Z.AI Coding Plan |
+| `github_copilot_key` | `Option<string>` | — | GitHub Copilot |
+| `litellm_api_key` | `Option<string>` | — | LiteLLM virtual key. See [LiteLLM Proxy](/docs/litellm). |
+
+## `[llm.providers.<id>]` — Structured providers (table form)
+
+Use these blocks to define providers that need more than an API key: Azure deployments, LiteLLM proxies, custom base URLs, Bearer auth, or extra headers.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `api_type` | `string` | required | One of: `openai_completions`, `openai_chat_completions`, `kilo_gateway`, `openai_responses`, `anthropic`, `gemini`, `azure` |
+| `base_url` | `string` | required | API endpoint |
+| `api_key` | `string` | required | Credential (use `secret:` / `env:`) |
+| `name` | `Option<string>` | — | Routing key override; defaults to `<id>` from the section header |
+| `api_version` | `Option<string>` | — | Azure OpenAI api-version |
+| `deployment` | `Option<string>` | — | Azure OpenAI deployment name |
+| `extra_headers` | `Vec<(string, string)>` | `[]` | Custom HTTP headers forwarded on every request |
+| `use_bearer_auth` | `bool` | `false` | Send as `Authorization: Bearer <key>` instead of provider default |
+
+```toml
+[llm.providers.anthropic]
+api_type = "anthropic"
+base_url = "https://api.anthropic.com"
+api_key = "secret:ANTHROPIC_API_KEY"
+
+[llm.providers.azure]
+api_type = "azure"
+base_url = "https://YOUR-RESOURCE.openai.azure.com"
+api_key = "secret:AZURE_OPENAI_API_KEY"
+api_version = "2025-04-01-preview"
+deployment = "gpt-5-nano"
+
+[llm.providers.litellm]
+api_type = "openai_chat_completions"
+base_url = "http://localhost:4000/v1"
+api_key = "secret:LITELLM_API_KEY"
+use_bearer_auth = true
+extra_headers = [
+    ["x-litellm-tags", "spacebot-prod"],
+]
+```
+
+## `[[providers]]` — Array form (cluster-friendly)
+
+Same fields as `[llm.providers.<id>]` but with a **required** `name` field. Useful when generating config from Kubernetes ConfigMaps or other templating systems that prefer array syntax.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `name` | `string` | required | Routing key. No `/`, no whitespace, non-empty. |
+| `api_type` | `string` | required | Same values as table form |
+| `base_url` | `string` | required | |
+| `api_key` | `string` | required | |
+| `api_version` | `Option<string>` | — | |
+| `deployment` | `Option<string>` | — | |
+| `extra_headers` | `Vec<(string, string)>` | `[]` | |
+| `use_bearer_auth` | `bool` | `false` | |
+
+**Conflict resolution:** if both `[llm.providers.X]` and `[[providers]] name = "X"` exist, the table form wins.
+
+---
+
+## `[defaults]` — Agent defaults
+
+Every tuning knob at this level is inherited by every agent unless overridden per-agent under `[[agents]]`.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `max_concurrent_branches` | `Option<usize>` | `5` | Per-channel branch cap |
+| `max_concurrent_workers` | `Option<usize>` | `10` | Per-agent worker cap |
+| `max_turns` | `Option<usize>` | `5` | Channel turn cap before retrigger |
+| `branch_max_turns` | `Option<usize>` | `10` | Branch turn cap |
+| `context_window` | `Option<usize>` | `128000` | Model context limit in tokens |
+| `tool_use_enforcement` | `Option<string>` | `auto` | `auto`, `always`, `never` |
+| `brave_search_key` | `Option<string>` | — | Brave Search API key for `web_search` tool |
+| `cron_timezone` | `Option<string>` | system local | e.g., `America/New_York` |
+| `user_timezone` | `Option<string>` | system local | User-facing timezone for display |
+| `worker_log_mode` | `Option<string>` | `combined` | Worker log merging mode |
+
+### `[defaults.routing]`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `channel` | `Option<string>` | `anthropic/claude-sonnet-4-6` | User-facing replies |
+| `branch` | `Option<string>` | inherits `channel` | Background thinking |
+| `worker` | `Option<string>` | `anthropic/claude-haiku-4-5` | Task execution |
+| `compactor` | `Option<string>` | inherits `worker` | History compression |
+| `cortex` | `Option<string>` | inherits `channel` | Cross-channel observer |
+| `voice` | `Option<string>` | — | Voice model (realtime) |
+| `rate_limit_cooldown_secs` | `Option<u64>` | `60` | Pause after 429 before retry |
+| `channel_thinking_effort` | `Option<string>` | — | `low`, `medium`, `high` (where supported) |
+| `branch_thinking_effort` | `Option<string>` | — | |
+| `worker_thinking_effort` | `Option<string>` | — | |
+| `compactor_thinking_effort` | `Option<string>` | — | |
+| `cortex_thinking_effort` | `Option<string>` | — | |
+
+**Subsections:**
+
+- `[defaults.routing.task_overrides]`: `HashMap<string, string>` mapping task-name to model (e.g., `research = "anthropic/claude-opus-4-7"`)
+- `[defaults.routing.fallbacks]`: `HashMap<string, Vec<string>>` mapping process-type to ordered fallback model list
+
+### `[defaults.participant_context]`
+
+Multi-user channel context injection.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `min_participants` | `Option<usize>` | `2` |
+| `token_budget` | `Option<usize>` | `1000` |
+| `max_participants` | `Option<usize>` | `10` |
+
+### `[defaults.memory_persistence]`
+
+Channel-memory save cadence.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `message_interval` | `Option<usize>` | `10` |
+
+### `[defaults.coalesce]`
+
+Message coalescing (merge rapid-fire messages into one turn).
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `debounce_ms` | `Option<u64>` | `500` |
+| `max_wait_ms` | `Option<u64>` | `5000` |
+| `min_messages` | `Option<usize>` | `2` |
+| `multi_user_only` | `Option<bool>` | `true` |
+
+### `[defaults.ingestion]`
+
+File ingestion pipeline.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `poll_interval_secs` | `Option<u64>` | `30` |
+| `chunk_size` | `Option<usize>` | `4000` |
+
+### `[defaults.compaction]`
+
+Context compaction thresholds (fractions between 0.0 and 1.0 of the model context window).
+
+| Field | Type | Default |
+|---|---|---|
+| `background_threshold` | `Option<f32>` | `0.80` |
+| `aggressive_threshold` | `Option<f32>` | `0.85` |
+| `emergency_threshold` | `Option<f32>` | `0.95` |
+
+### `[defaults.cortex]`
+
+Background supervisor + memory maintenance.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `tick_interval_secs` | `Option<u64>` | `30` | How often cortex wakes |
+| `worker_timeout_secs` | `Option<u64>` | `600` | Kill long-running workers |
+| `branch_timeout_secs` | `Option<u64>` | `60` | Branches are short-lived |
+| `detached_worker_timeout_retry_limit` | `Option<u8>` | `3` | |
+| `supervisor_kill_budget_per_tick` | `Option<usize>` | `5` | Max processes killed per tick |
+| `circuit_breaker_threshold` | `Option<u8>` | `3` | Consecutive failures before disable |
+| `bulletin_interval_secs` | `Option<u64>` | `3600` | Memory bulletin refresh |
+| `bulletin_max_words` | `Option<usize>` | `500` | Bulletin length cap |
+| `bulletin_max_turns` | `Option<usize>` | `10` | |
+| `maintenance_interval_secs` | `Option<u64>` | `86400` | Daily decay/prune |
+| `maintenance_decay_rate` | `Option<f32>` | `0.05` | Importance decay per day |
+| `maintenance_prune_threshold` | `Option<f32>` | `0.1` | Drop memories below importance |
+| `maintenance_min_age_days` | `Option<i64>` | `30` | Grace period before pruning |
+| `maintenance_merge_similarity_threshold` | `Option<f32>` | `0.95` | Merge duplicates above this |
+| `association_interval_secs` | `Option<u64>` | `3600` | Graph-edge synthesis cadence |
+| `association_similarity_threshold` | `Option<f32>` | `0.80` | |
+| `association_updates_threshold` | `Option<f32>` | `0.95` | |
+| `association_max_per_pass` | `Option<usize>` | `20` | |
+| `knowledge_synthesis_max_words` | `Option<usize>` | `500` | |
+| `knowledge_synthesis_debounce_secs` | `Option<u64>` | `3600` | |
+
+### `[defaults.warmup]`
+
+Startup preloading for fast first-message latency.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `eager_embedding_load` | `Option<bool>` | `true` |
+| `refresh_secs` | `Option<u64>` | `900` |
+| `startup_delay_secs` | `Option<u64>` | `0` |
+
+### `[defaults.browser]`
+
+Chrome/Chromium automation for `browser_*` tools.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `Option<bool>` | `true` | |
+| `headless` | `Option<bool>` | `true` | `false` to watch it work |
+| `evaluate_enabled` | `Option<bool>` | `false` | `browser_evaluate` tool is powerful — keep off |
+| `executable_path` | `Option<string>` | auto-detect | Override if multiple browsers installed |
+| `screenshot_dir` | `Option<string>` | `~/.spacebot/agents/<id>/data/screenshots` | |
+| `persist_session` | `Option<bool>` | `false` | |
+| `close_policy` | `Option<string>` | `on_task_end` | `on_task_end` or `persist` |
+
+### `[defaults.channel]`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `listen_only_mode` | `Option<bool>` | `false` | Deprecated; use `response_mode` |
+| `response_mode` | `Option<string>` | `active` | `active`, `observe`, `mention_only` |
+| `save_attachments` | `Option<bool>` | `true` | Store user-uploaded files for recall |
+
+### `[defaults.opencode]`
+
+Embedded coding UI in the Workers tab.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `Option<bool>` | `true` |
+| `path` | `Option<string>` | `opencode` (resolved via `PATH`) |
+| `max_servers` | `Option<usize>` | `5` |
+| `server_startup_timeout_secs` | `Option<u64>` | `30` |
+| `max_restart_retries` | `Option<u32>` | `5` |
+
+**`[defaults.opencode.permissions]`**
+
+| Field | Type | Default | Values |
+|---|---|---|---|
+| `edit` | `Option<string>` | `allow` | `allow`, `ask`, `deny` |
+| `bash` | `Option<string>` | `allow` | `allow`, `ask`, `deny` |
+| `webfetch` | `Option<string>` | `allow` | `allow`, `ask`, `deny` |
+
+### `[defaults.projects]`
+
+Git repo + worktree management.
+
+| Field | Type | Default |
+|---|---|---|
+| `use_worktrees` | `Option<bool>` | `true` |
+| `worktree_name_template` | `Option<string>` | `{agent_id}-{task_id}` |
+| `auto_create_worktrees` | `Option<bool>` | `true` |
+| `auto_discover_repos` | `Option<bool>` | `true` |
+| `auto_discover_worktrees` | `Option<bool>` | `true` |
+| `disk_usage_warning_threshold` | `Option<u64>` | `1073741824` (1 GiB, bytes) |
+
+### `[[defaults.mcp]]`
+
+MCP (Model Context Protocol) servers exposed to every agent. Can be overridden per-agent.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `name` | `string` | required | Unique identifier |
+| `transport` | `string` | required | `stdio`, `http`, `sse` |
+| `enabled` | `bool` | `true` | |
+| `command` | `Option<string>` | — | `stdio` transport only |
+| `args` | `Vec<string>` | `[]` | `stdio` transport args |
+| `env` | `HashMap<string, string>` | `{}` | `stdio` subprocess env vars |
+| `url` | `Option<string>` | — | `http` / `sse` transports |
+| `headers` | `HashMap<string, string>` | `{}` | HTTP/SSE headers |
+
+```toml
+[[defaults.mcp]]
+name = "github"
+transport = "stdio"
+command = "gh"
+args = ["mcp-server"]
+[defaults.mcp.env]
+GH_TOKEN = "secret:GH_TOKEN"
+```
+
+---
+
+## `[[agents]]` — Agent definitions
+
+Every agent has an `id`. Every field from `[defaults]` above can be specified per-agent to override the default for that one agent.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `string` | required | Unique, short, lowercase recommended |
+| `default` | `bool` | `false` | Exactly one agent should have `true` when multiple exist |
+| `display_name` | `Option<string>` | `id` | UI label |
+| `role` | `Option<string>` | — | Semantic role (e.g., "engineer", "researcher") |
+| `gradient_start` | `Option<string>` | — | UI color (hex) |
+| `gradient_end` | `Option<string>` | — | UI color (hex) |
+| `workspace` | `Option<string>` | `~/.spacebot/agents/<id>/workspace` | Worker workspace root |
+
+Plus every `[defaults.*]` field as an optional override at `[agents.<id>.*]`.
+
+### `[agents.<id>.sandbox]`
+
+Sandbox isolation for this agent's workers. See [Sandbox](/docs/sandbox).
+
+| Field | Type | Default |
+|---|---|---|
+| `mode` | `string` | `enabled` (`enabled` or `disabled`) |
+| `writable_paths` | `Vec<PathBuf>` | `[]` |
+| `passthrough_env` | `Vec<string>` | `[]` |
+
+### `[[agents.<id>.cron]]`
+
+Scheduled prompts for this agent.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `string` | required | |
+| `prompt` | `string` | required | Natural-language prompt |
+| `cron_expr` | `Option<string>` | — | Wall-clock cron (`"0 9 * * *"`) |
+| `interval_secs` | `Option<u64>` | — | Alternative to `cron_expr` |
+| `delivery_target` | `string` | required | `"discord:general"`, `"email:admin"`, etc. |
+| `active_start_hour` | `Option<u8>` | — | Local hour 0-23 |
+| `active_end_hour` | `Option<u8>` | — | Local hour 0-23 |
+| `enabled` | `bool` | `true` | |
+| `run_once` | `bool` | `false` | One-shot then disable |
+| `timeout_secs` | `Option<u64>` | — | Kill if not done by this |
+
+---
+
+## `[[humans]]` — People
+
+Optional metadata about humans interacting with the agents.
+
+| Field | Type | Default |
+|---|---|---|
+| `id` | `string` | required |
+| `display_name` | `Option<string>` | `id` |
+| `role` | `Option<string>` | — |
+| `bio` | `Option<string>` | — |
+| `discord_id` | `Option<string>` | — |
+| `telegram_id` | `Option<string>` | — |
+| `slack_id` | `Option<string>` | — |
+| `email` | `Option<string>` | — |
+
+## `[[groups]]` — Visual agent containers
+
+UI-only grouping.
+
+| Field | Type | Default |
+|---|---|---|
+| `name` | `string` | required |
+| `agent_ids` | `Vec<string>` | `[]` |
+| `color` | `Option<string>` | — |
+
+## `[[links]]` — Agent relationships
+
+Who can message whom.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `from` | `string` | required | Agent or human id |
+| `to` | `string` | required | Agent or human id |
+| `direction` | `string` | `two_way` | `one_way` or `two_way` |
+| `kind` | `string` | `peer` | `peer` or `hierarchical` |
+| `relationship` | `Option<string>` | — | Deprecated alias for `kind` |
+
+---
+
+## `[messaging.*]` — Platform adapters
+
+Every adapter section has `enabled = false` by default. Set credentials and flip to `true` to activate.
+
+### `[messaging.discord]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `token` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+| `allow_bot_messages` | `bool` | `false` |
+
+**`[[messaging.discord.instances]]`** — named multi-bot setup (e.g., `discord:ops` + `discord:support`).
+
+| Field | Type | Default |
+|---|---|---|
+| `name` | `string` | required |
+| `enabled` | `bool` | `false` |
+| `token` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+| `allow_bot_messages` | `bool` | `false` |
+
+### `[messaging.slack]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `bot_token` | `Option<string>` | — |
+| `app_token` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+
+**`[[messaging.slack.commands]]`** — slash commands bound to agents.
+
+| Field | Type | Default |
+|---|---|---|
+| `command` | `string` | required |
+| `agent_id` | `string` | required |
+| `description` | `Option<string>` | — |
+
+**`[[messaging.slack.instances]]`** — named multi-workspace setup.
+
+### `[messaging.telegram]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `token` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+
+**`[[messaging.telegram.instances]]`** — named multi-bot setup.
+
+### `[messaging.email]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `imap_host` | `Option<string>` | — |
+| `imap_port` | `u16` | `993` |
+| `imap_username` | `Option<string>` | — |
+| `imap_password` | `Option<string>` | — |
+| `imap_use_tls` | `bool` | `true` |
+| `smtp_host` | `Option<string>` | — |
+| `smtp_port` | `u16` | `587` |
+| `smtp_username` | `Option<string>` | — |
+| `smtp_password` | `Option<string>` | — |
+| `smtp_use_starttls` | `bool` | `true` |
+| `from_address` | `Option<string>` | — |
+| `from_name` | `Option<string>` | — |
+| `poll_interval_secs` | `u64` | `30` |
+| `folders` | `Vec<string>` | `["INBOX"]` |
+| `allowed_senders` | `Vec<string>` | `[]` |
+| `max_body_bytes` | `usize` | `262144` (256 KiB) |
+| `max_attachment_bytes` | `usize` | `10485760` (10 MiB) |
+
+**`[[messaging.email.instances]]`** — same fields, named for multi-inbox setup.
+
+### `[messaging.webhook]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `port` | `u16` | `18789` |
+| `bind` | `string` | `127.0.0.1` |
+| `auth_token` | `Option<string>` | — |
+
+### `[messaging.twitch]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `username` | `Option<string>` | — |
+| `oauth_token` | `Option<string>` | — |
+| `client_id` | `Option<string>` | — |
+| `client_secret` | `Option<string>` | — |
+| `refresh_token` | `Option<string>` | — |
+| `channels` | `Vec<string>` | `[]` |
+| `trigger_prefix` | `Option<string>` | — |
+
+**`[[messaging.twitch.instances]]`** — named multi-account setup.
+
+### `[messaging.signal]`
+
+Requires `signal-cli-rest-api` running separately.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `http_url` | `Option<string>` | — |
+| `account` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+| `group_ids` | `Vec<string>` | `[]` |
+| `group_allowed_users` | `Vec<string>` | `[]` |
+| `ignore_stories` | `bool` | `true` |
+
+**`[[messaging.signal.instances]]`** — named multi-account setup.
+
+### `[messaging.mattermost]`
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `base_url` | `Option<string>` | — |
+| `token` | `Option<string>` | — |
+| `team_id` | `Option<string>` | — |
+| `dm_allowed_users` | `Vec<string>` | `[]` |
+| `max_attachment_bytes` | `usize` | `10485760` (10 MiB) |
+
+**`[[messaging.mattermost.instances]]`** — named multi-server setup.
+
+---
+
+## `[[bindings]]` — Platform channel routing
+
+Map a platform channel to an agent.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `agent_id` | `string` | required | Target agent |
+| `channel` | `string` | required | Platform channel name |
+| `adapter` | `Option<string>` | — | `discord`, `slack`, `telegram`, etc. |
+| `guild_id` | `Option<string>` | — | Discord server ID |
+| `workspace_id` | `Option<string>` | — | Slack workspace ID |
+| `chat_id` | `Option<string>` | — | Telegram chat ID |
+| `team_id` | `Option<string>` | — | Mattermost team ID |
+| `channel_ids` | `Vec<string>` | `[]` | Multi-channel binding |
+| `require_mention` | `bool` | `false` | Only respond when mentioned |
+| `dm_allowed_users` | `Vec<string>` | `[]` | Override platform-level |
+
+### `[bindings.settings]`
+
+Per-binding conversation overrides.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `model` | `Option<string>` | inherits routing | Override channel model for this binding |
+| `memory` | `Option<string>` | — | Memory mode |
+| `delegation` | `Option<string>` | — | Delegation mode |
+| `response_mode` | `Option<string>` | — | `active`, `observe`, `mention_only` |
+| `save_attachments` | `Option<bool>` | — | |
+
+---
+
+## `[api]` — HTTP API + Web UI
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `true` | Disable for headless ops |
+| `port` | `u16` | `19898` | Shared by API + embedded Web UI |
+| `bind` | `string` | `127.0.0.1` | See deployment-mode notes below |
+| `auth_token` | `Option<string>` | — | Require `Authorization: Bearer <token>` on `/api/*` |
+
+**Deployment-mode overrides:** when `SPACEBOT_DEPLOYMENT=docker`, `bind` is forced to `0.0.0.0`. When `SPACEBOT_DEPLOYMENT=hosted`, `bind` is forced to `[::]` (dual-stack).
+
+## `[metrics]` — Prometheus scrape
+
+Feature-gated behind `cargo build --features metrics`. Docker images build with this on.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `port` | `u16` | `9090` |
+| `bind` | `string` | `0.0.0.0` |
+
+## `[telemetry]` — OpenTelemetry OTLP
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `otlp_endpoint` | `Option<string>` | — | `http://localhost:4318` (HTTP) or `:4317` (gRPC) |
+| `otlp_headers` | `Option<string>` | — | Newline-separated `key=value` lines |
+| `otlp_protocol` | `Option<string>` | `http` | `http` or `grpc` |
+| `service_name` | `Option<string>` | `spacebot` | |
+| `sample_rate` | `Option<f64>` | `1.0` | `0.0` off, `1.0` every trace |
+
+## `[spacedrive]` — Spacedrive integration
+
+Runtime-gated. Toggle `enabled = true` to activate the `spacedrive_*` agent tools.
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `false` |
+| `base_url` | `string` | `http://127.0.0.1:8080` |
+| `library_id` | `Option<UUID>` | — |
+| `spacebot_instance_id` | `Option<UUID>` | — |
+
+---
+
+## Environment Variables
+
+These env vars control instance-level behavior and are not set in `config.toml`. See [Configuration — Environment Variables](/docs/config#environment-variables) for the full list including `SPACEBOT_DIR`, `SPACEBOT_DEPLOYMENT`, `SPACEBOT_MAX_AGENTS`, and the model-override shortcuts.
+
+## Full Example
+
+For a starting `config.toml`:
+
+- `.scratchpad/example.config.toml` in the spacebot repo — curated, opinionated example with sensible defaults
+- `.scratchpad/example.full.config.toml` in the spacebot repo — every single option with inline comments
+
+See also:
+
+- [Configuration](/docs/config) — how config loads, resolves, and hot-reloads
+- [Secret Store](/docs/secrets) — credential storage and `secret:` resolution
+- [Sandbox](/docs/sandbox) — worker isolation and `passthrough_env`
+- [Permissions](/docs/permissions) — per-agent tool gates
+- [LiteLLM Proxy](/docs/litellm) — routing through a LiteLLM proxy sidecar
