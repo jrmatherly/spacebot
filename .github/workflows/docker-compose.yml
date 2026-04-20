@@ -1,4 +1,4 @@
-name: Docker Compose validation
+name: 🐳 Docker Compose validation
 
 on:
   push:

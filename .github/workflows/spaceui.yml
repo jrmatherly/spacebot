@@ -1,4 +1,4 @@
-name: SpaceUI typecheck + build
+name: 🧩 SpaceUI typecheck + build
 
 on:
   push:

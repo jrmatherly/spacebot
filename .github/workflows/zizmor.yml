@@ -1,4 +1,4 @@
-name: Actions Security (zizmor)
+name: 🔒 Actions Security (zizmor)
 
 # Sibling Actions-security scanner complementing CodeQL's Actions queries.
 # zizmor catches patterns CodeQL misses: forbidden-uses, KVCW templates,

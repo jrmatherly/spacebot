@@ -1,4 +1,4 @@
-name: Desktop Smoke
+name: 🖥️ Desktop Smoke
 
 # Minimal cross-platform smoke test for the Tauri sidecar bundling path.
 # Runs the sync-invariant guard and then exercises scripts/bundle-sidecar.sh

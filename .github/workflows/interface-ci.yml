@@ -1,4 +1,4 @@
-name: Interface CI
+name: 🎨 Interface CI
 
 on:
   push:
