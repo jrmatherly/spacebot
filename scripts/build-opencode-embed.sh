@@ -147,7 +147,12 @@ if [ "${CI:-}" = "true" ]; then
   }
 else
   # Locally, try frozen first but fall back to a regular install.
-  (cd "${CACHE_DIR}" && bun install --frozen-lockfile 2>/dev/null || bun install)
+  # Subshell isolates the cd so a failed cd cannot leak `bun install`
+  # into the repo root (SC2015: A && B || C is not if-then-else).
+  (
+    cd "${CACHE_DIR}"
+    bun install --frozen-lockfile 2>/dev/null || bun install
+  )
 fi
 
 # ---------------------------------------------------------------------------
