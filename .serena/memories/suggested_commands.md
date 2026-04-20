@@ -6,7 +6,7 @@
 |---------|---------|
 | `just` | List all available recipes |
 | `just preflight` | Validate git/remote/auth state before pushing |
-| `just gate-pr` | Full PR gate: formatting, clippy (supersets check), unit tests, integration compile. `cargo check` was dropped from the full gate 2026-04-19 (Sprint 1 local-build-optimization); migration-safety check disabled 2026-04-16. |
+| `just gate-pr` | Full PR gate: check-sidecar-naming + 3 frontend guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + formatting + clippy (supersets check; RUSTFLAGS=-Dwarnings) + unit tests + integration compile. Added frontend guards 2026-04-20. `cargo check` was dropped 2026-04-19 (Sprint 1 local-build-optimization). Migration-safety check disabled 2026-04-16, code relocated to scripts/_disabled/check-migration-safety.sh 2026-04-20. |
 | `just gate-pr-fast` | Fast local gate — runs cargo check (no clippy) + unit tests. For tight iteration loops; run full `just gate-pr` before pushing. Added 2026-04-19. |
 | `just gate-pr-nextest` | Same gates as `just gate-pr` but unit-test step uses `cargo nextest run --lib`. Equivalent to `./scripts/gate-pr.sh --nextest` or `GATE_PR_NEXTEST=1 just gate-pr`. Added 2026-04-20. |
 | `just check-fast` | Narrowest useful inner-loop check: `cargo clippy --lib --no-deps`. Added 2026-04-19. |

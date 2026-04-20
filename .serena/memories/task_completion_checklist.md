@@ -29,7 +29,7 @@ cargo test --tests --no-run
 ```bash
 just gate-pr
 ```
-This runs `just preflight` first (git/remote/auth validation), then the gate script.
+This runs `just preflight` first (git/remote/auth validation; checks rustfmt + clippy components are available), then the gate script. As of 2026-04-20 the gate also runs 3 frontend invariant guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) between check-sidecar-naming and cargo fmt. Fast-mode caveat: `just gate-pr-fast` does NOT propagate `RUSTFLAGS=-Dwarnings`, so a warning introduced during fast-mode iteration only surfaces in the full gate at push time.
 
 ## 7. Security Audit\n```bash\ncargo audit --ignore RUSTSEC-2023-0071\n```\nMust exit 0. The rsa advisory is ignored (sqlx-mysql, never compiled).\n\n## Additional Rules
 - If the same command fails twice, stop. Capture root cause and switch strategy.
