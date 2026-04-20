@@ -81,6 +81,11 @@ export function Settings() {
 	const [azureBaseUrl, setAzureBaseUrl] = useState("");
 	const [azureApiVersion, setAzureApiVersion] = useState("");
 	const [azureDeployment, setAzureDeployment] = useState("");
+	const [litellmBaseUrl, setLitellmBaseUrl] = useState("");
+	const [litellmUseBearerAuth, setLitellmUseBearerAuth] = useState(true);
+	const [litellmExtraHeaders, setLitellmExtraHeaders] = useState<
+		Array<{name: string; value: string}>
+	>([]);
 	const fetchAbortControllerRef = useRef<AbortController | null>(null);
 
 	// Fetch providers data (only when on providers tab)
@@ -112,6 +117,8 @@ export function Settings() {
 			baseUrl,
 			apiVersion,
 			deployment,
+			useBearerAuth,
+			extraHeaders,
 		}: {
 			provider: string;
 			apiKey: string;
@@ -119,6 +126,8 @@ export function Settings() {
 			baseUrl?: string;
 			apiVersion?: string;
 			deployment?: string;
+			useBearerAuth?: boolean;
+			extraHeaders?: Array<{name: string; value: string}>;
 		}) =>
 			api.updateProvider(
 				provider,
@@ -127,12 +136,17 @@ export function Settings() {
 				baseUrl,
 				apiVersion,
 				deployment,
+				useBearerAuth,
+				extraHeaders,
 			),
 		onSuccess: (result) => {
 			if (result.success) {
 				setEditingProvider(null);
 				setKeyInput("");
 				setModelInput("");
+				setLitellmBaseUrl("");
+				setLitellmUseBearerAuth(true);
+				setLitellmExtraHeaders([]);
 				setTestedSignature(null);
 				setTestResult(null);
 				setMessage({text: result.message, type: "success"});
@@ -159,6 +173,8 @@ export function Settings() {
 			baseUrl,
 			apiVersion,
 			deployment,
+			useBearerAuth,
+			extraHeaders,
 		}: {
 			provider: string;
 			apiKey: string;
@@ -166,6 +182,8 @@ export function Settings() {
 			baseUrl?: string;
 			apiVersion?: string;
 			deployment?: string;
+			useBearerAuth?: boolean;
+			extraHeaders?: Array<{name: string; value: string}>;
 		}) =>
 			api.testProviderModel(
 				provider,
@@ -174,6 +192,8 @@ export function Settings() {
 				baseUrl,
 				apiVersion,
 				deployment,
+				useBearerAuth,
+				extraHeaders,
 			),
 	});
 	const startOpenAiBrowserOAuthMutation = useMutation({
@@ -198,7 +218,10 @@ export function Settings() {
 
 	const editingProviderData = PROVIDERS.find((p) => p.id === editingProvider);
 
-	const currentSignature = `${editingProvider ?? ""}|${keyInput.trim()}|${editingProvider === "azure" ? azureDeployment.trim() : modelInput.trim()}`;
+	const currentSignature =
+		editingProvider === "litellm"
+			? `litellm|${keyInput.trim()}|${modelInput.trim()}|${litellmBaseUrl.trim()}|${litellmUseBearerAuth}|${JSON.stringify(litellmExtraHeaders)}`
+			: `${editingProvider ?? ""}|${keyInput.trim()}|${editingProvider === "azure" ? azureDeployment.trim() : modelInput.trim()}`;
 
 	const oauthAutoStartRef = useRef(false);
 	const oauthAbortRef = useRef<AbortController | null>(null);
@@ -246,6 +269,26 @@ export function Settings() {
 			}
 		}
 
+		if (editingProvider === "litellm") {
+			if (!litellmBaseUrl.trim()) {
+				setTestResult({
+					success: false,
+					message: "Base URL is required for LiteLLM",
+				});
+				return false;
+			}
+			const normalized = litellmBaseUrl.trim().replace(/\/+$/, "");
+			if (
+				!(normalized.startsWith("http://") || normalized.startsWith("https://"))
+			) {
+				setTestResult({
+					success: false,
+					message: "Base URL must start with http:// or https://",
+				});
+				return false;
+			}
+		}
+
 		setMessage(null);
 		setTestResult(null);
 		try {
@@ -260,11 +303,19 @@ export function Settings() {
 				baseUrl:
 					editingProvider === "azure"
 						? azureBaseUrl.trim().replace(/\/+$/, "")
-						: undefined,
+						: editingProvider === "litellm"
+							? litellmBaseUrl.trim().replace(/\/+$/, "")
+							: undefined,
 				apiVersion:
 					editingProvider === "azure" ? azureApiVersion.trim() : undefined,
 				deployment:
 					editingProvider === "azure" ? azureDeployment.trim() : undefined,
+				useBearerAuth:
+					editingProvider === "litellm" ? litellmUseBearerAuth : undefined,
+				extraHeaders:
+					editingProvider === "litellm"
+						? litellmExtraHeaders.filter((h) => h.name.trim() !== "")
+						: undefined,
 			});
 			setTestResult({
 				success: result.success,
@@ -327,6 +378,26 @@ export function Settings() {
 			}
 		}
 
+		if (editingProvider === "litellm") {
+			if (!litellmBaseUrl.trim()) {
+				setMessage({
+					text: "Base URL is required for LiteLLM",
+					type: "error",
+				});
+				return;
+			}
+			const normalized = litellmBaseUrl.trim().replace(/\/+$/, "");
+			if (
+				!(normalized.startsWith("http://") || normalized.startsWith("https://"))
+			) {
+				setMessage({
+					text: "Base URL must start with http:// or https://",
+					type: "error",
+				});
+				return;
+			}
+		}
+
 		if (testedSignature !== currentSignature) {
 			const testPassed = await handleTestModel();
 			if (!testPassed) return;
@@ -341,6 +412,15 @@ export function Settings() {
 				baseUrl: azureBaseUrl.trim().replace(/\/+$/, ""),
 				apiVersion: azureApiVersion.trim(),
 				deployment: azureDeployment.trim(),
+			});
+		} else if (editingProvider === "litellm") {
+			updateMutation.mutate({
+				provider: editingProvider,
+				apiKey: keyInput.trim(),
+				model: modelInput.trim(),
+				baseUrl: litellmBaseUrl.trim().replace(/\/+$/, ""),
+				useBearerAuth: litellmUseBearerAuth,
+				extraHeaders: litellmExtraHeaders.filter((h) => h.name.trim() !== ""),
 			});
 		} else {
 			updateMutation.mutate({
@@ -514,6 +594,9 @@ export function Settings() {
 		setAzureBaseUrl("");
 		setAzureApiVersion("");
 		setAzureDeployment("");
+		setLitellmBaseUrl("");
+		setLitellmUseBearerAuth(true);
+		setLitellmExtraHeaders([]);
 	};
 
 	const isConfigured = (providerId: string): boolean => {
@@ -634,6 +717,14 @@ export function Settings() {
 																error,
 															);
 														});
+												}
+												if (provider.id === "litellm") {
+													// Reset LiteLLM fields on modal open.
+													// Prefill is intentionally deferred to a
+													// follow-up PR (audit Finding 7).
+													setLitellmBaseUrl("");
+													setLitellmUseBearerAuth(true);
+													setLitellmExtraHeaders([]);
 												}
 											}}
 											onRemove={() => removeMutation.mutate(provider.id)}
@@ -846,6 +937,37 @@ export function Settings() {
 									if (e.key === "Enter") handleSave();
 								}}
 							/>
+							{editingProvider === "litellm" &&
+								editingProviderData?.requiresBaseUrl && (
+									<div className="space-y-1.5 mt-3">
+										<label
+											className="text-sm font-medium text-ink"
+											htmlFor="litellm-base-url"
+										>
+											Base URL
+										</label>
+										<Input
+											id="litellm-base-url"
+											type="url"
+											placeholder={
+												editingProviderData.defaultBaseUrl ??
+												"http://localhost:4000"
+											}
+											value={litellmBaseUrl}
+											onChange={(e) => {
+												setLitellmBaseUrl(e.target.value);
+												setTestedSignature(null);
+											}}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") handleSave();
+											}}
+										/>
+										<p className="text-tiny text-ink-faint">
+											Your self-hosted LiteLLM proxy URL. Do not include /v1
+											— api_type = "openai_completions" appends it.
+										</p>
+									</div>
+								)}
 							<ModelSelect
 								label="Model"
 								description="Pick the exact model ID to verify and apply to routing"
@@ -856,6 +978,105 @@ export function Settings() {
 								}}
 								provider={editingProvider ?? undefined}
 							/>
+							{editingProvider === "litellm" &&
+								editingProviderData?.supportsAdvancedHeaders && (
+									<>
+										<div className="mt-3">
+											<label className="flex items-center gap-2 text-sm font-medium text-ink">
+												<input
+													type="checkbox"
+													checked={litellmUseBearerAuth}
+													onChange={(e) => {
+														setLitellmUseBearerAuth(e.target.checked);
+														setTestedSignature(null);
+													}}
+												/>
+												Use Bearer authorization header
+											</label>
+											<p className="mt-1 text-tiny text-ink-faint">
+												Default: checked. LiteLLM expects Authorization:
+												Bearer &lt;key&gt;. Uncheck for x-api-key header
+												style.
+											</p>
+										</div>
+										<div className="mt-3">
+											<label className="text-sm font-medium text-ink">
+												Extra headers (optional)
+											</label>
+											<p className="text-tiny text-ink-faint">
+												For LiteLLM tags, budgets, and routing hints.
+												Leaving empty on re-save preserves existing values.
+											</p>
+											{litellmExtraHeaders.map((header, idx) => (
+												<div key={idx} className="mt-2 flex gap-2">
+													<Input
+														type="text"
+														placeholder="x-litellm-tags"
+														value={header.name}
+														onChange={(e) => {
+															const next = [...litellmExtraHeaders];
+															next[idx] = {
+																...next[idx],
+																name: e.target.value,
+															};
+															setLitellmExtraHeaders(next);
+															setTestedSignature(null);
+														}}
+														className="flex-1"
+													/>
+													<Input
+														type="text"
+														placeholder="spacebot-dev"
+														value={header.value}
+														onChange={(e) => {
+															const next = [...litellmExtraHeaders];
+															next[idx] = {
+																...next[idx],
+																value: e.target.value,
+															};
+															setLitellmExtraHeaders(next);
+															setTestedSignature(null);
+														}}
+														className="flex-1"
+													/>
+													<Button
+														variant="outline"
+														size="md"
+														onClick={() => {
+															setLitellmExtraHeaders(
+																litellmExtraHeaders.filter(
+																	(_, i) => i !== idx,
+																),
+															);
+															setTestedSignature(null);
+														}}
+													>
+														Remove
+													</Button>
+												</div>
+											))}
+											<Button
+												variant="outline"
+												size="md"
+												onClick={() => {
+													setLitellmExtraHeaders([
+														...litellmExtraHeaders,
+														{name: "", value: ""},
+													]);
+												}}
+												className="mt-2"
+											>
+												Add header
+											</Button>
+										</div>
+										<p className="mt-2 text-tiny text-ink-faint">
+											Note: saving will point all process-type routes
+											(channel, branch, worker, compactor, cortex) at this
+											LiteLLM model. Edit individual routes in config.toml
+											afterward for per-process-type routing.
+										</p>
+									</>
+								)}
 						</>
 					)}
 					<div className="flex items-center gap-2 mt-3">

@@ -1,4 +1,4 @@
-import type {SectionId} from "./types";
+import type {SectionId, ProviderDefinition} from "./types";
 
 export const SECTIONS = [
 	{
@@ -80,7 +80,7 @@ export const SECTIONS = [
 	description: string;
 }[];
 
-export const PROVIDERS = [
+export const PROVIDERS: ProviderDefinition[] = [
 	{
 		id: "openrouter",
 		name: "OpenRouter",
@@ -104,6 +104,9 @@ export const PROVIDERS = [
 		placeholder: "sk-...",
 		envVar: "LITELLM_API_KEY",
 		defaultModel: "litellm/claude-sonnet-4-6",
+		requiresBaseUrl: true,
+		defaultBaseUrl: "http://localhost:4000",
+		supportsAdvancedHeaders: true,
 	},
 	{
 		id: "opencode-zen",

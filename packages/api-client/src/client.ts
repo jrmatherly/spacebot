@@ -1694,22 +1694,58 @@ export const api = {
 
 	// Provider management
 	providers: () => fetchJson<Types.ProvidersResponse>("/providers"),
-	updateProvider: async (provider: string, apiKey: string, model: string, baseUrl?: string, apiVersion?: string, deployment?: string) => {
+	updateProvider: async (
+		provider: string,
+		apiKey: string,
+		model: string,
+		baseUrl?: string,
+		apiVersion?: string,
+		deployment?: string,
+		useBearerAuth?: boolean,
+		extraHeaders?: Array<{name: string; value: string}>,
+	) => {
 		const response = await fetch(`${getApiBase()}/providers`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ provider, api_key: apiKey, model, base_url: baseUrl, api_version: apiVersion, deployment }),
+			body: JSON.stringify({
+				provider,
+				api_key: apiKey,
+				model,
+				base_url: baseUrl,
+				api_version: apiVersion,
+				deployment,
+				use_bearer_auth: useBearerAuth,
+				extra_headers: extraHeaders,
+			}),
 		});
 		if (!response.ok) {
 			throw new Error(`API error: ${response.status}`);
 		}
 		return response.json() as Promise<Types.ProviderUpdateResponse>;
 	},
-	testProviderModel: async (provider: string, apiKey: string, model: string, baseUrl?: string, apiVersion?: string, deployment?: string) => {
+	testProviderModel: async (
+		provider: string,
+		apiKey: string,
+		model: string,
+		baseUrl?: string,
+		apiVersion?: string,
+		deployment?: string,
+		useBearerAuth?: boolean,
+		extraHeaders?: Array<{name: string; value: string}>,
+	) => {
 		const response = await fetch(`${getApiBase()}/providers/test-model`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ provider, api_key: apiKey, model, base_url: baseUrl, api_version: apiVersion, deployment }),
+			body: JSON.stringify({
+				provider,
+				api_key: apiKey,
+				model,
+				base_url: baseUrl,
+				api_version: apiVersion,
+				deployment,
+				use_bearer_auth: useBearerAuth,
+				extra_headers: extraHeaders,
+			}),
 		});
 		if (!response.ok) {
 			throw new Error(`API error: ${response.status}`);

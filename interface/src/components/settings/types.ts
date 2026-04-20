@@ -59,3 +59,20 @@ export interface ChatGptOAuthDialogProps {
 	onOpenDeviceLogin: () => void;
 	onRestart: () => void;
 }
+
+/** Shape of each entry in the `PROVIDERS` array in `constants.ts`. */
+export interface ProviderDefinition {
+	id: string;
+	name: string;
+	description: string;
+	placeholder: string;
+	envVar: string;
+	defaultModel: string;
+	/** When true, the Update modal renders a Base URL input. LiteLLM-specific today. */
+	requiresBaseUrl?: boolean;
+	/** Placeholder text for the Base URL input when requiresBaseUrl is true. */
+	defaultBaseUrl?: string;
+	/** When true, the Update modal renders optional use_bearer_auth checkbox
+	 * and extra_headers key/value list. LiteLLM-specific today. */
+	supportsAdvancedHeaders?: boolean;
+}
