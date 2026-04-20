@@ -57,7 +57,7 @@ controllers:
       app:
         image:
           repository: ghcr.io/jrmatherly/spacebot
-          tag: v0.4.1  # Mirrors Cargo.toml version; no matching git tag exists in this repo. Overridden per release by the cluster repo's HelmRelease.
+          tag: v0.5.1  # Mirrors Cargo.toml version. Overridden per release by the cluster repo's HelmRelease.
           pullPolicy: IfNotPresent
         # Pass the config path explicitly. Decouples the TOML from the data
         # PVC so the ConfigMap can be mounted read-only at a separate path,

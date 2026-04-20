@@ -57,8 +57,6 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 
 ### Release Story
 
-### Release Story
-
 v0.5.1 closes three cluster-deployment gaps discovered during the talos-ai-cluster v0.5.0 production rollout. Kubernetes deployments can now mount `config.toml` read-only via the canonical `-c` flag while writing data to a separate writable volume; `SPACEBOT_DIR` wins over the config path's parent, and empty values are treated as unset instead of quietly producing `PathBuf::from("")`. The onboarding check honors the same precedence, so `spacebot -c /etc/foo/config.toml start` no longer asks to onboard against `~/.spacebot/` while the daemon writes to `/etc/foo/`.
 
 The LLM provider surface grew two operator-friendly forms. Top-level `[[providers]]` arrays (familiar from LiteLLM-style configs) are now accepted alongside the canonical `[llm.providers.<id>]` table; the table form wins on conflict and emits a `tracing::info!` breadcrumb so operators can tell which form took effect during a migration. `OPENAI_API_BASE` and `OPENAI_BASE_URL` are honored for the OpenAI provider, symmetric with the existing `ANTHROPIC_BASE_URL`, closing the "why doesn't my env var work for OpenAI?" gap. `KNOWN_TOP_LEVEL_KEYS` picked up `spacedrive`, `instance`, and `providers`, so operators no longer see misleading "unknown key" warnings on valid configs.

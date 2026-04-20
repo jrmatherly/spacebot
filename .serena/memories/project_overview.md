@@ -1,6 +1,6 @@
 # Spacebot - Project Overview
 
-**Version:** 0.5.0
+**Version:** 0.5.1
 **Language:** Rust (edition 2024), ~130K lines of code
 **Purpose:** An agentic system where every LLM process has a dedicated role. Replaces the monolithic session model with specialized processes (Channel, Branch, Worker, Compactor, Cortex).
 
@@ -40,4 +40,4 @@
 - Docker images published to GHCR (ghcr.io/jrmatherly/spacebot)
 - Single binary, no server dependencies
 - All data in embedded databases in a local data directory
-- Release builds for Linux (x86_64, aarch64) and macOS (aarch64 only). Windows was dropped for `daemonize` Unix-only dep + bun-on-Windows preinstall gaps (see `.scratchpad/2026-04-18-windows-build-gap.md`); Intel macOS dropped because `ort-sys` ships no prebuilt for `x86_64-apple-darwin`. Both exclusions are documented inline in `.github/workflows/release.yml`.
+- Release builds for Linux (x86_64, aarch64) and macOS (aarch64 only). Windows was dropped for `daemonize` Unix-only dep + bun-on-Windows preinstall gaps; Intel macOS dropped because `ort-sys` ships no prebuilt for `x86_64-apple-darwin`. Both exclusions are documented inline in `.github/workflows/release.yml`.

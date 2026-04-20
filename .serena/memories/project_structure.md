@@ -39,7 +39,7 @@ spacebot/
 ├── migrations/           # 48 SQLite migrations: 41 flat per-agent + 7 instance-wide under global/ (2026-02 → 2026-04)
 ├── presets/              # 11 agent persona presets (each has IDENTITY.md, ROLE.md, SOUL.md, meta.toml; integration-engineer + sre added 2026-04-19 in PR #74)
 ├── scripts/              # Build & release scripts
-├── tests/                # 12 integration test files (added `spacedrive_client.rs` with wiremock-backed RPC envelope + 401/Bearer round-trip tests)
+├── tests/                # 13 integration test files (`spacedrive_client.rs` with wiremock-backed RPC envelope + 401/Bearer round-trip tests; `litellm_proxy.rs` added 2026-04-19 in PR #77 covering [llm.providers.<id>] table form + [[providers]] top-level array form for LLM base_url routing)
 ├── vendor/               # Vendored crate: imap-proto-0.10.2
 ├── nix/                  # Nix build support
 ├── flake.nix             # Nix flake definition

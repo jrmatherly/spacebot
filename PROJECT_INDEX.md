@@ -39,7 +39,7 @@ spacebot/
 ├── scripts/                        (11 shell scripts)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (12 integration test files)
+└── tests/                          (13 integration test files)
 ```
 
 ---
@@ -136,7 +136,7 @@ just gate-pr
 ## Test Coverage
 
 - 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
-- 12 dedicated integration test files in tests/
+- 13 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces fmt + clippy (supersets cargo check) + lib tests + integration test compile. Migration-safety check is defined but disabled (see `scripts/gate-pr.sh:173-180`). Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile).
 
 ---
