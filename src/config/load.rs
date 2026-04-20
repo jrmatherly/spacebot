@@ -346,6 +346,28 @@ impl Config {
             })
     }
 
+    /// Resolve the instance directory honoring SPACEBOT_DIR env, then optional
+    /// --config path's parent, then the XDG default.
+    ///
+    /// Precedence: `SPACEBOT_DIR` env > `config_path.parent()` > `default_instance_dir()`.
+    /// `SPACEBOT_DIR` wins even when `config_path` is set, so Kubernetes deployments
+    /// can mount config read-only at one path and write data to another writable
+    /// volume. Empty `SPACEBOT_DIR` is treated as unset.
+    pub fn instance_dir_for_config(config_path: Option<&Path>) -> PathBuf {
+        if let Ok(dir) = std::env::var("SPACEBOT_DIR")
+            && !dir.is_empty()
+        {
+            return PathBuf::from(dir);
+        }
+        if let Some(path) = config_path {
+            return path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+        }
+        Self::default_instance_dir()
+    }
+
     /// Check whether a first-run onboarding is needed (no config file and no env keys/providers).
     pub fn needs_onboarding() -> bool {
         let instance_dir = Self::default_instance_dir();

@@ -2256,4 +2256,52 @@ tool_use_enforcement = ["gemini", "deepseek"]
                 .should_inject("anthropic/claude-sonnet-4")
         );
     }
+
+    #[test]
+    fn instance_dir_for_config_env_overrides_config_parent() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "/data") };
+
+        let config_path = PathBuf::from("/etc/spacebot/config.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("/data"));
+    }
+
+    #[test]
+    fn instance_dir_for_config_ignores_empty_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "") };
+
+        let config_path = PathBuf::from("/etc/spacebot/config.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("/etc/spacebot"));
+    }
+
+    #[test]
+    fn instance_dir_for_config_uses_config_parent_when_no_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // EnvGuard::new() sets SPACEBOT_DIR to a test-specific temp dir;
+        // explicitly remove it to exercise the --config-parent branch.
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let config_path = PathBuf::from("./local.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("."));
+    }
+
+    #[test]
+    fn instance_dir_for_config_falls_through_to_default_when_no_env_no_config() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // EnvGuard sets SPACEBOT_DIR to a test temp dir; remove to exercise
+        // the default fallback path.
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let result = Config::instance_dir_for_config(None);
+        // default_instance_dir returns ~/.spacebot or ./.spacebot — never "".
+        assert_ne!(result, PathBuf::from(""));
+    }
 }
