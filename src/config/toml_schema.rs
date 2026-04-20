@@ -192,6 +192,17 @@ pub(super) struct TomlProviderConfig {
     pub(super) api_version: Option<String>,
     #[serde(default)]
     pub(super) deployment: Option<String>,
+    /// Additional HTTP headers to include in every request to this provider.
+    /// Used for custom-provider wiring (e.g., LiteLLM's `x-litellm-tags`,
+    /// OpenRouter's `X-Title`/`X-OpenRouter-Categories`). Propagates to
+    /// `ProviderConfig.extra_headers` at load time.
+    #[serde(default)]
+    pub(super) extra_headers: Vec<(String, String)>,
+    /// When true, send the API key as `Authorization: Bearer <key>` instead
+    /// of the provider default (Anthropic's `x-api-key` for direct routes,
+    /// etc.). Required for some proxy auth flows.
+    #[serde(default)]
+    pub(super) use_bearer_auth: bool,
 }
 
 /// Top-level `[[providers]]` array entry. Same shape as `TomlProviderConfig`
@@ -229,6 +240,10 @@ impl From<TopLevelProviderEntry> for TomlProviderConfig {
             name: Some(entry.name),
             api_version: entry.api_version,
             deployment: entry.deployment,
+            // Parity with TomlProviderConfig; Task 9 adds these fields to
+            // TopLevelProviderEntry and plumbs them through.
+            extra_headers: vec![],
+            use_bearer_auth: false,
         }
     }
 }

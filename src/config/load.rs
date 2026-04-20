@@ -1277,10 +1277,15 @@ impl Config {
                         anyhow::anyhow!("failed to resolve API key for provider '{}'", provider_id)
                     })?;
                     let normalized_id = provider_id.to_lowercase();
+                    // OpenRouter's programmatic headers (X-Title, X-OpenRouter-Categories)
+                    // are applied as a baseline; TOML extra_headers extend rather than
+                    // replace. For all other providers, TOML is the only source.
                     let extra_headers = if normalized_id == "openrouter" {
-                        openrouter_extra_headers()
+                        let mut headers = openrouter_extra_headers();
+                        headers.extend(config.extra_headers);
+                        headers
                     } else {
-                        vec![]
+                        config.extra_headers
                     };
                     Ok((
                         normalized_id,
@@ -1289,7 +1294,7 @@ impl Config {
                             base_url: config.base_url,
                             api_key,
                             name: config.name,
-                            use_bearer_auth: false,
+                            use_bearer_auth: config.use_bearer_auth,
                             extra_headers,
                             api_version: config.api_version,
                             deployment: config.deployment,
