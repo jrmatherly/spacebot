@@ -21,6 +21,15 @@
             "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'migrations/'; then echo '{\"decision\": \"block\", \"reason\": \"Migration files are immutable. Create a new timestamped migration instead.\"}'; fi"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'packages/api-client/src/schema.d.ts'; then echo '{\"decision\": \"block\", \"reason\": \"schema.d.ts is generated output. Modify src/api/**/*.rs utoipa annotations, then run `just typegen` to regenerate.\"}'; fi"
+          }
+        ]
       }
     ]
   }

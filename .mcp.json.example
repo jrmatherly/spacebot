@@ -1,0 +1,72 @@
+{
+  "_comment": "EXAMPLE FILE — NOT ACTIVE. Copy to `.mcp.json` at repo root to enable. See README below for context.",
+  "_readme": [
+    "Team-shared MCP servers for Spacebot.",
+    "",
+    "HOW TO USE:",
+    "  1. Copy this file to `.mcp.json` (drop the `.example` suffix) at the repo root.",
+    "  2. Commit it so every teammate (and every agent instance) gets the same MCP surface on project load.",
+    "  3. Ensure prerequisites are met (see each server's `_prerequisites` key).",
+    "  4. Claude Code auto-loads `.mcp.json` when it's in the repo root.",
+    "",
+    "WHY TEAM-SHARED:",
+    "  Per-user MCP setup drifts. A committed `.mcp.json` guarantees code review, PR automation,",
+    "  and ad-hoc repo queries all resolve against the same tool surface. It also makes hosted",
+    "  agent runs (GitHub Actions, remote triggers, CI scripts) reproducible.",
+    "",
+    "ALREADY-CONFIGURED GLOBAL SERVERS (NOT DUPLICATED HERE):",
+    "  - code-review-graph   — project-scoped, global install",
+    "  - serena              — project-scoped, global install",
+    "  - claude-mem          — user-scoped, global install",
+    "  - context7            — user-scoped, global install",
+    "  - chrome-devtools     — user-scoped, global install",
+    "  - playwright          — user-scoped, global install",
+    "",
+    "  Only servers that are missing or should be team-shared belong in THIS file."
+  ],
+
+  "mcpServers": {
+    "github": {
+      "_purpose": "Native GitHub operations: issues, PRs, Actions, Dependabot alerts (57 currently open on main).",
+      "_why_team_shared": "Admin-merge patterns (PRs #78/#79), CI triage, and Dependabot sweeps all touch GitHub state. Teammate-consistent toolset matters.",
+      "_prerequisites": "`gh auth login` OR a GITHUB_TOKEN env var with `repo`, `read:org`, `workflow` scopes.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+
+    "_disabled_postgres": {
+      "_purpose": "Direct query/schema tools for PostgreSQL. Spacebot does NOT use Postgres (SQLite via sqlx). Kept here as a reference if a future deployment adds a Postgres-backed component (e.g., LiteLLM's key-rotation DB).",
+      "_enable_by": "Rename the key to `postgres`, set DATABASE_URL, and commit.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    },
+
+    "_disabled_linear": {
+      "_purpose": "Issue/sprint management via Linear.",
+      "_enable_by": "Rename to `linear`, add LINEAR_API_KEY, and commit. Only if the team moves issue tracking off GitHub.",
+      "command": "npx",
+      "args": ["-y", "@linear/mcp"],
+      "env": {
+        "LINEAR_API_KEY": "${LINEAR_API_KEY}"
+      }
+    },
+
+    "_disabled_sentry": {
+      "_purpose": "Error triage via Sentry. Complements OTLP tracing (Alloy → Tempo) by surfacing application-layer exceptions without leaving the agent loop.",
+      "_enable_by": "Rename to `sentry`, populate auth + org/project slugs, commit.",
+      "command": "npx",
+      "args": ["-y", "@sentry/mcp-server"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "${SENTRY_AUTH_TOKEN}",
+        "SENTRY_ORG": "${SENTRY_ORG}",
+        "SENTRY_PROJECT": "${SENTRY_PROJECT}"
+      }
+    }
+  }
+}
