@@ -80,7 +80,15 @@ const KNOWN_TOP_LEVEL_KEYS: &[&str] = &[
     "api",
     "metrics",
     "telemetry",
+    "spacedrive",
+    "instance",
+    "providers",
 ];
+
+#[cfg(test)]
+pub(crate) fn known_top_level_keys() -> &'static [&'static str] {
+    KNOWN_TOP_LEVEL_KEYS
+}
 
 /// Pre-parse check that warns about unrecognised top-level keys in a config
 /// file.  Serde's default behaviour silently drops unknown fields, which leads
@@ -336,19 +344,56 @@ fn parse_mcp_server_config(raw: TomlMcpServerConfig) -> Result<McpServerConfig> 
 
 impl Config {
     /// Resolve the instance directory from env or default (~/.spacebot).
+    ///
+    /// Empty `SPACEBOT_DIR` is treated as unset to avoid returning
+    /// `PathBuf::from("")` which silently breaks downstream path joins.
     pub fn default_instance_dir() -> PathBuf {
-        std::env::var("SPACEBOT_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                dirs::home_dir()
-                    .map(|d| d.join(".spacebot"))
-                    .unwrap_or_else(|| PathBuf::from("./.spacebot"))
-            })
+        match std::env::var("SPACEBOT_DIR") {
+            Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => dirs::home_dir()
+                .map(|d| d.join(".spacebot"))
+                .unwrap_or_else(|| PathBuf::from("./.spacebot")),
+        }
+    }
+
+    /// Resolve the instance directory honoring SPACEBOT_DIR env, then optional
+    /// --config path's parent, then the XDG default.
+    ///
+    /// Precedence: `SPACEBOT_DIR` env > `config_path.parent()` > `default_instance_dir()`.
+    /// `SPACEBOT_DIR` wins even when `config_path` is set, so Kubernetes deployments
+    /// can mount config read-only at one path and write data to another writable
+    /// volume. Empty `SPACEBOT_DIR` is treated as unset.
+    pub fn instance_dir_for_config(config_path: Option<&Path>) -> PathBuf {
+        if let Ok(dir) = std::env::var("SPACEBOT_DIR")
+            && !dir.is_empty()
+        {
+            return PathBuf::from(dir);
+        }
+        if let Some(path) = config_path {
+            return path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+        }
+        Self::default_instance_dir()
     }
 
     /// Check whether a first-run onboarding is needed (no config file and no env keys/providers).
+    ///
+    /// Backward-compatible no-arg wrapper. Delegates to
+    /// `needs_onboarding_for_config(None)`, which uses the default instance dir
+    /// resolution (`SPACEBOT_DIR` > XDG default). Callers that know the
+    /// `--config` path should use `needs_onboarding_for_config(Some(...))` so
+    /// the onboarding check matches the daemon's instance_dir resolution.
     pub fn needs_onboarding() -> bool {
-        let instance_dir = Self::default_instance_dir();
+        Self::needs_onboarding_for_config(None)
+    }
+
+    /// Check whether first-run onboarding is needed, honoring an optional
+    /// `--config` path so the check matches the daemon's instance_dir
+    /// resolution (`SPACEBOT_DIR` > `--config` parent > default).
+    pub fn needs_onboarding_for_config(config_path_arg: Option<&Path>) -> bool {
+        let instance_dir = Self::instance_dir_for_config(config_path_arg);
         let config_path = instance_dir.join("config.toml");
         if config_path.exists() {
             return false;
@@ -598,11 +643,14 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
+            let base_url = std::env::var("OPENAI_API_BASE")
+                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
                     api_type: ApiType::OpenAiCompletions,
-                    base_url: OPENAI_PROVIDER_BASE_URL.to_string(),
+                    base_url,
                     api_key: openai_key,
                     name: None,
                     use_bearer_auth: false,
@@ -972,11 +1020,15 @@ impl Config {
             metrics: MetricsConfig::default(),
             spacedrive: crate::spacedrive::SpacedriveIntegrationConfig::default(),
             telemetry: TelemetryConfig {
-                otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+                // Signal-specific endpoint takes precedence per OTel spec.
+                otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+                    .ok()
+                    .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()),
                 otlp_headers: parse_otlp_headers(std::env::var("OTEL_EXPORTER_OTLP_HEADERS").ok())?,
                 service_name: std::env::var("OTEL_SERVICE_NAME")
                     .unwrap_or_else(|_| "spacebot".into()),
                 sample_rate: 1.0,
+                otlp_protocol: std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok(),
             },
         })
     }
@@ -1000,10 +1052,42 @@ impl Config {
     }
 
     fn from_toml_inner(
-        toml: TomlConfig,
+        mut toml: TomlConfig,
         instance_dir: PathBuf,
         strict_bindings: bool,
     ) -> Result<Self> {
+        // Merge top-level [[providers]] array entries (cluster-friendly form)
+        // into toml.llm.providers BEFORE validation runs. The `providers:`
+        // field initializer later in this function consumes toml.llm.providers
+        // via .into_iter(), so the merge must happen here. entry().or_insert_with()
+        // ensures the table form ([llm.providers.<id>]) wins on conflict because
+        // serde populated it first; on conflict, the array entry is dropped and
+        // we log a breadcrumb so operators can tell which form won.
+        for entry in toml.top_level_providers.drain(..) {
+            let normalized_id = entry.name.to_lowercase();
+            if normalized_id.is_empty()
+                || normalized_id.contains('/')
+                || normalized_id.chars().any(char::is_whitespace)
+            {
+                return Err(ConfigError::Invalid(format!(
+                    "[[providers]] name '{}' must not contain '/' or whitespace and must be non-empty",
+                    entry.name
+                ))
+                .into());
+            }
+            match toml.llm.providers.entry(normalized_id) {
+                std::collections::hash_map::Entry::Occupied(occupied) => {
+                    tracing::info!(
+                        provider = %occupied.key(),
+                        "[[providers]] array entry shadowed by [llm.providers.<id>] table form; table form wins"
+                    );
+                }
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    vacant.insert(entry.into());
+                }
+            }
+        }
+
         // Validate providers before processing
         for (provider_id, config) in &toml.llm.providers {
             // Validate provider_id
@@ -1227,11 +1311,14 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
+            let base_url = std::env::var("OPENAI_API_BASE")
+                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
                     api_type: ApiType::OpenAiCompletions,
-                    base_url: OPENAI_PROVIDER_BASE_URL.to_string(),
+                    base_url,
                     api_key: openai_key,
                     name: None,
                     use_bearer_auth: false,
@@ -2536,9 +2623,11 @@ impl Config {
         };
 
         let telemetry = {
-            // env var takes precedence over config file value
-            let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            // Env vars take precedence over config file values.
+            // Signal-specific endpoint takes precedence per OTel spec.
+            let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
                 .ok()
+                .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())
                 .or(toml.telemetry.otlp_endpoint);
             let otlp_headers = parse_otlp_headers(
                 std::env::var("OTEL_EXPORTER_OTLP_HEADERS")
@@ -2550,11 +2639,15 @@ impl Config {
                 .or(toml.telemetry.service_name)
                 .unwrap_or_else(|| "spacebot".into());
             let sample_rate = toml.telemetry.sample_rate.unwrap_or(1.0);
+            let otlp_protocol = std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL")
+                .ok()
+                .or(toml.telemetry.otlp_protocol);
             TelemetryConfig {
                 otlp_endpoint,
                 otlp_headers,
                 service_name,
                 sample_rate,
+                otlp_protocol,
             }
         };
 

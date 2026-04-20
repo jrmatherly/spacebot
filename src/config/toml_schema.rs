@@ -31,6 +31,10 @@ pub(super) struct TomlConfig {
     pub(super) spacedrive: TomlSpacedriveConfig,
     #[serde(default)]
     pub(super) telemetry: TomlTelemetryConfig,
+    /// Top-level `[[providers]]` array (cluster-friendly form). Merged into
+    /// `llm.providers` at load time; the table form wins on conflict.
+    #[serde(rename = "providers", default)]
+    pub(super) top_level_providers: Vec<TopLevelProviderEntry>,
 }
 
 #[derive(Deserialize)]
@@ -80,6 +84,7 @@ pub(super) struct TomlTelemetryConfig {
     pub(super) otlp_headers: Option<String>,
     pub(super) service_name: Option<String>,
     pub(super) sample_rate: Option<f64>,
+    pub(super) otlp_protocol: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -187,6 +192,45 @@ pub(super) struct TomlProviderConfig {
     pub(super) api_version: Option<String>,
     #[serde(default)]
     pub(super) deployment: Option<String>,
+}
+
+/// Top-level `[[providers]]` array entry. Same shape as `TomlProviderConfig`
+/// but with a required `name` field that becomes the routing key.
+///
+/// Accepted cluster-friendly form:
+/// ```toml
+/// [[providers]]
+/// name = "anthropic"
+/// api_type = "anthropic"
+/// base_url = "..."
+/// api_key = "..."
+/// ```
+///
+/// Equivalent to `[llm.providers.anthropic]` (table form). On conflict,
+/// the table form wins because it is the more specific path.
+#[derive(Deserialize, Debug)]
+pub(super) struct TopLevelProviderEntry {
+    pub(super) name: String,
+    pub(super) api_type: super::ApiType,
+    pub(super) base_url: String,
+    pub(super) api_key: String,
+    #[serde(default)]
+    pub(super) api_version: Option<String>,
+    #[serde(default)]
+    pub(super) deployment: Option<String>,
+}
+
+impl From<TopLevelProviderEntry> for TomlProviderConfig {
+    fn from(entry: TopLevelProviderEntry) -> Self {
+        Self {
+            api_type: entry.api_type,
+            base_url: entry.base_url,
+            api_key: entry.api_key,
+            name: Some(entry.name),
+            api_version: entry.api_version,
+            deployment: entry.deployment,
+        }
+    }
 }
 
 #[derive(Deserialize, Default)]

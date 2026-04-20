@@ -402,7 +402,7 @@ fn cmd_start(
     // Run onboarding interactively before daemonizing
     let resolved_config_path = if config_path.is_some() {
         config_path.clone()
-    } else if spacebot::config::Config::needs_onboarding() {
+    } else if spacebot::config::Config::needs_onboarding_for_config(config_path.as_deref()) {
         // Returns Some(path) if CLI wizard ran, None if user chose the UI.
         spacebot::config::run_onboarding().with_context(|| "onboarding failed")?
     } else {
@@ -457,14 +457,11 @@ fn cmd_start(
 /// Resolve the instance directory from the config path without loading the
 /// full config or touching platform credential stores. Used to determine
 /// daemon file paths (PID, socket) before fork.
+///
+/// Delegates to `Config::instance_dir_for_config` for the precedence rule:
+/// `SPACEBOT_DIR` env > `--config` parent > `default_instance_dir()`.
 fn resolve_instance_dir(config_path: &Option<std::path::PathBuf>) -> std::path::PathBuf {
-    if let Some(path) = config_path {
-        path.parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-    } else {
-        spacebot::config::Config::default_instance_dir()
-    }
+    spacebot::config::Config::instance_dir_for_config(config_path.as_deref())
 }
 
 #[tokio::main]

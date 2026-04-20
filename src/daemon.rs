@@ -257,29 +257,99 @@ fn build_env_filter(debug: bool) -> tracing_subscriber::EnvFilter {
 ///
 /// Returns `None` if neither the config field nor the `OTEL_EXPORTER_OTLP_ENDPOINT`
 /// environment variable is set, allowing the OTel layer to be omitted entirely.
+///
+/// Transport selection: the `otlp_protocol` field (from `OTEL_EXPORTER_OTLP_PROTOCOL`
+/// env var or `[telemetry].otlp_protocol` TOML field) selects between "grpc",
+/// "http/protobuf" (default), and "http/json". gRPC requires the `otlp-grpc`
+/// Cargo feature; without it, `protocol = "grpc"` logs an error and returns None.
 fn build_otlp_provider(telemetry: &TelemetryConfig) -> Option<SdkTracerProvider> {
     use opentelemetry_otlp::WithExportConfig as _;
 
     let endpoint = telemetry.otlp_endpoint.as_deref()?;
 
-    // The HTTP/protobuf endpoint path is /v1/traces by default. Append it only
-    // when the caller provided a bare host:port so both forms work.
-    let endpoint = if endpoint.ends_with("/v1/traces") {
-        endpoint.to_owned()
-    } else {
-        format!("{}/v1/traces", endpoint.trim_end_matches('/'))
-    };
+    // Normalize protocol: lowercase, default to "http/protobuf".
+    let protocol = telemetry
+        .otlp_protocol
+        .as_deref()
+        .map(|p| p.to_lowercase())
+        .unwrap_or_else(|| "http/protobuf".to_string());
 
-    let mut exporter_builder = opentelemetry_otlp::SpanExporter::builder()
-        .with_http()
-        .with_endpoint(endpoint);
-    if !telemetry.otlp_headers.is_empty() {
-        exporter_builder = exporter_builder.with_headers(telemetry.otlp_headers.clone());
-    }
-    let exporter = exporter_builder
-        .build()
-        .map_err(|error| eprintln!("failed to build OTLP exporter: {error}"))
-        .ok()?;
+    // Operator-friendly port-mismatch warning before we attempt the build.
+    warn_on_port_protocol_mismatch(endpoint, &protocol);
+
+    let exporter = match protocol.as_str() {
+        "grpc" => {
+            #[cfg(feature = "otlp-grpc")]
+            {
+                // Headers/metadata for gRPC are deferred to a follow-up PR
+                // because tonic is a transitive dep (via opentelemetry-otlp/
+                // grpc-tonic) and not directly nameable from src/daemon.rs.
+                // In-cluster Alloy/Tempo does not require auth headers, so
+                // this is a non-blocking limitation. Document in
+                // deploy/helm/spacebot/README.md.
+                if !telemetry.otlp_headers.is_empty() {
+                    eprintln!(
+                        "warning: OTLP_HEADERS are not yet propagated to the gRPC \
+                         exporter; ignoring {} header(s). Use OTLP/HTTP if headers \
+                         are required.",
+                        telemetry.otlp_headers.len()
+                    );
+                }
+                let builder = opentelemetry_otlp::SpanExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(endpoint.to_string());
+                match builder.build() {
+                    Ok(exp) => exp,
+                    Err(error) => {
+                        eprintln!("failed to build OTLP gRPC exporter: {error}");
+                        return None;
+                    }
+                }
+            }
+            #[cfg(not(feature = "otlp-grpc"))]
+            {
+                // Suppress unused-variable warnings when the feature is off.
+                let _ = endpoint;
+                eprintln!(
+                    "OTEL_EXPORTER_OTLP_PROTOCOL=grpc requested but spacebot was built \
+                     without --features otlp-grpc; OTLP traces will be disabled. \
+                     Either rebuild with --features otlp-grpc, set protocol to \
+                     http/protobuf, or unset the env var to disable OTLP."
+                );
+                return None;
+            }
+        }
+        "http/protobuf" | "http/json" => {
+            // The HTTP endpoint path is /v1/traces by default. Append it only
+            // when the caller provided a bare host:port so both forms work.
+            let endpoint = if endpoint.ends_with("/v1/traces") {
+                endpoint.to_owned()
+            } else {
+                format!("{}/v1/traces", endpoint.trim_end_matches('/'))
+            };
+
+            let mut exporter_builder = opentelemetry_otlp::SpanExporter::builder()
+                .with_http()
+                .with_endpoint(endpoint);
+            if !telemetry.otlp_headers.is_empty() {
+                exporter_builder = exporter_builder.with_headers(telemetry.otlp_headers.clone());
+            }
+            match exporter_builder.build() {
+                Ok(exp) => exp,
+                Err(error) => {
+                    eprintln!("failed to build OTLP HTTP exporter: {error}");
+                    return None;
+                }
+            }
+        }
+        other => {
+            eprintln!(
+                "unsupported OTEL_EXPORTER_OTLP_PROTOCOL={other}; \
+                 expected one of: grpc, http/protobuf, http/json. Disabling OTLP."
+            );
+            return None;
+        }
+    };
 
     let resource = opentelemetry_sdk::Resource::builder()
         .with_service_name(telemetry.service_name.clone())
@@ -312,7 +382,119 @@ fn build_otlp_provider(telemetry: &TelemetryConfig) -> Option<SdkTracerProvider>
         .with_sampler(sampler)
         .build();
 
+    // Use `eprintln!` rather than `tracing::info!` because `build_otlp_provider`
+    // runs before `tracing_subscriber::registry().init()` — tracing events here
+    // would be silently dropped. The adjacent error paths in this function use
+    // the same convention for the same reason.
+    eprintln!(
+        "OTLP exporter initialized: endpoint={endpoint} transport={protocol} service_name={}",
+        telemetry.service_name
+    );
+
     Some(provider)
+}
+
+/// Warn when `OTEL_EXPORTER_OTLP_PROTOCOL` implies a different port than was
+/// configured. 4317 is the gRPC convention; 4318 is the HTTP convention.
+///
+/// Uses `eprintln!` rather than `tracing::warn!` because this runs before the
+/// tracing subscriber is initialized (via `build_otlp_provider`, called from
+/// `init_background_tracing` / `init_foreground_tracing` before `.init()`).
+fn warn_on_port_protocol_mismatch(endpoint: &str, protocol: &str) {
+    let port = endpoint
+        .rsplit(':')
+        .next()
+        .and_then(|tail| tail.split('/').next())
+        .and_then(|p| p.parse::<u16>().ok());
+
+    match (protocol, port) {
+        ("grpc", Some(4318)) => eprintln!(
+            "warning: OTEL_EXPORTER_OTLP_PROTOCOL=grpc but endpoint port is 4318 (HTTP convention); did you mean port 4317?"
+        ),
+        ("http/protobuf" | "http/json", Some(4317)) => eprintln!(
+            "warning: OTEL_EXPORTER_OTLP_PROTOCOL={protocol} but endpoint port is 4317 (gRPC convention); did you mean port 4318?"
+        ),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod otlp_protocol_tests {
+    use super::*;
+
+    fn cfg(endpoint: Option<&str>, protocol: Option<&str>) -> TelemetryConfig {
+        TelemetryConfig {
+            otlp_endpoint: endpoint.map(String::from),
+            otlp_headers: Default::default(),
+            service_name: "spacebot".into(),
+            sample_rate: 1.0,
+            otlp_protocol: protocol.map(String::from),
+        }
+    }
+
+    #[test]
+    fn no_endpoint_returns_none() {
+        assert!(build_otlp_provider(&cfg(None, None)).is_none());
+    }
+
+    #[test]
+    fn http_proto_default_when_protocol_unset() {
+        // Absence of panic + Some return proves the http path was taken.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), None));
+        assert!(p.is_some());
+    }
+
+    #[cfg(not(feature = "otlp-grpc"))]
+    #[test]
+    fn grpc_protocol_without_feature_returns_none_and_warns() {
+        // When the feature is missing, build_otlp_provider must NOT panic and
+        // must return None (operator gets a clear log entry, no crash).
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("grpc")));
+        assert!(p.is_none());
+    }
+
+    #[cfg(feature = "otlp-grpc")]
+    #[test]
+    fn grpc_protocol_with_feature_builds_exporter() {
+        // When the feature is enabled, build_otlp_provider must NOT panic and
+        // must return Some (the exporter builds even if the endpoint is not
+        // actually reachable — gRPC connection is lazy until the first export).
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("grpc")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn http_json_protocol_builds_exporter() {
+        // http/json shares the HTTP transport arm with http/protobuf; this
+        // test pins the case-sensitivity-insensitive match on the distinct
+        // input string so a future refactor can't drop one arm silently.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("http/json")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn protocol_matching_is_case_insensitive() {
+        // Operators frequently set OTEL_EXPORTER_OTLP_PROTOCOL=GRPC (uppercase).
+        // Without the feature, the uppercase form must still match the grpc
+        // arm and return None rather than falling through to the "unsupported"
+        // arm with a different error message.
+        #[cfg(not(feature = "otlp-grpc"))]
+        {
+            let p = build_otlp_provider(&cfg(Some("http://localhost:4317"), Some("GRPC")));
+            assert!(p.is_none());
+        }
+        // HTTP/protobuf uppercase works in every build.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("HTTP/Protobuf")));
+        assert!(p.is_some());
+    }
+
+    #[test]
+    fn unsupported_protocol_returns_none() {
+        // The `other =>` arm should disable OTLP rather than silently falling
+        // back to HTTP/protobuf. "xyz" is deliberately not a known transport.
+        let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), Some("xyz")));
+        assert!(p.is_none());
+    }
 }
 
 /// Start the IPC server. Returns a shutdown receiver that the main event

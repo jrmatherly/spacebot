@@ -70,6 +70,8 @@ mod tests {
                 "ANTHROPIC_AUTH_TOKEN",
                 "ANTHROPIC_OAUTH_TOKEN",
                 "OPENAI_API_KEY",
+                "OPENAI_API_BASE",
+                "OPENAI_BASE_URL",
                 "OPENROUTER_API_KEY",
                 "KILO_API_KEY",
                 "ZHIPU_API_KEY",
@@ -2255,5 +2257,276 @@ tool_use_enforcement = ["gemini", "deepseek"]
                 .tool_use_enforcement
                 .should_inject("anthropic/claude-sonnet-4")
         );
+    }
+
+    #[test]
+    fn instance_dir_for_config_env_overrides_config_parent() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "/data") };
+
+        let config_path = PathBuf::from("/etc/spacebot/config.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("/data"));
+    }
+
+    #[test]
+    fn instance_dir_for_config_ignores_empty_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "") };
+
+        let config_path = PathBuf::from("/etc/spacebot/config.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("/etc/spacebot"));
+    }
+
+    #[test]
+    fn instance_dir_for_config_uses_config_parent_when_no_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // EnvGuard::new() sets SPACEBOT_DIR to a test-specific temp dir;
+        // explicitly remove it to exercise the --config-parent branch.
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let config_path = PathBuf::from("./local.toml");
+        let result = Config::instance_dir_for_config(Some(&config_path));
+        assert_eq!(result, PathBuf::from("."));
+    }
+
+    #[test]
+    fn instance_dir_for_config_falls_through_to_default_when_no_env_no_config() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // EnvGuard sets SPACEBOT_DIR to a test temp dir; remove to exercise
+        // the default fallback path.
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let result = Config::instance_dir_for_config(None);
+        // default_instance_dir returns ~/.spacebot or ./.spacebot — never "".
+        assert_ne!(result, PathBuf::from(""));
+    }
+
+    #[test]
+    fn known_top_level_keys_includes_spacedrive_and_instance() {
+        let keys = crate::config::load::known_top_level_keys();
+        assert!(
+            keys.contains(&"spacedrive"),
+            "spacedrive must be a known key"
+        );
+        assert!(keys.contains(&"instance"), "instance must be a known key");
+        assert!(keys.contains(&"providers"), "providers must be a known key");
+    }
+
+    #[test]
+    fn default_instance_dir_ignores_empty_env() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::set_var("SPACEBOT_DIR", "") };
+
+        let result = Config::default_instance_dir();
+        // Empty env must fall through to the home-dir/CWD default,
+        // never to PathBuf::from("").
+        assert_ne!(result, PathBuf::from(""));
+    }
+
+    #[test]
+    fn openai_base_url_env_var_is_honored() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_API_BASE", "http://litellm.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider populated from OPENAI_API_KEY");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+    }
+
+    #[test]
+    fn openai_base_url_env_var_alias_works() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_BASE_URL", "http://alt.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config.llm.providers.get("openai").expect("openai provider");
+        assert_eq!(openai.base_url, "http://alt.example.com/v1");
+    }
+
+    #[test]
+    fn top_level_providers_array_merges_into_llm_providers() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://litellm.example.com/anthropic"
+api_key = "test-key-1"
+
+[[providers]]
+name = "openai"
+api_type = "openai_completions"
+base_url = "http://litellm.example.com/v1"
+api_key = "test-key-2"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+
+        let anthropic = config
+            .llm
+            .providers
+            .get("anthropic")
+            .expect("anthropic populated from top-level array");
+        assert_eq!(anthropic.base_url, "http://litellm.example.com/anthropic");
+        assert_eq!(anthropic.api_key, "test-key-1");
+
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai populated from top-level array");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+        assert_eq!(openai.api_key, "test-key-2");
+    }
+
+    #[test]
+    fn llm_providers_table_form_wins_over_top_level_array_on_conflict() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://from-array.example.com"
+api_key = "from-array"
+
+[llm.providers.anthropic]
+api_type = "anthropic"
+base_url = "http://from-table.example.com"
+api_key = "from-table"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+
+        let anthropic = config
+            .llm
+            .providers
+            .get("anthropic")
+            .expect("anthropic populated");
+        // Table form ([llm.providers.<id>], more specific path) wins because
+        // serde populates it into the HashMap before the merge runs, and the
+        // merge uses entry().or_insert_with() (a no-op on existing keys).
+        assert_eq!(anthropic.base_url, "http://from-table.example.com");
+        assert_eq!(anthropic.api_key, "from-table");
+    }
+
+    #[test]
+    fn top_level_providers_with_invalid_name_rejected() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "bad/name"
+api_type = "anthropic"
+base_url = "http://example.com"
+api_key = "key"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let result = Config::load_from_path(temp.path());
+        assert!(result.is_err(), "expected error for provider name with /");
+    }
+
+    #[test]
+    fn openai_base_url_env_is_honored_at_from_toml_site() {
+        // The OpenAI populator is duplicated at two sites in load.rs:
+        // load_from_env (~:646) and from_toml_inner (~:1306). The three
+        // existing env tests go through load_from_env via Config::load_from_env;
+        // this test covers the from_toml_inner site via Config::load_from_path
+        // with a TOML that has only `openai_key` (so the populator runs) and
+        // no [llm.providers.openai] table (so entry().or_insert_with() fires).
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_BASE", "http://litellm.example.com/v1");
+        }
+
+        let toml = r#"
+[llm]
+openai_key = "test-key"
+"#;
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai provider populated from openai_key at from_toml_inner site");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+    }
+
+    #[test]
+    fn needs_onboarding_for_config_honors_config_path() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(&config_path, "[llm]\n").expect("write config");
+
+        // With --config pointing to the temp config, onboarding should NOT be
+        // needed (config.toml exists at the resolved instance_dir = temp.path()).
+        assert!(!Config::needs_onboarding_for_config(Some(&config_path)));
+    }
+
+    #[test]
+    fn needs_onboarding_no_arg_wrapper_still_works() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // Just confirm the existing no-arg signature still compiles and returns a bool.
+        let _: bool = Config::needs_onboarding();
+    }
+
+    #[test]
+    fn openai_api_base_wins_over_openai_base_url_when_both_set() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe {
+            std::env::set_var("OPENAI_API_KEY", "test-key");
+            std::env::set_var("OPENAI_API_BASE", "http://primary.example.com/v1");
+            std::env::set_var("OPENAI_BASE_URL", "http://secondary.example.com/v1");
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = Config::load_from_env(temp.path()).expect("env load");
+        let openai = config.llm.providers.get("openai").expect("openai provider");
+        // OPENAI_API_BASE is the canonical OpenAI SDK var; takes precedence.
+        assert_eq!(openai.base_url, "http://primary.example.com/v1");
     }
 }

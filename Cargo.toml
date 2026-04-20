@@ -180,6 +180,16 @@ embeddings = ["dep:fastembed"]
 
 metrics = ["dep:prometheus"]
 
+# Enable OTLP/gRPC transport for trace export (pulls in tonic + prost + tower).
+# Default builds remain HTTP-only (no binary bloat). Required when operators set
+# OTEL_EXPORTER_OTLP_PROTOCOL=grpc; without this feature, that value disables
+# OTLP with a clear error rather than silently falling back to HTTP.
+#
+# Current limitations (tracked as follow-up issues):
+# - gRPC over HTTPS is not supported (plaintext only; in-cluster Alloy/Tempo OK).
+# - OTEL_EXPORTER_OTLP_HEADERS are not propagated to the gRPC exporter.
+otlp-grpc = ["opentelemetry-otlp/grpc-tonic"]
+
 [patch.crates-io]
 imap-proto = { path = "vendor/imap-proto-0.10.2" }
 
