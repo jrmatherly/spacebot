@@ -516,8 +516,11 @@ pub(super) async fn get_providers(
             has_value("zai_coding_plan_key", "ZAI_CODING_PLAN_API_KEY"),
             has_value("github_copilot_key", "GITHUB_COPILOT_API_KEY"),
             doc.get("llm")
-                .and_then(|llm| llm.get("provider"))
-                .and_then(|provider| provider.get("azure"))
+                .and_then(|llm| {
+                    llm.get("providers")
+                        .and_then(|p| p.get("azure"))
+                        .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
+                })
                 .and_then(|azure| azure.get("base_url"))
                 .and_then(|base_url| base_url.as_str())
                 .is_some_and(|url| !url.trim().is_empty()),
@@ -1080,13 +1083,18 @@ async fn update_azure_provider(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Determine the API key: use incoming if non-empty, otherwise preserve existing
+    // Determine the API key: use incoming if non-empty, otherwise preserve existing.
+    // Prefer canonical plural [llm.providers.azure]; fall back to legacy singular
+    // [llm.provider.azure] for backward compatibility with configs written before
+    // 2026-04-20 (the deserializer already aliases singular → providers HashMap).
     let api_key = if request.api_key.trim().is_empty() {
-        // Read existing API key from config
         match doc
             .get("llm")
-            .and_then(|llm| llm.get("provider"))
-            .and_then(|provider| provider.get("azure"))
+            .and_then(|llm| {
+                llm.get("providers")
+                    .and_then(|p| p.get("azure"))
+                    .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
+            })
             .and_then(|azure| azure.get("api_key"))
             .and_then(|v| v.as_str())
             .map(String::from)
@@ -1103,18 +1111,22 @@ async fn update_azure_provider(
         request.api_key.trim().to_string()
     };
 
+    // Write to canonical plural [llm.providers.azure]. The deserializer's
+    // singular-alias path (src/config/toml_schema.rs:373) keeps reading
+    // pre-existing [llm.provider.azure] blocks, so upgrading users are
+    // unaffected at startup.
     if doc.get("llm").is_none() {
         doc["llm"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    if doc["llm"].get("provider").is_none() {
-        doc["llm"]["provider"] = toml_edit::Item::Table(toml_edit::Table::new());
+    if doc["llm"].get("providers").is_none() {
+        doc["llm"]["providers"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    if doc["llm"]["provider"].get("azure").is_none() {
-        doc["llm"]["provider"]["azure"] = toml_edit::Item::Table(toml_edit::Table::new());
+    if doc["llm"]["providers"].get("azure").is_none() {
+        doc["llm"]["providers"]["azure"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
     // Just initialized above if it was missing, so the table is guaranteed to exist.
-    let azure_table = doc["llm"]["provider"]["azure"]
+    let azure_table = doc["llm"]["providers"]["azure"]
         .as_table_mut()
         .expect("azure table must exist after initialization above");
     azure_table["api_type"] = toml_edit::value("azure");
@@ -1395,11 +1407,16 @@ pub(super) async fn get_provider_config(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Get Azure config from [llm.provider.azure]
+    // Get Azure config from [llm.providers.azure] (plural); fall back to
+    // singular [llm.provider.azure] for backward compatibility with configs
+    // written before 2026-04-20.
     let azure_config = doc
         .get("llm")
-        .and_then(|llm| llm.get("provider"))
-        .and_then(|provider| provider.get("azure"));
+        .and_then(|llm| {
+            llm.get("providers")
+                .and_then(|p| p.get("azure"))
+                .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
+        });
 
     if let Some(azure_table) = azure_config.and_then(|item| item.as_table_like()) {
         let base_url = azure_table
@@ -1474,8 +1491,11 @@ pub(super) async fn test_provider_model(
                 let content = tokio::fs::read_to_string(&config_path).await.ok();
                 if let Some(doc) = content.and_then(|c| c.parse::<toml_edit::DocumentMut>().ok()) {
                     doc.get("llm")
-                        .and_then(|llm| llm.get("provider"))
-                        .and_then(|provider| provider.get("azure"))
+                        .and_then(|llm| {
+                            llm.get("providers")
+                                .and_then(|p| p.get("azure"))
+                                .or_else(|| llm.get("provider").and_then(|p| p.get("azure")))
+                        })
                         .and_then(|azure| azure.get("api_key"))
                         .and_then(|v| v.as_str())
                         .map(String::from)
@@ -1878,14 +1898,26 @@ pub(super) async fn delete_provider(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        // Prefer plural [llm.providers.azure]; also remove legacy singular
+        // [llm.provider.azure] if present for backward compatibility.
         if let Some(llm) = doc.get_mut("llm")
             && let Some(llm_table) = llm.as_table_mut()
-            && let Some(provider_table) = llm_table.get_mut("provider")
-            && let Some(provider_tbl) = provider_table.as_table_mut()
         {
-            provider_tbl.remove("azure");
-            if provider_tbl.is_empty() {
-                llm_table.remove("provider");
+            if let Some(providers_item) = llm_table.get_mut("providers")
+                && let Some(providers_tbl) = providers_item.as_table_mut()
+            {
+                providers_tbl.remove("azure");
+                if providers_tbl.is_empty() {
+                    llm_table.remove("providers");
+                }
+            }
+            if let Some(provider_item) = llm_table.get_mut("provider")
+                && let Some(provider_tbl) = provider_item.as_table_mut()
+            {
+                provider_tbl.remove("azure");
+                if provider_tbl.is_empty() {
+                    llm_table.remove("provider");
+                }
             }
         }
 
