@@ -111,8 +111,8 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
-        # Cache scope: (release, target, toolchain). Other workflows that use
-        # Swatinem/rust-cache without an explicit `key:` land in a separate
+        # Cache scope: (release, target, toolchain, dep-tree). Other workflows
+        # that use Swatinem/rust-cache without an explicit `key:` land in a
         # per-workflow scope, so entries from this job never share with ci.yml.
         #
         # `cache-on-failure` defaults to true, which is what we want here.
@@ -128,9 +128,15 @@ jobs:
         # revalidates `.rmeta`/`.rlib` artifacts on every compile, so a
         # half-built target/release/ from a timed-out previous run is not
         # "poison"; rustc rebuilds anything that doesn't match.
+        #
+        # Cargo.lock is in the cache key so dep updates invalidate the cache.
+        # Without it, a release after a `cargo update` could silently link
+        # against stale dep artifacts. Adding the lockfile to the hash is the
+        # idiomatic Swatinem/rust-cache pattern (its default behavior when no
+        # explicit key: is set, which we override here for the release prefix).
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          key: release-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}
+          key: release-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
 
       - name: Install system dependencies (Linux)
         if: matrix.os == 'linux'

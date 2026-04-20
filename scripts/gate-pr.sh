@@ -3,16 +3,25 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/gate-pr.sh [--ci] [--fast]
+Usage: scripts/gate-pr.sh [--ci] [--fast] [--nextest]
 
 Options:
-  --ci    CI mode (enables CI-oriented migration base resolution).
-  --fast  Skip clippy and integration test compile for quicker local iteration.
+  --ci       CI mode (enables CI-oriented migration base resolution).
+  --fast     Skip clippy and integration test compile for quicker local iteration.
+  --nextest  Run unit tests via `cargo nextest run --lib` instead of `cargo test --lib`.
+             Requires cargo-nextest installed (`cargo install cargo-nextest`).
+             Equivalent env var: GATE_PR_NEXTEST=1
 EOF
 }
 
 is_ci=false
 fast_mode=false
+# Nextest opt-in: CLI flag wins, env var is the fallback. Default off because
+# nextest's process-per-test isolation may surface latent shared-state assumptions
+# in tests that today silently pass under cargo test's shared-process model.
+# Promote to default after a sustained period of nextest runs landing green.
+use_nextest="${GATE_PR_NEXTEST:-}"
+[[ "$use_nextest" == "1" || "$use_nextest" == "true" ]] && use_nextest=true || use_nextest=false
 
 while (($# > 0)); do
 	case "$1" in
@@ -22,6 +31,10 @@ while (($# > 0)); do
 		;;
 	--fast)
 		fast_mode=true
+		shift
+		;;
+	--nextest)
+		use_nextest=true
 		shift
 		;;
 	-h | --help)
@@ -192,7 +205,14 @@ else
 	run_step "RUSTFLAGS=\"-Dwarnings\" cargo clippy --all-targets" env RUSTFLAGS="-Dwarnings" cargo clippy --all-targets
 fi
 
-run_step "cargo test --lib" cargo test --lib
+if $use_nextest; then
+	if ! command -v cargo-nextest >/dev/null 2>&1; then
+		fail "--nextest flag set but cargo-nextest not installed (run: cargo install cargo-nextest)"
+	fi
+	run_step "cargo nextest run --lib" cargo nextest run --lib
+else
+	run_step "cargo test --lib" cargo test --lib
+fi
 
 if ! $fast_mode; then
 	run_step "cargo test --tests --no-run" cargo test --tests --no-run
