@@ -20,6 +20,8 @@ The API client lives at `packages/api-client/` as the workspace-resolved package
 
 The OpenAPI spec is **generated from Rust code**, not hand-edited. Run `just typegen` to regenerate `packages/api-client/src/schema.d.ts`. Never hand-edit that file.
 
+A PreToolUse hook in `.claude/settings.json` blocks Edit/Write attempts on `schema.d.ts` — the file is generated output, not source.
+
 Under the hood `just typegen` runs two steps:
 
 1. `cargo run --bin openapi-spec > /tmp/spacebot-openapi.json`, which emits the spec from `utoipa` annotations on handlers in `src/api/*.rs`.

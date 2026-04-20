@@ -6,11 +6,11 @@ Structured change-management system. Every non-trivial change flows through a pr
 
 ```
 openspec/
-├── specs/            # Canonical current-state specifications (7 active)
+├── specs/            # Canonical current-state specifications
 │   └── <name>/spec.md
 └── changes/
     ├── <active>/     # In-progress changes (proposal, design, tasks, specs/)
-    └── archive/      # Completed changes, immutable historical record (7 archived changes)
+    └── archive/      # Completed changes, immutable historical record
 ```
 
 ## Immutability Rules
