@@ -4,10 +4,10 @@
 //! behaviors at `src/api/server.rs:346-376`.
 
 use axum::body::Body;
-use axum::http::{header, Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt as _;
-use spacebot::api::server::test_support::build_test_router;
-use spacebot::api::state::ApiState;
+use spacebot::api::ApiState;
+use spacebot::api::test_support::build_test_router;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 

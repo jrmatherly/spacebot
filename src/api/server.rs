@@ -497,7 +497,6 @@ async fn static_handler(uri: Uri) -> Response {
     (StatusCode::NOT_FOUND, "not found").into_response()
 }
 
-#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod test_support {
     //! Test-only scaffolding for the auth middleware integration tests.
@@ -530,12 +529,13 @@ pub mod test_support {
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
 
         let (api_routes, _api) = api_router().split_for_parts();
-        let protected = Router::new()
-            .nest("/api", api_routes)
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                api_auth_middleware,
-            ));
+        let protected =
+            Router::new()
+                .nest("/api", api_routes)
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    api_auth_middleware,
+                ));
         protected.layer(cors).with_state(state)
     }
 }

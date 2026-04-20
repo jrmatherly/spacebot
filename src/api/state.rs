@@ -373,7 +373,11 @@ impl ApiState {
     /// bounded mpsc channels and drops the receivers; the senders become
     /// no-op sinks (sending to them succeeds but nothing processes).
     /// Only the fields the auth middleware reads are populated.
-    #[cfg(any(test, feature = "test-support"))]
+    ///
+    /// Always compiled (not feature-gated) so integration tests under
+    /// `tests/*.rs`, which compile as separate crates without `cfg(test)`
+    /// visibility into the library, can construct minimal state without
+    /// standing up the full daemon.
     #[doc(hidden)]
     pub fn new_for_tests(auth_token: Option<String>) -> Self {
         let (provider_tx, _provider_rx) = mpsc::channel(16);
