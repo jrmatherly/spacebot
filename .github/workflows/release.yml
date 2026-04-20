@@ -85,7 +85,15 @@ jobs:
           # exclusion in `desktop-ci.yml`. When the Cargo.toml cfg-gating
           # lands, restore the Windows matrix entries here.
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # 60 min, not 30. A cold cargo build of the full release graph (~1000
+    # dep crates + thin LTO) takes ~30+ min on the standard runner; the
+    # previous 30-min cap was cutting the FIRST cold build mid-link, which
+    # combined with `cache-on-failure: false` (now removed) created a
+    # deadlock — every release run was cold because no run had ever survived
+    # long enough to save its cache. Once the cache warms, real wall time
+    # drops to <10 min and the headroom is unused. See the cache step below
+    # for the full root-cause writeup.
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -106,12 +114,23 @@ jobs:
         # Cache scope: (release, target, toolchain). Other workflows that use
         # Swatinem/rust-cache without an explicit `key:` land in a separate
         # per-workflow scope, so entries from this job never share with ci.yml.
-        # `cache-on-failure: false` is deliberate for release builds. A poisoned
-        # cache from a partial/OOM build should NOT persist into the next release.
+        #
+        # `cache-on-failure` defaults to true, which is what we want here.
+        # Earlier versions of this file pinned `cache-on-failure: false` on the
+        # rationale that a "poisoned cache from a partial/OOM build should not
+        # persist into the next release." That reasoning was wrong in practice
+        # and produced a deadlock: every release run was cold because the
+        # 30-min job timeout cut cargo build mid-link before the cache could
+        # be saved, so the next run was also cold, ad infinitum. Verified
+        # against the GH Actions cache API on 2026-04-19: zero `release-*`
+        # cache entries had ever existed despite many release attempts.
+        # Swatinem/rust-cache deduplicates by content hash and rustc
+        # revalidates `.rmeta`/`.rlib` artifacts on every compile, so a
+        # half-built target/release/ from a timed-out previous run is not
+        # "poison"; rustc rebuilds anything that doesn't match.
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: release-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}
-          cache-on-failure: false
 
       - name: Install system dependencies (Linux)
         if: matrix.os == 'linux'
