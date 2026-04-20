@@ -30,6 +30,19 @@ static LEAK_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"xapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-f0-9]+").expect("hardcoded regex"),
         Regex::new(r"\d{8,}:[A-Za-z0-9_-]{35}").expect("hardcoded regex"),
         Regex::new(r"BSA[a-zA-Z0-9]{20,}").expect("hardcoded regex"),
+        // JWT shape: three base64url segments separated by dots. Matches any
+        // JWT starting with "eyJ" (RFC 7519 headers almost always start this
+        // way because `{"alg": ...}` base64url-encodes to `eyJ...`). Covers
+        // Entra access tokens and ID tokens, plus most other JWTs leaked
+        // through logs or error strings. Refresh tokens are opaque (not
+        // JWTs) and are NOT matched here; they must be scrubbed via exact
+        // match in `scrub_secrets(text, tool_secrets)`.
+        //
+        // We do not validate signature or claim structure — any triple in
+        // this shape is redacted. False positives on random dot-separated
+        // strings are acceptable; false negatives on real tokens are not.
+        Regex::new(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")
+            .expect("hardcoded regex"),
     ]
 });
 
