@@ -36,7 +36,7 @@ spacebot/
 ├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
 ├── prompts/                        (91 Jinja2 system prompt templates)
-├── scripts/                        (11 shell scripts)
+├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
 └── tests/                          (13 integration test files)
@@ -137,7 +137,7 @@ just gate-pr
 
 - 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
 - 13 dedicated integration test files in tests/
-- CI gate: `just gate-pr` enforces fmt + clippy (supersets cargo check) + lib tests + integration test compile. Migration-safety check is defined but disabled (see `scripts/gate-pr.sh:173-180`). Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile).
+- CI gate: `just gate-pr` enforces check-sidecar-naming + 3 frontend invariant guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + fmt + clippy (RUSTFLAGS=-Dwarnings) + lib tests + integration test compile. Migration-safety check is defined but disabled; the enforcement logic lives at `scripts/_disabled/check-migration-safety.sh` and can be reactivated from there. Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile; does NOT propagate -Dwarnings).
 
 ---
 

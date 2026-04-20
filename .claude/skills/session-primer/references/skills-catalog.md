@@ -1,6 +1,6 @@
 # Skills Catalog
 
-The 22 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
+The 23 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
 
 ## Tier 1: Core Architecture Skills
 
@@ -160,6 +160,12 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Systematic audit of Tier 1 (user-facing) and Tier 2 (operational) documentation against git history, codebase, and release artifacts
 - Produces prioritized findings (🔴 Incorrect / 🟡 Stale / 🔵 Missing / ⚪ Polish) with file:line citations and evidence
 - Scope excludes CLAUDE.md and Serena memories (owned by `session-sync`), OpenSpec change artifacts (owned by `openspec-verify-change`)
+
+### test-runtime-patterns (90 lines)
+**Trigger:** Writing or reviewing Rust unit/integration tests that exercise code which internally calls `tokio::spawn`, constructs `runtime::Tokio`-flavored opentelemetry_sdk types, or otherwise touches the Tokio runtime at construction time. `disable-model-invocation: true` — only found via this catalog entry.
+- Catches the "bare `#[tokio::test]` + `BatchSpanProcessor`" deadlock class before a 20+ minute rebuild discovers it
+- Prescribes `#[tokio::test(flavor = "multi_thread")]` for tests whose code-under-test spawns background tasks (OTLP exporters, LanceDB indexers)
+- Referenced from root `CLAUDE.md:21` as the canonical reference for this class of hang
 
 ### session-primer
 **Trigger:** Start of every new session, "prime", "bootstrap", "get up to speed", "new session"
