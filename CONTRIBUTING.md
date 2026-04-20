@@ -37,7 +37,7 @@ Every PR must pass `just gate-pr` before merge. This mirrors CI and checks:
 4. **Tests** — `cargo test --lib`
 5. **Integration compile** — `cargo test --tests --no-run`
 
-Use `just gate-pr-fast` for tight iteration. Fast mode substitutes `cargo check` for clippy and skips the integration-test compile; run full `just gate-pr` before pushing.
+Use `just gate-pr-fast` for tight iteration. Fast mode substitutes `cargo check` for clippy and skips the integration-test compile; run full `just gate-pr` before pushing. Note: fast mode does NOT propagate `RUSTFLAGS="-Dwarnings"`, so a warning introduced during fast-mode iteration will only surface in the full gate at push time.
 
 The frontend CI (`interface-ci.yml`) runs `bun ci` and `bunx tsc --noEmit` on interface changes.
 

@@ -81,6 +81,19 @@ fi
 # coordinate a full redeploy or migration-checksum repair when landing
 # migration reformatting changes.
 run_step "check-sidecar-naming" ./scripts/check-sidecar-naming.sh
+
+# Frontend invariant guards: workspace-protocol (tracked package.json deps
+# must use workspace:*), vite-dedupe (interface dedupe matches spaceui
+# shared deps), and ADR anchors (spacedrive integration path:line anchors
+# still resolve). Combined overhead is ~300ms post the Task 8 speedup of
+# check-workspace-protocol.sh. Local-scope only: .github/workflows/ci.yml
+# does not invoke `just gate-pr` — CI enforcement for check-workspace-protocol
+# lives in .github/workflows/spaceui.yml, while check-vite-dedupe and
+# check-adr-anchors currently have no CI coverage (tracked as a follow-up).
+run_step "check-workspace-protocol" ./scripts/check-workspace-protocol.sh
+run_step "check-vite-dedupe" ./scripts/check-vite-dedupe.sh
+run_step "check-adr-anchors" ./scripts/check-adr-anchors.sh
+
 run_step "cargo fmt --all -- --check" cargo fmt --all -- --check
 
 # `cargo check` was previously run here. Clippy is a strict superset (invokes
@@ -89,6 +102,10 @@ run_step "cargo fmt --all -- --check" cargo fmt --all -- --check
 # For a no-clippy escape hatch during debugging, run `just check-all`.
 if $fast_mode; then
 	log "fast mode enabled: skipping clippy and integration test compile"
+	# NOTE: `cargo check` below does NOT propagate RUSTFLAGS="-Dwarnings".
+	# Fast-mode green is not a guarantee of full-gate green — a warning
+	# introduced during fast-mode iteration will only surface in the full
+	# gate below (non-fast branch). See CONTRIBUTING.md for details.
 	run_step "cargo check --all-targets" cargo check --all-targets
 else
 	run_step "RUSTFLAGS=\"-Dwarnings\" cargo clippy --all-targets" env RUSTFLAGS="-Dwarnings" cargo clippy --all-targets
