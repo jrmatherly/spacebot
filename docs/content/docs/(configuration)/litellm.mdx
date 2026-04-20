@@ -1,0 +1,223 @@
+---
+title: LiteLLM Proxy
+description: Route Spacebot through a self-hosted LiteLLM proxy for centralized key management, budget scoping, and 100+ upstream providers.
+---
+
+# LiteLLM Proxy
+
+[LiteLLM](https://docs.litellm.ai/) is a provider proxy that exposes an OpenAI-compatible API and fans out to 100+ upstream LLMs (Anthropic, OpenAI, Gemini, Bedrock, Vertex, local Ollama, etc.). Spacebot talks to the proxy; the proxy talks to upstream. This gives you one place to manage upstream keys, virtual keys with budgets, team scoping, request tagging, and spend/latency telemetry.
+
+Spacebot ships first-class LiteLLM wiring: a compose profile that runs the proxy as a sidecar, a `[llm.providers.litellm]` config block, and an integration test (`tests/litellm_proxy.rs`) proving the TOML surface works.
+
+## Two Keys, One Proxy
+
+| Key | Holder | Purpose |
+|---|---|---|
+| `LITELLM_MASTER_KEY` | Proxy operator only | Admin credential. Creates and rotates virtual keys. **Never configure Spacebot with this.** |
+| `LITELLM_API_KEY` | Spacebot | Virtual key, scoped to a user/team/budget. Issued by the master key via `/key/generate`. |
+| Upstream keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) | Proxy's own config | The actual provider credentials. Spacebot never sees these when proxying. |
+
+The two-key split matters because the master key can create/delete any virtual key; leaking it defeats the budget controls. Always issue Spacebot a scoped virtual key and keep the master key on the proxy side only.
+
+## Compose-Managed LiteLLM (fastest setup)
+
+The repo ships a complete `litellm` profile for local development.
+
+### 1. Bootstrap the proxy
+
+```bash
+cd deploy/docker
+cp .env.example .env
+```
+
+Edit `.env` to set `LITELLM_MASTER_KEY` and at least one upstream key that the proxy will use to reach its providers:
+
+```bash
+LITELLM_MASTER_KEY=sk-master-change-me
+ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...
+```
+
+Start the stack:
+
+```bash
+just compose-up-litellm
+```
+
+The proxy is now reachable at `http://localhost:4000`. Check health:
+
+```bash
+curl http://localhost:4000/health/liveliness
+# → {"status":"healthy",...}
+```
+
+### 2. Generate a virtual key for Spacebot
+
+While the stack is running, ask the master key to mint a scoped virtual key:
+
+```bash
+curl -X POST http://localhost:4000/key/generate \
+    -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"models": ["claude-sonnet-4-6", "claude-opus-4-7"], "max_budget": 10.0}'
+```
+
+Capture the returned `"key"` value. That becomes `LITELLM_API_KEY` for Spacebot.
+
+Append it to `.env`:
+
+```bash
+LITELLM_API_KEY=sk-virtual-from-key-generate
+```
+
+### 3. Point Spacebot at the proxy
+
+Edit `deploy/docker/config.toml` (mounted into the Spacebot container at `/etc/spacebot/config.toml`):
+
+```toml
+[llm.providers.litellm]
+api_type = "openai"                              # LiteLLM speaks OpenAI-compat
+base_url = "http://litellm:4000/v1"              # service DNS inside compose network
+api_key = "env:LITELLM_API_KEY"                  # resolve from env
+use_bearer_auth = true                           # Bearer instead of x-api-key
+```
+
+Reload:
+
+```bash
+just compose-down
+just compose-up-litellm
+```
+
+### 4. Route models through the proxy
+
+Reference models with the `litellm/` prefix:
+
+```bash
+# .env
+SPACEBOT_MODEL=litellm/claude-sonnet-4-6
+SPACEBOT_CHANNEL_MODEL=litellm/claude-sonnet-4-6
+SPACEBOT_WORKER_MODEL=litellm/claude-sonnet-4-6
+```
+
+Open the LiteLLM admin UI at `http://localhost:4000/ui` with `LITELLM_MASTER_KEY` as the password to watch spend, view logs, and manage keys.
+
+## Externally-Managed LiteLLM
+
+If your LiteLLM already runs elsewhere (company proxy, Kubernetes cluster, Cloudflare Tunnel), skip the compose profile and configure Spacebot directly. In `~/.spacebot/config.toml`:
+
+```toml
+[llm.providers.litellm]
+api_type = "openai"
+base_url = "https://litellm.internal.example.com/v1"
+api_key = "env:LITELLM_API_KEY"
+use_bearer_auth = true
+
+# Optional: LiteLLM recognizes these headers for tagging and team budgets.
+# See https://docs.litellm.ai/docs/proxy/team_budgets for details.
+extra_headers = [
+    ["x-litellm-tags", "spacebot-dev"],
+    ["x-litellm-budget", "team-ai"],
+]
+```
+
+Then:
+
+```bash
+export LITELLM_API_KEY=sk-virtual-...
+cargo run --release -- start --foreground
+```
+
+## Mixing Proxied and Direct Providers
+
+Nothing prevents Spacebot from using LiteLLM for some model routes and direct provider APIs for others. Useful when the proxy has aggressive budgets on expensive models but you want cheaper models direct:
+
+```toml
+[llm.providers.anthropic]
+api_type = "anthropic"
+api_key = "env:ANTHROPIC_API_KEY"        # direct Anthropic for workers
+
+[llm.providers.litellm]
+api_type = "openai"
+base_url = "http://litellm:4000/v1"
+api_key = "env:LITELLM_API_KEY"
+use_bearer_auth = true
+
+[llm.routing]
+channel_model = "litellm/claude-sonnet-4-6"   # expensive, route through proxy with budgets
+worker_model = "anthropic/claude-haiku-4-5"   # cheap, direct
+```
+
+Spacebot resolves the provider from the model-name prefix (`litellm/...`, `anthropic/...`, `openai/...`). Both code paths coexist.
+
+## The Proxy's Own Config
+
+LiteLLM reads its own `litellm_config.yaml`. The repo ships a minimal example at `deploy/docker/litellm_config.yaml`; modify it to add the models and upstream providers you care about:
+
+```yaml
+general_settings:
+    master_key: os.environ/LITELLM_MASTER_KEY
+    request_timeout: 110          # keep below Spacebot's 120s HTTP client timeout
+
+model_list:
+    - model_name: claude-sonnet-4-6
+      litellm_params:
+          model: anthropic/claude-sonnet-4-6
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: gpt-5
+      litellm_params:
+          model: openai/gpt-5
+          api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+    # Forward Anthropic cache_control markers upstream so prompt-caching
+    # keeps working when Spacebot proxies through LiteLLM.
+    cache: True
+    cache_params:
+        type: local
+```
+
+LiteLLM supports Postgres-backed spend tracking and key rotation via `database_url`. See the [LiteLLM proxy docs](https://docs.litellm.ai/docs/proxy/configs) for the full surface.
+
+## Prompt Caching Through the Proxy
+
+Anthropic's prompt caching relies on `cache_control` markers in the request payload. When Spacebot routes through LiteLLM, those markers must survive the proxy hop. The shipped `litellm_config.yaml` enables `litellm_settings.cache: True` which preserves the markers. Verify by watching `/metrics` after a few turns. The `spacebot_llm_tokens_total{cache_type="read"}` counter should climb when cache hits occur.
+
+If cache reads stay at zero through the proxy, check:
+
+- LiteLLM version is 1.70.1+ (older versions strip `cache_control`)
+- `base_url` ends with `/v1` (LiteLLM routes `/chat/completions` correctly under `/v1`)
+- No intermediate proxy is stripping request headers
+
+## Verifying the Setup
+
+After reloading with the new config:
+
+```bash
+# Is the proxy healthy?
+curl http://localhost:4000/health/liveliness
+
+# Does Spacebot see the litellm provider?
+curl http://localhost:19898/api/providers | jq '.[] | select(.name == "litellm")'
+
+# Watch both sides as a message is sent:
+just compose-logs | grep -E "litellm|spacebot"
+```
+
+The LiteLLM log shows the virtual key name, the upstream model chosen, and the request cost. Spacebot's log shows the model identifier it routed with (`litellm/<model>`).
+
+## Relationship to Other Systems
+
+| System | Relationship |
+|---|---|
+| [Secret Store](/docs/secrets) | Store `LITELLM_API_KEY` in the secret store and reference it as `api_key = "secret:LITELLM_API_KEY"` instead of the `env:` prefix. Keeps the virtual key out of the compose `.env` file. |
+| [Configuration](/docs/config) | `[llm.providers.litellm]` lives alongside other `[llm.providers.*]` blocks. Every field (`api_type`, `base_url`, `api_key`, `use_bearer_auth`, `extra_headers`) is documented in the main Configuration page. |
+| [Docker Compose](/docs/docker) | The `litellm` profile is additive — combine with `observability`, `proxy`, or `spacedrive` via `just compose-up-all`. |
+| Metrics | `spacebot_llm_requests_total{provider="litellm"}` and `spacebot_llm_tokens_total{provider="litellm"}` break down proxy traffic in Prometheus. |
+
+## Deferred
+
+- **Kubernetes-native integration.** The cluster Helm values provide `[llm.provider.*].base_url` overrides via ConfigMap, pointing at a cluster-internal LiteLLM service. See `docs/design-docs/k8s-cluster-deployment.md` §LLM routing.
+- **Automated virtual-key rotation.** Today keys are issued manually via `/key/generate`. LiteLLM 1.70+ supports programmatic rotation via its admin API; wiring this into Spacebot startup is a future enhancement.
+- **Spend alerts.** LiteLLM supports Slack/webhook alerts on budget thresholds. Not configured by default in the shipped `litellm_config.yaml`; add to `litellm_settings` per the LiteLLM proxy docs.
