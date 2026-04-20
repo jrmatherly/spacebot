@@ -53,6 +53,28 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.5.1
+
+### Release Story
+
+### Release Story
+
+v0.5.1 closes three cluster-deployment gaps discovered during the talos-ai-cluster v0.5.0 production rollout. Kubernetes deployments can now mount `config.toml` read-only via the canonical `-c` flag while writing data to a separate writable volume; `SPACEBOT_DIR` wins over the config path's parent, and empty values are treated as unset instead of quietly producing `PathBuf::from("")`. The onboarding check honors the same precedence, so `spacebot -c /etc/foo/config.toml start` no longer asks to onboard against `~/.spacebot/` while the daemon writes to `/etc/foo/`.
+
+The LLM provider surface grew two operator-friendly forms. Top-level `[[providers]]` arrays (familiar from LiteLLM-style configs) are now accepted alongside the canonical `[llm.providers.<id>]` table; the table form wins on conflict and emits a `tracing::info!` breadcrumb so operators can tell which form took effect during a migration. `OPENAI_API_BASE` and `OPENAI_BASE_URL` are honored for the OpenAI provider, symmetric with the existing `ANTHROPIC_BASE_URL`, closing the "why doesn't my env var work for OpenAI?" gap. `KNOWN_TOP_LEVEL_KEYS` picked up `spacedrive`, `instance`, and `providers`, so operators no longer see misleading "unknown key" warnings on valid configs.
+
+OTLP tracing gained transport selection. Setting `OTEL_EXPORTER_OTLP_PROTOCOL` picks between `http/protobuf` (default), `http/json`, and `grpc` — the `grpc` value requires building with the new opt-in `otlp-grpc` Cargo feature, which pulls in `opentelemetry-otlp/grpc-tonic` only on demand to keep the default binary slim. Requesting `grpc` on a non-gRPC build disables OTLP with a clear error rather than silently falling back to HTTP. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is now honored per OTel spec, and a port-mismatch warning (4317 vs 4318) catches the most common operator typo at startup.
+
+Highlights:
+- New `Config::instance_dir_for_config()` helper centralizes precedence (`SPACEBOT_DIR` > `--config` parent > default) used by both the daemon and the onboarding check.
+- 18 new unit tests plus a wiremock-backed `tests/litellm_proxy.rs` integration test cover both the table and top-level TOML forms for provider `base_url` routing.
+- Full Helm + Docker README coverage of the canonical LiteLLM TOML form, Kubernetes volume layout, and OTLP env var matrix (including documented gRPC-over-HTTPS and header-propagation limitations).
+
+## What's Changed
+* fix(cluster): v0.5.1 deployment fixes — SPACEBOT_DIR precedence, [[providers]] form, OTLP transport by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/77
+
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.5.0...v0.5.1
 ## v0.5.0
 
 ### Release Story
