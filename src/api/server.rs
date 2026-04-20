@@ -16,6 +16,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::any;
 use rust_embed::Embed;
 use serde_json::json;
+use subtle::ConstantTimeEq;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -362,7 +363,13 @@ async fn api_auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|token| token == expected_token);
+        .is_some_and(|token| {
+            // Constant-time equality prevents timing-side-channel leakage of
+            // the token prefix. `ct_eq` returns `Choice`, which we collapse to
+            // bool; `ct_eq` rejects mismatched lengths without short-circuit,
+            // so the work is constant in `token.len()` (observation #25356).
+            token.as_bytes().ct_eq(expected_token.as_bytes()).into()
+        });
 
     if is_authorized {
         next.run(request).await
