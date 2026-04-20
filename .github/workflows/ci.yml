@@ -50,7 +50,13 @@ jobs:
   check:
     name: Check & Clippy
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # 40 min, not 20. Same runway rationale as `test` below. The FIRST run
+    # after the cache-key restructure (commit f4645a6) hits a cold cache
+    # because the new `ci-rust-build` shared-key has no prior entry. Cold
+    # compile of ~1000 dep crates takes ~25-30 min. Warm-cache runs stay at
+    # 2-3 min (observed: 2m33s - 2m41s). 40 min is headroom only burnt
+    # once, after any key restructure.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
