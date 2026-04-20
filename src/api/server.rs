@@ -484,3 +484,46 @@ async fn static_handler(uri: Uri) -> Response {
 
     (StatusCode::NOT_FOUND, "not found").into_response()
 }
+
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support {
+    //! Test-only scaffolding for the auth middleware integration tests.
+    //!
+    //! Mirrors the CORS and auth-layer wiring of [`start_http_server`] but
+    //! skips the `TcpListener` binding so router assertions run in-process.
+    //! Keep this in sync with `start_http_server` at src/api/server.rs:273.
+    //! If production adds `allow_credentials(true)` (or similar), both this
+    //! helper and the regression test at `tests/api_auth_middleware.rs`
+    //! must be updated intentionally — do not silently diverge.
+
+    use super::{ApiState, api_auth_middleware, api_router};
+    use axum::Router;
+    use axum::http::{Method, header};
+    use std::sync::Arc;
+    use tower_http::cors::{AllowOrigin, CorsLayer};
+
+    /// Build the protected router with auth middleware AND the real CORS
+    /// layer attached, for integration testing.
+    pub fn build_test_router(state: Arc<ApiState>) -> Router {
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::mirror_request())
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+
+        let (api_routes, _api) = api_router().split_for_parts();
+        let protected = Router::new()
+            .nest("/api", api_routes)
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                api_auth_middleware,
+            ));
+        protected.layer(cors).with_state(state)
+    }
+}

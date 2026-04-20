@@ -369,6 +369,23 @@ impl ApiState {
         }
     }
 
+    /// Minimal constructor for middleware integration tests. Builds four
+    /// bounded mpsc channels and drops the receivers; the senders become
+    /// no-op sinks (sending to them succeeds but nothing processes).
+    /// Only the fields the auth middleware reads are populated.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn new_for_tests(auth_token: Option<String>) -> Self {
+        let (provider_tx, _provider_rx) = mpsc::channel(16);
+        let (agent_tx, _agent_rx) = mpsc::channel(16);
+        let (agent_remove_tx, _agent_remove_rx) = mpsc::channel(16);
+        let (injection_tx, _injection_rx) = mpsc::channel(16);
+        let mut state =
+            Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
+        state.auth_token = auth_token;
+        state
+    }
+
     /// Register a channel's status block so the API can read snapshots.
     pub async fn register_channel_status(
         &self,
