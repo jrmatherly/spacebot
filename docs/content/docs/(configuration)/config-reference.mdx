@@ -679,10 +679,10 @@ These env vars control instance-level behavior and are not set in `config.toml`.
 
 ## Full Example
 
-For a starting `config.toml`:
+For a starting `config.toml`, look at what the shipped Docker Compose setup mounts:
 
-- `.scratchpad/example.config.toml` in the spacebot repo — curated, opinionated example with sensible defaults
-- `.scratchpad/example.full.config.toml` in the spacebot repo — every single option with inline comments
+- `deploy/docker/config.toml` — the minimal `[api]` + `[metrics]` config that the compose stack mounts read-only at `/etc/spacebot/config.toml`. Copy this and extend it with provider credentials and agent topology as needed.
+- The [LiteLLM page](/docs/litellm), [Docker page](/docs/docker), and [Quickstart](/docs/quickstart) each show concrete `config.toml` snippets tailored to their scenarios.
 
 See also:
 

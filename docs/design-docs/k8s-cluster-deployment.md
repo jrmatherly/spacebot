@@ -153,13 +153,13 @@ base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
 # no base_url override needed.
 ```
 
-> **Note (2026-04-19):** The production deployment above already premises
-> LiteLLM as the model gateway, but the in-tree Spacebot implementation has
-> not yet shipped the `[providers.litellm]` configuration surface. The
-> LiteLLM Phase 1 plan at `.scratchpad/plans/2026-04-19-litellm-phase-0-and-1.md`
-> is the reconciliation work: bringing the in-tree config schema in line with
-> the already-deployed posture. No k8s-side changes are needed here; the
-> block above is the target operators should use once Phase 1 lands.
+> **Note (2026-04-20):** The `[llm.providers.litellm]` configuration surface
+> landed in PR #78 (Phase 0 + 1, merge commit `eab4d1d`) and the UI Update
+> modal was completed in PR #80 (merge commit `f97b6d8`). See
+> `docs/content/docs/(configuration)/litellm.mdx` for the shipped TOML
+> shape, the `api_type` ↔ `base_url` pairing rule, and the UI flow. The
+> block above is the target posture operators should use; no k8s-side
+> changes are required beyond the `config.toml` volume mount already shown.
 
 ### Deployment spec (selected fields; full shape in `deploy/helm/spacebot/values.yaml`)
 
