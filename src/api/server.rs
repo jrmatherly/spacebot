@@ -360,22 +360,20 @@ async fn api_auth_middleware(
 
     let auth_header = request.headers().get(header::AUTHORIZATION);
     let outcome = match auth_header {
-        None => AuthOutcome::Reject("header_missing"),
+        None => AuthOutcome::Reject(AuthRejectReason::HeaderMissing),
         Some(value) => match value.to_str() {
-            Err(_) => AuthOutcome::Reject("header_non_ascii"),
+            Err(_) => AuthOutcome::Reject(AuthRejectReason::HeaderNonAscii),
             Ok(raw) => match raw.strip_prefix("Bearer ") {
-                None => AuthOutcome::Reject("scheme_missing"),
+                None => AuthOutcome::Reject(AuthRejectReason::SchemeMissing),
                 Some(token) => {
-                    // `subtle::ConstantTimeEq::ct_eq` for `[u8]` short-circuits
-                    // on length mismatch and does a constant-time compare when
-                    // lengths are equal. Length itself is observable (an
-                    // attacker controls the request length anyway), but the
-                    // token prefix is not leaked by early-exit on the first
-                    // mismatched byte (observation #25356).
+                    // Use `ct_eq` so a wrong token of the same length can't
+                    // leak its first-matching-byte prefix via timing
+                    // (observation #25356). Length itself is already
+                    // observable via Content-Length.
                     if bool::from(token.as_bytes().ct_eq(expected_token.as_bytes())) {
                         AuthOutcome::Accept
                     } else {
-                        AuthOutcome::Reject("token_mismatch")
+                        AuthOutcome::Reject(AuthRejectReason::TokenMismatch)
                     }
                 }
             },
@@ -385,11 +383,12 @@ async fn api_auth_middleware(
     match outcome {
         AuthOutcome::Accept => next.run(request).await,
         AuthOutcome::Reject(reason) => {
-            tracing::warn!(reason, %path, "api auth rejected");
+            let reason_label = reason.as_metric_label();
+            tracing::warn!(reason = reason_label, %path, "api auth rejected");
             #[cfg(feature = "metrics")]
             crate::telemetry::Metrics::global()
                 .auth_failures_total
-                .with_label_values(&["static_token", reason])
+                .with_label_values(&["static_token", reason_label])
                 .inc();
             (
                 StatusCode::UNAUTHORIZED,
@@ -400,14 +399,42 @@ async fn api_auth_middleware(
     }
 }
 
-/// Outcome of the auth-middleware check. The `Reject` variant carries a
-/// machine-readable reason that populates both the `tracing::warn` log line
-/// and the `spacebot_auth_failures_total{reason=...}` metric, so operators
-/// can distinguish "clients sent no token" from "clients sent a wrong token"
-/// without re-reading request logs.
+/// Outcome of the auth-middleware check. `Reject` carries a typed reason
+/// rather than a raw string so the set of reasons is compiler-enforced:
+/// adding a variant to [`AuthRejectReason`] forces every match site to
+/// handle it, and typos are impossible.
+#[derive(Debug)]
 enum AuthOutcome {
     Accept,
-    Reject(&'static str),
+    Reject(AuthRejectReason),
+}
+
+/// Why the static-token middleware rejected a request. Mapped to the
+/// `reason` field of the `tracing::warn` log line and the
+/// `spacebot_auth_failures_total{reason=...}` Prometheus label via
+/// [`Self::as_metric_label`]. Phase 1 will extend this with JWT-specific
+/// variants (`SignatureInvalid`, `IssuerMismatch`, etc.); the compiler
+/// will then flag every call site that forgot the new variants.
+#[derive(Debug, Clone, Copy)]
+enum AuthRejectReason {
+    HeaderMissing,
+    HeaderNonAscii,
+    SchemeMissing,
+    TokenMismatch,
+}
+
+impl AuthRejectReason {
+    /// Stable machine-readable label used in both logs and metrics. The
+    /// string values are contractual with dashboards and alert rules — do
+    /// not change them without updating operator documentation.
+    fn as_metric_label(self) -> &'static str {
+        match self {
+            Self::HeaderMissing => "header_missing",
+            Self::HeaderNonAscii => "header_non_ascii",
+            Self::SchemeMissing => "scheme_missing",
+            Self::TokenMismatch => "token_mismatch",
+        }
+    }
 }
 
 #[cfg(feature = "metrics")]

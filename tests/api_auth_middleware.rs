@@ -54,14 +54,17 @@ async fn rejects_wrong_bearer_with_unauthorized() {
             .auth_failures_total
             .with_label_values(&["static_token", "token_mismatch"])
             .get();
-        // `Metrics::global()` is process-wide and cargo test runs tests in
-        // parallel by default, so the three other rejection-path tests
-        // (`rejects_non_bearer_scheme`, `rejects_bearer_without_space_separator`,
-        // `rejects_empty_bearer_token`) can each emit their own reasons and
-        // the token_mismatch reason could also be incremented by any
-        // concurrent test that exercises that path. We only assert the delta
-        // is at least 1, which is sufficient to catch a regression where
-        // `.inc()` is dropped, mislabeled, or moved out of the 401 branch.
+        // `Metrics::global()` is process-wide and cargo runs tests in
+        // parallel by default. Two other tests in this file also emit
+        // `token_mismatch` on the same counter: `rejects_empty_bearer_token`
+        // (one increment, via empty string after `strip_prefix("Bearer ")`)
+        // and `rejects_wrong_token_regardless_of_divergence_point` (two
+        // increments, one per divergence case). The other rejection tests
+        // emit different reasons (`header_missing`, `scheme_missing`,
+        // `header_non_ascii`) and don't touch this counter. We only assert
+        // the delta is at least 1, which is sufficient to catch a regression
+        // where `.inc()` is dropped, mislabeled, or moved out of the 401
+        // branch.
         assert!(
             after > before,
             "auth_failures_total{{branch=static_token,reason=token_mismatch}} \
@@ -119,8 +122,8 @@ async fn rejects_wrong_token_regardless_of_divergence_point() {
     // call site in `api_auth_middleware` and the `use subtle::ConstantTimeEq;`
     // import. Reverting to `==` would still pass this test (same 401 outcome),
     // so this is not a `ct_eq` proof. The test name was historically
-    // `constant_time_compare_is_used_for_token` which overclaimed — renamed
-    // to match the actual invariant guarded.
+    // `constant_time_compare_is_used_for_token`; it was renamed because that
+    // name overclaimed a property the assertion cannot verify.
     let state = Arc::new(ApiState::new_for_tests(Some("aaaaaaaaaaaa".into())));
     let app_a = build_test_router(state.clone());
     let app_b = build_test_router(state);
@@ -194,6 +197,27 @@ async fn rejects_empty_bearer_token() {
 }
 
 #[tokio::test]
+async fn rejects_non_ascii_authorization_header() {
+    let state = Arc::new(ApiState::new_for_tests(Some("secret-abc".into())));
+    let app = build_test_router(state);
+    // `http::HeaderValue::from_bytes` accepts non-visible-ASCII bytes
+    // (32..=255 excluding 127), but the middleware calls `.to_str()` which
+    // only succeeds on visible ASCII. 0xFF is in-range for HeaderValue but
+    // fails `to_str()`, exercising the `AuthRejectReason::HeaderNonAscii`
+    // branch. This is the only reject reason not reachable via `&str`
+    // construction, so a dedicated byte-level test is required to cover it.
+    let header_value = axum::http::HeaderValue::from_bytes(&[0xFF, 0xFE, 0xFD])
+        .expect("0xFF/0xFE/0xFD are valid HeaderValue bytes");
+    let req = Request::builder()
+        .uri("/api/status")
+        .header(header::AUTHORIZATION, header_value)
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn cors_does_not_advertise_credentials() {
     let state = Arc::new(ApiState::new_for_tests(None));
     let app = build_test_router(state);
@@ -207,15 +231,17 @@ async fn cors_does_not_advertise_credentials() {
         .unwrap();
     let res = app.oneshot(preflight).await.unwrap();
     // The CORS config uses mirror_request(); credentials MUST NOT be allowed.
-    // If a future change introduces session cookies, read research §12 I-6
-    // before removing this test.
+    // If a future change introduces session cookies, read
+    // `.scratchpad/2026-04-20-entra-id-auth-research.md` §12 I-6 before
+    // removing this test.
     assert!(
         res.headers()
             .get("access-control-allow-credentials")
             .is_none(),
         "CORS must not advertise credentials (see `start_http_server`). \
          If you're changing this, you're probably adopting session cookies. \
-         Read research §12 I-6 before removing this test."
+         Read `.scratchpad/2026-04-20-entra-id-auth-research.md` §12 I-6 \
+         before removing this test."
     );
     // Positive assertion: the CorsLayer is actually engaged. If
     // `build_test_router` regressed to drop the layer, the preflight would
