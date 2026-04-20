@@ -78,7 +78,26 @@ EOF
     return 1
   fi
 
-  printf "%s\n" "$path"
+  # Canonicalize against the repo root to close the path-traversal window
+  # where SPACEBOT_RELEASE_MARKETING_COPY_FILE=/tmp/repo/../etc/passwd would
+  # strip to "../etc/passwd" and splice into CHANGELOG. pwd -P resolves
+  # symlinks and ".." components, then the case guard enforces containment.
+  local resolved_path
+  resolved_path="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P)/$(basename "$path")" || {
+    echo "Marketing copy path cannot be resolved: $path" >&2
+    return 1
+  }
+  local resolved_root
+  resolved_root="$(cd "$REPO_ROOT" && pwd -P)"
+  case "$resolved_path" in
+    "$resolved_root"/*) : ;;
+    *)
+      echo "Marketing copy must be inside repo root ($resolved_root): $resolved_path" >&2
+      return 1
+      ;;
+  esac
+
+  printf "%s\n" "$resolved_path"
 }
 
 generate_release_notes_body() {
@@ -206,7 +225,9 @@ marketing_copy_allowed_relative=""
 if [ -n "${SPACEBOT_RELEASE_MARKETING_COPY_FILE:-}" ]; then
   case "${SPACEBOT_RELEASE_MARKETING_COPY_FILE}" in
     "$REPO_ROOT"/*)
-      marketing_copy_allowed_relative="${SPACEBOT_RELEASE_MARKETING_COPY_FILE#$REPO_ROOT/}"
+      # Quoted to disable glob interpretation of $REPO_ROOT (SC2295). Without
+      # quotes, a REPO_ROOT containing * or ? is treated as a pattern.
+      marketing_copy_allowed_relative="${SPACEBOT_RELEASE_MARKETING_COPY_FILE#"$REPO_ROOT"/}"
       ;;
     /*)
       ;;
