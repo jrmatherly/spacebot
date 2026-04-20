@@ -1111,10 +1111,9 @@ async fn update_azure_provider(
         request.api_key.trim().to_string()
     };
 
-    // Write to canonical plural [llm.providers.azure]. The deserializer's
-    // singular-alias path (src/config/toml_schema.rs:373) keeps reading
-    // pre-existing [llm.provider.azure] blocks, so upgrading users are
-    // unaffected at startup.
+    // Write to canonical plural [llm.providers.azure]. The TOML deserializer
+    // in TomlLlmConfig still accepts the legacy singular [llm.provider.azure]
+    // alias, so upgrading users' existing configs load without edits.
     if doc.get("llm").is_none() {
         doc["llm"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
@@ -1125,10 +1124,15 @@ async fn update_azure_provider(
         doc["llm"]["providers"]["azure"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
-    // Just initialized above if it was missing, so the table is guaranteed to exist.
-    let azure_table = doc["llm"]["providers"]["azure"]
-        .as_table_mut()
-        .expect("azure table must exist after initialization above");
+    // Initialized above if missing. `as_table_mut()` returns None only if a
+    // hand-edited config set [llm.providers.azure] as a non-Table variant
+    // (string, array-of-tables, etc.); surface that as 500 rather than panic.
+    let Some(azure_table) = doc["llm"]["providers"]["azure"].as_table_mut() else {
+        tracing::error!(
+            "config.toml has [llm.providers.azure] set to a non-table value; cannot write"
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
     azure_table["api_type"] = toml_edit::value("azure");
     azure_table["base_url"] = toml_edit::value(base_url.trim());
     azure_table["api_key"] = toml_edit::value(api_key.trim());
@@ -1282,9 +1286,15 @@ async fn update_litellm_provider(
         doc["llm"]["providers"]["litellm"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
-    let litellm_table = doc["llm"]["providers"]["litellm"]
-        .as_table_mut()
-        .expect("litellm table must exist after initialization above");
+    // Initialized above if missing. `as_table_mut()` returns None only if a
+    // hand-edited config set [llm.providers.litellm] as a non-Table variant
+    // (string, array-of-tables, etc.); surface that as 500 rather than panic.
+    let Some(litellm_table) = doc["llm"]["providers"]["litellm"].as_table_mut() else {
+        tracing::error!(
+            "config.toml has [llm.providers.litellm] set to a non-table value; cannot write"
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
     litellm_table["api_type"] = toml_edit::value("openai_completions");
     litellm_table["base_url"] = toml_edit::value(&base_url);
     litellm_table["api_key"] = toml_edit::value(&api_key);
@@ -1303,8 +1313,9 @@ async fn update_litellm_provider(
         }
     }
 
-    // extra_headers: non-empty supplied list overwrites. Empty/None preserves
-    // existing values (dual-empty-is-no-change rule from §7-Q2 of the audit).
+    // extra_headers: a non-empty supplied list overwrites. An empty list (or
+    // None) preserves existing values so partial PATCH-style updates don't
+    // clobber headers the caller didn't re-send.
     let requested_headers = request.extra_headers.unwrap_or_default();
     let headers_tuples = HeaderEntry::entries_to_tuples(requested_headers);
     if !headers_tuples.is_empty() {
@@ -1705,7 +1716,7 @@ pub(super) async fn test_provider_model(
 
         let use_bearer_auth = request.use_bearer_auth.unwrap_or(true);
         let extra_headers =
-            HeaderEntry::entries_to_tuples(request.extra_headers.clone().unwrap_or_default());
+            HeaderEntry::entries_to_tuples(request.extra_headers.unwrap_or_default());
 
         let mut providers = HashMap::new();
         providers.insert(

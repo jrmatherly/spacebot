@@ -35,6 +35,30 @@ import {
 	type SectionId,
 } from "@/components/settings";
 
+type ValidationResult =
+	| {ok: true; normalized: string}
+	| {ok: false; message: string};
+
+/** Validates the LiteLLM Base URL input.
+ * Empty → error. Non-http(s) prefix → error. Otherwise returns the URL
+ * trimmed and with any trailing slashes removed.
+ */
+function validateLitellmBaseUrl(raw: string): ValidationResult {
+	if (!raw.trim()) {
+		return {ok: false, message: "Base URL is required for LiteLLM"};
+	}
+	const normalized = raw.trim().replace(/\/+$/, "");
+	if (
+		!(normalized.startsWith("http://") || normalized.startsWith("https://"))
+	) {
+		return {
+			ok: false,
+			message: "Base URL must start with http:// or https://",
+		};
+	}
+	return {ok: true, normalized};
+}
+
 export function Settings() {
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
@@ -270,21 +294,9 @@ export function Settings() {
 		}
 
 		if (editingProvider === "litellm") {
-			if (!litellmBaseUrl.trim()) {
-				setTestResult({
-					success: false,
-					message: "Base URL is required for LiteLLM",
-				});
-				return false;
-			}
-			const normalized = litellmBaseUrl.trim().replace(/\/+$/, "");
-			if (
-				!(normalized.startsWith("http://") || normalized.startsWith("https://"))
-			) {
-				setTestResult({
-					success: false,
-					message: "Base URL must start with http:// or https://",
-				});
+			const result = validateLitellmBaseUrl(litellmBaseUrl);
+			if (!result.ok) {
+				setTestResult({success: false, message: result.message});
 				return false;
 			}
 		}
@@ -379,21 +391,9 @@ export function Settings() {
 		}
 
 		if (editingProvider === "litellm") {
-			if (!litellmBaseUrl.trim()) {
-				setMessage({
-					text: "Base URL is required for LiteLLM",
-					type: "error",
-				});
-				return;
-			}
-			const normalized = litellmBaseUrl.trim().replace(/\/+$/, "");
-			if (
-				!(normalized.startsWith("http://") || normalized.startsWith("https://"))
-			) {
-				setMessage({
-					text: "Base URL must start with http:// or https://",
-					type: "error",
-				});
+			const result = validateLitellmBaseUrl(litellmBaseUrl);
+			if (!result.ok) {
+				setMessage({text: result.message, type: "error"});
 				return;
 			}
 		}
@@ -719,9 +719,11 @@ export function Settings() {
 														});
 												}
 												if (provider.id === "litellm") {
-													// Reset LiteLLM fields on modal open.
-													// Prefill is intentionally deferred to a
-													// follow-up PR (audit Finding 7).
+													// Reset LiteLLM fields on modal open. Prefilling
+													// from the stored config would risk echoing a
+													// `secret:LITELLM_API_KEY` reference into the
+													// key input as a literal; users re-enter values
+													// on every edit.
 													setLitellmBaseUrl("");
 													setLitellmUseBearerAuth(true);
 													setLitellmExtraHeaders([]);
