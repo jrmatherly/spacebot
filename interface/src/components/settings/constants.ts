@@ -98,6 +98,14 @@ export const PROVIDERS = [
 		defaultModel: "kilo/anthropic/claude-sonnet-4.5",
 	},
 	{
+		id: "litellm",
+		name: "LiteLLM",
+		description: "Self-hosted OpenAI-compatible proxy for 100+ providers",
+		placeholder: "sk-...",
+		envVar: "LITELLM_API_KEY",
+		defaultModel: "litellm/claude-sonnet-4-6",
+	},
+	{
 		id: "opencode-zen",
 		name: "OpenCode Zen",
 		description: "Multi-format gateway (Kimi, GLM, MiniMax, Qwen)",
