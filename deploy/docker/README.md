@@ -123,12 +123,17 @@ entries for `claude-sonnet-4-6`, `claude-opus-4-7`, and `gpt-5`.
 
 ```bash
 # .env (gitignored):
-#   LITELLM_MASTER_KEY=sk-…   (proxy admin — used to issue virtual keys)
+#   LITELLM_MASTER_KEY=sk-…   (proxy admin, used to issue virtual keys)
 #   ANTHROPIC_API_KEY=…        (upstream passthrough)
 #   OPENAI_API_KEY=…           (upstream passthrough)
 
 just compose-up-litellm
 ```
+
+Note: `LITELLM_MASTER_KEY` must be set in `.env` before starting the profile.
+The LiteLLM container refuses to boot without one and will crash-loop. If you
+see the `litellm` service restart repeatedly, check `just compose-logs` for
+"Master key not set" and populate `.env`.
 
 Then configure Spacebot's `config.toml`:
 
@@ -145,8 +150,8 @@ Route specific models via `litellm/<model_name>`: `litellm/claude-sonnet-4-6`,
 **Two different keys:** `LITELLM_MASTER_KEY` is the proxy's admin credential
 (used inside LiteLLM to create virtual keys via `/key/generate`).
 `LITELLM_API_KEY` is a virtual key issued by the proxy, scoped to a
-user/team/budget — this is what Spacebot uses. Never configure Spacebot with
-the master key.
+user/team/budget. That virtual key is what Spacebot uses. Never configure
+Spacebot with the master key.
 
 `litellm/`-prefixed model names skip Spacebot's local rate-limit tracking so
 the LiteLLM Router owns rate-limit semantics for proxied deployments.

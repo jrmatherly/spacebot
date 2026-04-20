@@ -178,8 +178,8 @@ User TOML still wins over env via the internal `or_insert_with` pattern.
 
 Starting in v0.5.2, Spacebot recognizes `[llm.providers.litellm]` as a
 first-class provider block. This pattern avoids the per-upstream-provider
-`base_url` override shown above — instead you route everything through a
-single LiteLLM endpoint and use `litellm/<model_name>` identifiers:
+`base_url` override shown above. You route everything through a single
+LiteLLM endpoint and use `litellm/<model_name>` identifiers:
 
 ```toml
 [llm.providers.litellm]

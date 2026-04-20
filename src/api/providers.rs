@@ -484,13 +484,29 @@ pub(super) async fn get_providers(
                 .and_then(|azure| azure.get("base_url"))
                 .and_then(|base_url| base_url.as_str())
                 .is_some_and(|url| !url.trim().is_empty()),
-            // LiteLLM: either the master-key field is set, or the
-            // [llm.providers.litellm] block is present.
+            // LiteLLM: the virtual api-key field is set, OR either TOML
+            // form names a litellm provider — table form
+            // [llm.providers.litellm] or top-level [[providers]] with
+            // name = "litellm".
             has_value("litellm_api_key", "LITELLM_API_KEY")
-                || doc.get("llm")
+                || doc
+                    .get("llm")
                     .and_then(|llm| llm.get("providers"))
                     .and_then(|providers| providers.get("litellm"))
-                    .is_some(),
+                    .is_some()
+                || doc
+                    .get("providers")
+                    .and_then(|providers| providers.as_array_of_tables())
+                    .is_some_and(|arr| {
+                        arr.iter().any(|entry| {
+                            entry
+                                .get("name")
+                                .and_then(|name| name.as_str())
+                                .map(|name| name.to_lowercase())
+                                .as_deref()
+                                == Some("litellm")
+                        })
+                    }),
         )
     } else {
         (
