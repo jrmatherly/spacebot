@@ -80,7 +80,14 @@ const KNOWN_TOP_LEVEL_KEYS: &[&str] = &[
     "api",
     "metrics",
     "telemetry",
+    "spacedrive",
+    "instance",
 ];
+
+#[cfg(test)]
+pub(crate) fn known_top_level_keys() -> &'static [&'static str] {
+    KNOWN_TOP_LEVEL_KEYS
+}
 
 /// Pre-parse check that warns about unrecognised top-level keys in a config
 /// file.  Serde's default behaviour silently drops unknown fields, which leads

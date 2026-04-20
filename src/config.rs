@@ -2306,6 +2306,16 @@ tool_use_enforcement = ["gemini", "deepseek"]
     }
 
     #[test]
+    fn known_top_level_keys_includes_spacedrive_and_instance() {
+        let keys = crate::config::load::known_top_level_keys();
+        assert!(
+            keys.contains(&"spacedrive"),
+            "spacedrive must be a known key"
+        );
+        assert!(keys.contains(&"instance"), "instance must be a known key");
+    }
+
+    #[test]
     fn default_instance_dir_ignores_empty_env() {
         let _lock = env_test_lock().lock();
         let _env = EnvGuard::new();
