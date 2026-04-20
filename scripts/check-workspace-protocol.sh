@@ -1,23 +1,38 @@
 #!/usr/bin/env bash
-# Enforce that every @spacedrive/* and @spacebot/* dependency in any package.json
-# under the repo uses the `workspace:*` protocol. Prevents silent npm fallbacks
-# if a `package.json` is edited incorrectly.
+# Enforce that every @spacedrive/* and @spacebot/* dependency in any tracked
+# package.json uses the `workspace:*` protocol. Tracked-only is intentional:
+# untracked files cannot regress CI, and `git ls-files` is ~80x faster than
+# the previous `find` pattern on this tree (~0.1s vs ~9s). Prevents silent
+# npm fallbacks if a tracked `package.json` is edited incorrectly.
 #
 # Why this exists: our spaceui/packages/*/package.json files declare names
 # like `@spacedrive/primitives`, which is also the upstream scope on npm.
 # `workspace:*` makes bun resolve locally. Any non-workspace spec (e.g., a
 # semver range) would silently resolve to the public registry. The same risk
-# applies to @spacebot/api-client once activated (no npm package exists, so
-# fallback would fail — but with an opaque error rather than a clear guard hit).
+# applies to @spacebot/api-client (no npm package exists, so fallback would
+# fail — but with an opaque error rather than a clear guard hit).
 #
-# Usage: run via `just spaceui-check-workspace` or as an interface/ preinstall.
+# Usage: run via `just spaceui-check-workspace`, as an interface/ preinstall
+# hook, in .github/workflows/spaceui.yml, or as part of `just gate-pr`.
 
 set -euo pipefail
 
-# Any package.json inside the repo, excluding dependencies we don't control.
-# Use a `while read` loop instead of `mapfile` so the script runs on macOS's
-# bash 3.2 (mapfile is bash 4+). Null-delimited to survive unlikely newlines
-# in paths.
+# Require a git worktree. The Docker image's interface/ preinstall stage
+# runs this script in a context where `.git` is absent (.dockerignore:2
+# excludes .git/, Dockerfile COPYs only this script + interface/). Fail
+# loudly rather than silently pass-through (empty ls-files output would
+# collapse the guard to zero checks).
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	echo "[check-workspace-protocol] ERROR: requires a git worktree (no .git found)." >&2
+	echo "  If invoking from a Docker build stage, ensure .git is not excluded" >&2
+	echo "  by .dockerignore, OR run this guard outside the container." >&2
+	exit 1
+fi
+
+# Enumerate tracked package.json files. Use a `while read -r -d ''` loop
+# (not mapfile) so the script runs on macOS's bash 3.2 (mapfile is bash 4+).
+# Null-delimited via `git ls-files -z`. The spacedrive/ filter lives in shell
+# because Spacedrive uses npm-registry conventions, not workspace:*.
 violations=0
 
 while IFS= read -r -d '' pj; do
@@ -37,13 +52,23 @@ while IFS= read -r -d '' pj; do
         violations=$((violations + 1))
     fi
 done < <(
-    find . \
-        -name package.json \
-        -not -path '*/node_modules/*' \
-        -not -path '*/target/*' \
-        -not -path '*/.git/*' \
-        -not -path './spacedrive/*' \
-        -print0
+    # Explicit status check: `**/package.json` pathspec requires git's builtin
+    # globstar. If the git binary is too old to understand it (some minimal
+    # CI images ship older git), `ls-files` exits non-zero and pipefail fires
+    # — but the outer while loop would see EOF with no diagnostic. Probe
+    # first to surface a clear error.
+    if ! git ls-files -z ':(glob)**/package.json' ':(glob)package.json' >/dev/null 2>&1; then
+        echo "[check-workspace-protocol] ERROR: git ls-files pathspec failed." >&2
+        echo "  Your git version may not support :(glob)**/ syntax." >&2
+        exit 1
+    fi
+    git ls-files -z ':(glob)**/package.json' ':(glob)package.json' \
+        | { while IFS= read -r -d '' pj; do
+                case "$pj" in
+                    spacedrive/*) continue ;;  # npm-registry scope, not workspace:*
+                esac
+                printf '%s\0' "$pj"
+            done; }
 )
 
 if [ "$violations" -gt 0 ]; then
