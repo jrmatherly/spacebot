@@ -445,24 +445,33 @@ mod auth_reject_reason_tests {
     /// rules. If you're changing a label here, also update the dashboard
     /// queries that match against it. The doc comment on
     /// `as_metric_label` explains the contract.
+    ///
+    /// The `match` below is load-bearing: it forces exhaustiveness. Adding
+    /// a new `AuthRejectReason` variant without updating the `cases` list
+    /// AND the match arm makes this test fail to compile, preventing a
+    /// new dashboard contract from shipping without an intentional edit
+    /// here.
     #[test]
     fn label_strings_are_stable() {
-        assert_eq!(
-            AuthRejectReason::HeaderMissing.as_metric_label(),
-            "header_missing"
-        );
-        assert_eq!(
-            AuthRejectReason::HeaderNonAscii.as_metric_label(),
-            "header_non_ascii"
-        );
-        assert_eq!(
-            AuthRejectReason::SchemeMissing.as_metric_label(),
-            "scheme_missing"
-        );
-        assert_eq!(
-            AuthRejectReason::TokenMismatch.as_metric_label(),
-            "token_mismatch"
-        );
+        let cases: &[(AuthRejectReason, &'static str)] = &[
+            (AuthRejectReason::HeaderMissing, "header_missing"),
+            (AuthRejectReason::HeaderNonAscii, "header_non_ascii"),
+            (AuthRejectReason::SchemeMissing, "scheme_missing"),
+            (AuthRejectReason::TokenMismatch, "token_mismatch"),
+        ];
+        for (variant, expected) in cases {
+            assert_eq!(variant.as_metric_label(), *expected);
+        }
+        // Exhaustiveness guard. Every variant in `AuthRejectReason` must
+        // appear both here and in the `cases` list above. If the compiler
+        // complains about a missing arm, add the new variant to both.
+        let guard = AuthRejectReason::HeaderMissing;
+        match guard {
+            AuthRejectReason::HeaderMissing
+            | AuthRejectReason::HeaderNonAscii
+            | AuthRejectReason::SchemeMissing
+            | AuthRejectReason::TokenMismatch => {}
+        }
     }
 }
 
