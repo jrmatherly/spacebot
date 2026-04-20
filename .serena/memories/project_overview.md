@@ -10,7 +10,7 @@
 - **Database:** SQLite via sqlx 0.8 (48 migrations total: 41 in flat per-agent `migrations/`, 7 in instance-wide `migrations/global/` including `spacedrive_pairing` added 2026-04-17, 2026-02 → 2026-04)
 - **Vector DB:** LanceDB 0.27 (embedded vector + FTS for memory)
 - **Key-Value Store:** redb 4.0 (embedded)
-- **LLM Framework:** Rig v0.35 (agentic loop framework). LiteLLM proxy is a first-class provider as of 2026-04-20 (PR #78): `[llm.providers.litellm]` block with `api_type = "openai_completions"` transport (no new `ApiType` variant), `litellm_api_key` field on `LlmConfig` (System-category, virtual API key — NOT the proxy's admin master key), `ProviderStatus.litellm` bool for UI detection, `litellm/`-prefixed model names skip Spacebot's rate-limit tracking because the LiteLLM Router owns those semantics.
+- **LLM Framework:** Rig v0.35 (agentic loop framework). LiteLLM proxy is a first-class provider as of 2026-04-20 (PR #78; UI Update/Test/Delete modal completed in PR #80 with baseUrl, use_bearer_auth, and extra_headers fields; Azure singular [llm.provider.azure] → plural [llm.providers.azure] migration landed in the same PR with read-fallback for legacy configs): `[llm.providers.litellm]` block with `api_type = "openai_completions"` transport (no new `ApiType` variant), `litellm_api_key` field on `LlmConfig` (System-category, virtual API key — NOT the proxy's admin master key), `ProviderStatus.litellm` bool for UI detection, `litellm/`-prefixed model names skip Spacebot's rate-limit tracking because the LiteLLM Router owns those semantics.
 - **CLI:** clap 4.5
 - **Serialization:** serde/serde_json 1.0
 - **Logging:** tracing 0.1
