@@ -358,33 +358,56 @@ async fn api_auth_middleware(
         return next.run(request).await;
     }
 
-    let is_authorized = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|token| {
-            // Constant-time equality prevents timing-side-channel leakage of
-            // the token prefix. `ct_eq` returns `Choice`, which we collapse to
-            // bool; `ct_eq` rejects mismatched lengths without short-circuit,
-            // so the work is constant in `token.len()` (observation #25356).
-            token.as_bytes().ct_eq(expected_token.as_bytes()).into()
-        });
+    let auth_header = request.headers().get(header::AUTHORIZATION);
+    let outcome = match auth_header {
+        None => AuthOutcome::Reject("header_missing"),
+        Some(value) => match value.to_str() {
+            Err(_) => AuthOutcome::Reject("header_non_ascii"),
+            Ok(raw) => match raw.strip_prefix("Bearer ") {
+                None => AuthOutcome::Reject("scheme_missing"),
+                Some(token) => {
+                    // `subtle::ConstantTimeEq::ct_eq` for `[u8]` short-circuits
+                    // on length mismatch and does a constant-time compare when
+                    // lengths are equal. Length itself is observable (an
+                    // attacker controls the request length anyway), but the
+                    // token prefix is not leaked by early-exit on the first
+                    // mismatched byte (observation #25356).
+                    if bool::from(token.as_bytes().ct_eq(expected_token.as_bytes())) {
+                        AuthOutcome::Accept
+                    } else {
+                        AuthOutcome::Reject("token_mismatch")
+                    }
+                }
+            },
+        },
+    };
 
-    if is_authorized {
-        next.run(request).await
-    } else {
-        #[cfg(feature = "metrics")]
-        crate::telemetry::Metrics::global()
-            .auth_failures_total
-            .with_label_values(&["static_token", "bearer_mismatch"])
-            .inc();
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "unauthorized"})),
-        )
-            .into_response()
+    match outcome {
+        AuthOutcome::Accept => next.run(request).await,
+        AuthOutcome::Reject(reason) => {
+            tracing::warn!(reason, %path, "api auth rejected");
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .auth_failures_total
+                .with_label_values(&["static_token", reason])
+                .inc();
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "unauthorized"})),
+            )
+                .into_response()
+        }
     }
+}
+
+/// Outcome of the auth-middleware check. The `Reject` variant carries a
+/// machine-readable reason that populates both the `tracing::warn` log line
+/// and the `spacebot_auth_failures_total{reason=...}` metric, so operators
+/// can distinguish "clients sent no token" from "clients sent a wrong token"
+/// without re-reading request logs.
+enum AuthOutcome {
+    Accept,
+    Reject(&'static str),
 }
 
 #[cfg(feature = "metrics")]
@@ -503,10 +526,10 @@ pub mod test_support {
     //!
     //! Mirrors the CORS and auth-layer wiring of [`start_http_server`] but
     //! skips the `TcpListener` binding so router assertions run in-process.
-    //! Keep this in sync with `start_http_server` at src/api/server.rs:273.
-    //! If production adds `allow_credentials(true)` (or similar), both this
-    //! helper and the regression test at `tests/api_auth_middleware.rs`
-    //! must be updated intentionally — do not silently diverge.
+    //! Keep this in sync with `start_http_server`. If production adds
+    //! `allow_credentials(true)` (or similar), both this helper and the
+    //! regression test at `tests/api_auth_middleware.rs` must be updated
+    //! intentionally. Do not silently diverge.
 
     use super::{ApiState, api_auth_middleware, api_router};
     use axum::Router;

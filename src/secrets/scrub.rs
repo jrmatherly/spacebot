@@ -38,7 +38,7 @@ static LEAK_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // JWTs) and are NOT matched here; they must be scrubbed via exact
         // match in `scrub_secrets(text, tool_secrets)`.
         //
-        // We do not validate signature or claim structure — any triple in
+        // We do not validate signature or claim structure. Any triple in
         // this shape is redacted. False positives on random dot-separated
         // strings are acceptable; false negatives on real tokens are not.
         Regex::new(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")

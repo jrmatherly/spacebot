@@ -355,7 +355,7 @@ All metrics are prefixed with `spacebot_`. The registry uses a private `promethe
 | Type | `IntCounterVec` |
 | Labels | `branch`, `reason` |
 | Instrumented in | `src/api/server.rs` — `api_auth_middleware` |
-| Description | Auth-middleware rejections. `branch` is `static_token` (Phase 0) or `entra_jwt` (Phase 1+). `reason` is a machine-readable failure cause (`bearer_mismatch` on the static path; JWT path will add `signature_invalid`, `issuer_mismatch`, `audience_mismatch`, `expired`, `jwks_fetch_failed`). |
+| Description | Auth-middleware rejections. `branch` is `static_token` (Phase 0) or `entra_jwt` (Phase 1+). `reason` is a machine-readable failure cause. Static-token path emits: `header_missing` (no `Authorization` header), `header_non_ascii` (header value is not valid UTF-8), `scheme_missing` (no `Bearer ` prefix), `token_mismatch` (bearer string did not match configured token). JWT path will add: `signature_invalid`, `issuer_mismatch`, `audience_mismatch`, `expired`, `jwks_fetch_failed`. |
 
 ### Cron
 
