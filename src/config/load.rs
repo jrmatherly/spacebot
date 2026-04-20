@@ -1007,11 +1007,15 @@ impl Config {
             metrics: MetricsConfig::default(),
             spacedrive: crate::spacedrive::SpacedriveIntegrationConfig::default(),
             telemetry: TelemetryConfig {
-                otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+                // Signal-specific endpoint takes precedence per OTel spec.
+                otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+                    .ok()
+                    .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok()),
                 otlp_headers: parse_otlp_headers(std::env::var("OTEL_EXPORTER_OTLP_HEADERS").ok())?,
                 service_name: std::env::var("OTEL_SERVICE_NAME")
                     .unwrap_or_else(|_| "spacebot".into()),
                 sample_rate: 1.0,
+                otlp_protocol: std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok(),
             },
         })
     }
@@ -2598,9 +2602,11 @@ impl Config {
         };
 
         let telemetry = {
-            // env var takes precedence over config file value
-            let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            // Env vars take precedence over config file values.
+            // Signal-specific endpoint takes precedence per OTel spec.
+            let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
                 .ok()
+                .or_else(|| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())
                 .or(toml.telemetry.otlp_endpoint);
             let otlp_headers = parse_otlp_headers(
                 std::env::var("OTEL_EXPORTER_OTLP_HEADERS")
@@ -2612,11 +2618,15 @@ impl Config {
                 .or(toml.telemetry.service_name)
                 .unwrap_or_else(|| "spacebot".into());
             let sample_rate = toml.telemetry.sample_rate.unwrap_or(1.0);
+            let otlp_protocol = std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL")
+                .ok()
+                .or(toml.telemetry.otlp_protocol);
             TelemetryConfig {
                 otlp_endpoint,
                 otlp_headers,
                 service_name,
                 sample_rate,
+                otlp_protocol,
             }
         };
 

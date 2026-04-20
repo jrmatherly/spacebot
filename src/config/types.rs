@@ -30,6 +30,11 @@ pub struct TelemetryConfig {
     pub service_name: String,
     /// Trace sample rate in the range 0.0–1.0. Defaults to 1.0 (sample all).
     pub sample_rate: f64,
+    /// OTLP transport protocol. Accepted: "grpc", "http/protobuf", "http/json".
+    /// Defaults to "http/protobuf" when unset. Loaded from the
+    /// `OTEL_EXPORTER_OTLP_PROTOCOL` env var; TOML `[telemetry].otlp_protocol`
+    /// is the fallback. gRPC requires building with `--features otlp-grpc`.
+    pub otlp_protocol: Option<String>,
 }
 
 /// Top-level Spacebot configuration.

@@ -84,6 +84,7 @@ pub(super) struct TomlTelemetryConfig {
     pub(super) otlp_headers: Option<String>,
     pub(super) service_name: Option<String>,
     pub(super) sample_rate: Option<f64>,
+    pub(super) otlp_protocol: Option<String>,
 }
 
 #[derive(Deserialize)]
