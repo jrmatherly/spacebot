@@ -203,7 +203,7 @@ fn normalize_openai_chatgpt_model(model: &str) -> Option<String> {
     }
 }
 
-fn build_test_llm_config(provider: &str, credential: &str) -> crate::config::LlmConfig {
+pub(crate) fn build_test_llm_config(provider: &str, credential: &str) -> crate::config::LlmConfig {
     let mut providers = HashMap::new();
     if let Some(provider_config) = crate::config::default_provider_config(provider, credential) {
         providers.insert(provider.to_string(), provider_config);

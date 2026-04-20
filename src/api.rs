@@ -23,7 +23,7 @@ mod notifications;
 mod opencode_proxy;
 mod portal;
 mod projects;
-mod providers;
+pub(crate) mod providers;
 mod secrets;
 mod server;
 mod settings;
