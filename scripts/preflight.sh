@@ -57,6 +57,18 @@ require_command cargo
 require_command rustc
 require_command protoc
 
+# gate-pr.sh invokes `cargo fmt` and `cargo clippy`. Detect missing components
+# via invocation rather than `rustup component list` so this works uniformly
+# across rustup, distro-packaged Rust, and Nix flake toolchains (the project
+# default per CLAUDE.md). Fail early with an actionable message instead of
+# mid-gate with an opaque "could not find component" error.
+if ! cargo fmt --version >/dev/null 2>&1; then
+	fail "cargo fmt not available (run: rustup component add rustfmt, or configure your Nix rust toolchain with rustfmt)"
+fi
+if ! cargo clippy --version >/dev/null 2>&1; then
+	fail "cargo clippy not available (run: rustup component add clippy, or configure your Nix rust toolchain with clippy)"
+fi
+
 log "checking git state"
 git remote get-url origin >/dev/null 2>&1 || fail "origin remote is not configured"
 
