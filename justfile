@@ -198,6 +198,10 @@ compose-up-spacedrive:
 compose-up-observability:
     docker compose -f deploy/docker/docker-compose.yml --profile default --profile observability up -d
 
+# Spacebot + LiteLLM proxy sidecar (requires LITELLM_MASTER_KEY in .env)
+compose-up-litellm:
+    docker compose -f deploy/docker/docker-compose.yml --profile default --profile litellm up -d
+
 # Full stack: default + spacedrive + proxy + observability + tooling
 compose-up-all:
     docker compose -f deploy/docker/docker-compose.yml \
@@ -212,7 +216,7 @@ compose-down:
 compose-down-compat:
     docker compose -f deploy/docker/docker-compose.yml \
         --profile default --profile build --profile spacedrive \
-        --profile proxy --profile observability --profile tooling \
+        --profile proxy --profile observability --profile tooling --profile litellm \
         down
 
 # DESTRUCTIVE: stop + wipe all named volumes. Requires typed WIPE confirmation.
@@ -247,6 +251,8 @@ compose-validate:
         docker compose -f deploy/docker/docker-compose.yml --profile observability config > /dev/null
     SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x \
         docker compose -f deploy/docker/docker-compose.yml --profile tooling config > /dev/null
+    SPACEBOT_IMAGE_DIGEST=sha256:aaaa SD_AUTH=admin:x GF_ADMIN_USER=admin GF_ADMIN_PASSWORD=x LITELLM_MASTER_KEY=sk-dummy \
+        docker compose -f deploy/docker/docker-compose.yml --profile litellm config > /dev/null
     @echo "All profile combinations parse cleanly."
 
 # ============================================

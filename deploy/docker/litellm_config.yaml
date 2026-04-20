@@ -1,0 +1,46 @@
+# Minimal LiteLLM proxy config for local development with Spacebot.
+#
+# Two distinct keys matter here:
+#   - LITELLM_MASTER_KEY: admin credential for the proxy itself. Used to
+#     create virtual API keys via the `/key/generate` endpoint. Never
+#     configure Spacebot with this key.
+#   - LITELLM_API_KEY (set on the Spacebot side): a virtual API key
+#     created via `/key/generate`, scoped to a user/team/budget. This is
+#     what Spacebot uses as `api_key` in its `[llm.providers.litellm]`
+#     block.
+#
+# model_list entries below are illustrative. Add the models you actually
+# want to route; LiteLLM supports 100+ providers. See
+# https://docs.litellm.ai/docs/providers for the full list.
+
+general_settings:
+    master_key: os.environ/LITELLM_MASTER_KEY
+    # Optional: Postgres URL for key rotation + spend tracking.
+    # database_url: os.environ/DATABASE_URL
+
+    # request_timeout slightly below Spacebot's 120s HTTP client timeout
+    # (see LiteLLM research doc §1.5.4 coordination note).
+    request_timeout: 110
+
+model_list:
+    - model_name: claude-sonnet-4-6
+      litellm_params:
+          model: anthropic/claude-sonnet-4-6
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: claude-opus-4-7
+      litellm_params:
+          model: anthropic/claude-opus-4-7
+          api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: gpt-5
+      litellm_params:
+          model: openai/gpt-5
+          api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+    # Forward Anthropic cache_control markers upstream so prompt-caching
+    # keeps working when Spacebot proxies through LiteLLM.
+    cache: True
+    cache_params:
+        type: local
