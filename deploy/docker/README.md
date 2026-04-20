@@ -114,6 +114,43 @@ Env var parity for proxy setups: `ANTHROPIC_BASE_URL`, `OPENAI_API_BASE`
 (canonical OpenAI SDK var), and `OPENAI_BASE_URL` (alias) are honored. User
 TOML still wins over env.
 
+### `litellm` profile (v0.5.2+)
+
+The Compose stack now ships an optional `litellm` profile that runs
+`ghcr.io/berriai/litellm:main-latest` as a sidecar on port 4000. The sample
+config at `deploy/docker/litellm_config.yaml` preloads placeholder model
+entries for `claude-sonnet-4-6`, `claude-opus-4-7`, and `gpt-5`.
+
+```bash
+# .env (gitignored):
+#   LITELLM_MASTER_KEY=sk-…   (proxy admin — used to issue virtual keys)
+#   ANTHROPIC_API_KEY=…        (upstream passthrough)
+#   OPENAI_API_KEY=…           (upstream passthrough)
+
+just compose-up-litellm
+```
+
+Then configure Spacebot's `config.toml`:
+
+```toml
+[llm.providers.litellm]
+api_type = "openai_chat_completions"
+base_url = "http://litellm:4000/v1"
+api_key = "env:LITELLM_API_KEY"
+```
+
+Route specific models via `litellm/<model_name>`: `litellm/claude-sonnet-4-6`,
+`litellm/gpt-5`, etc.
+
+**Two different keys:** `LITELLM_MASTER_KEY` is the proxy's admin credential
+(used inside LiteLLM to create virtual keys via `/key/generate`).
+`LITELLM_API_KEY` is a virtual key issued by the proxy, scoped to a
+user/team/budget — this is what Spacebot uses. Never configure Spacebot with
+the master key.
+
+`litellm/`-prefixed model names skip Spacebot's local rate-limit tracking so
+the LiteLLM Router owns rate-limit semantics for proxied deployments.
+
 ## Security notes
 
 - `.env` is gitignored; do not check it in.
