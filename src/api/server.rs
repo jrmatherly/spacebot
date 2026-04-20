@@ -368,8 +368,8 @@ async fn api_auth_middleware(
                 Some(token) => {
                     // Use `ct_eq` so a wrong token of the same length can't
                     // leak its first-matching-byte prefix via timing
-                    // (observation #25356). Length itself is already
-                    // observable via Content-Length.
+                    // (observation #25356). Length itself is already known
+                    // to the attacker (they chose the token).
                     if bool::from(token.as_bytes().ct_eq(expected_token.as_bytes())) {
                         AuthOutcome::Accept
                     } else {
@@ -413,9 +413,9 @@ enum AuthOutcome {
 /// `reason` field of the `tracing::warn` log line and the
 /// `spacebot_auth_failures_total{reason=...}` Prometheus label via
 /// [`Self::as_metric_label`]. Phase 1 will extend this with JWT-specific
-/// variants (`SignatureInvalid`, `IssuerMismatch`, etc.); the compiler
-/// will then flag every call site that forgot the new variants.
-#[derive(Debug, Clone, Copy)]
+/// variants; the compiler will flag every call site that forgot to
+/// handle the new variants.
+#[derive(Debug)]
 enum AuthRejectReason {
     HeaderMissing,
     HeaderNonAscii,
@@ -425,15 +425,44 @@ enum AuthRejectReason {
 
 impl AuthRejectReason {
     /// Stable machine-readable label used in both logs and metrics. The
-    /// string values are contractual with dashboards and alert rules — do
+    /// string values are contractual with dashboards and alert rules. Do
     /// not change them without updating operator documentation.
-    fn as_metric_label(self) -> &'static str {
+    fn as_metric_label(&self) -> &'static str {
         match self {
             Self::HeaderMissing => "header_missing",
             Self::HeaderNonAscii => "header_non_ascii",
             Self::SchemeMissing => "scheme_missing",
             Self::TokenMismatch => "token_mismatch",
         }
+    }
+}
+
+#[cfg(test)]
+mod auth_reject_reason_tests {
+    use super::AuthRejectReason;
+
+    /// Pins the stable-string contract for operator dashboards and alert
+    /// rules. If you're changing a label here, also update the dashboard
+    /// queries that match against it. The doc comment on
+    /// `as_metric_label` explains the contract.
+    #[test]
+    fn label_strings_are_stable() {
+        assert_eq!(
+            AuthRejectReason::HeaderMissing.as_metric_label(),
+            "header_missing"
+        );
+        assert_eq!(
+            AuthRejectReason::HeaderNonAscii.as_metric_label(),
+            "header_non_ascii"
+        );
+        assert_eq!(
+            AuthRejectReason::SchemeMissing.as_metric_label(),
+            "scheme_missing"
+        );
+        assert_eq!(
+            AuthRejectReason::TokenMismatch.as_metric_label(),
+            "token_mismatch"
+        );
     }
 }
 

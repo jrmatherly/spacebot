@@ -55,16 +55,10 @@ async fn rejects_wrong_bearer_with_unauthorized() {
             .with_label_values(&["static_token", "token_mismatch"])
             .get();
         // `Metrics::global()` is process-wide and cargo runs tests in
-        // parallel by default. Two other tests in this file also emit
-        // `token_mismatch` on the same counter: `rejects_empty_bearer_token`
-        // (one increment, via empty string after `strip_prefix("Bearer ")`)
-        // and `rejects_wrong_token_regardless_of_divergence_point` (two
-        // increments, one per divergence case). The other rejection tests
-        // emit different reasons (`header_missing`, `scheme_missing`,
-        // `header_non_ascii`) and don't touch this counter. We only assert
-        // the delta is at least 1, which is sufficient to catch a regression
-        // where `.inc()` is dropped, mislabeled, or moved out of the 401
-        // branch.
+        // parallel by default. Other tests in this file may also emit
+        // `token_mismatch`, so we only assert the delta is at least 1.
+        // That's sufficient to catch a regression where `.inc()` is
+        // dropped, mislabeled, or moved out of the 401 branch.
         assert!(
             after > before,
             "auth_failures_total{{branch=static_token,reason=token_mismatch}} \
