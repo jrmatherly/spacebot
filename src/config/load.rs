@@ -54,6 +54,22 @@ pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     }
 }
 
+/// Resolve OpenAI's `base_url` from env, falling back to the provider default.
+///
+/// Honors `OPENAI_API_BASE` (canonical OpenAI SDK var) first, then
+/// `OPENAI_BASE_URL` as an alias. Symmetric with the Anthropic pattern
+/// (`ANTHROPIC_BASE_URL`) and consistent across both the `load_from_env` and
+/// `from_toml_inner` populator sites.
+///
+/// User TOML still wins over env via the existing `or_insert_with` pattern
+/// in the caller — this helper only controls the default when no TOML block
+/// exists.
+fn openai_base_url() -> String {
+    std::env::var("OPENAI_API_BASE")
+        .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+        .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string())
+}
+
 /// Process-wide reference to the secrets store for use during config resolution.
 ///
 /// Uses `ArcSwap` so it is accessible from any thread (file watcher, API
@@ -518,6 +534,7 @@ impl Config {
             moonshot_key: std::env::var("MOONSHOT_API_KEY").ok(),
             zai_coding_plan_key: std::env::var("ZAI_CODING_PLAN_API_KEY").ok(),
             github_copilot_key: std::env::var("GITHUB_COPILOT_API_KEY").ok(),
+            litellm_api_key: std::env::var("LITELLM_API_KEY").ok(),
             providers: HashMap::new(),
         };
 
@@ -643,9 +660,7 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
-            let base_url = std::env::var("OPENAI_API_BASE")
-                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
+            let base_url = openai_base_url();
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {
@@ -1064,17 +1079,9 @@ impl Config {
         // serde populated it first; on conflict, the array entry is dropped and
         // we log a breadcrumb so operators can tell which form won.
         for entry in toml.top_level_providers.drain(..) {
-            let normalized_id = entry.name.to_lowercase();
-            if normalized_id.is_empty()
-                || normalized_id.contains('/')
-                || normalized_id.chars().any(char::is_whitespace)
-            {
-                return Err(ConfigError::Invalid(format!(
-                    "[[providers]] name '{}' must not contain '/' or whitespace and must be non-empty",
-                    entry.name
-                ))
-                .into());
-            }
+            let normalized_id = entry.name.as_str().to_lowercase();
+            // Validation moved into ProviderName's Deserialize impl; invalid
+            // names now fail at parse time. No runtime check needed here.
             match toml.llm.providers.entry(normalized_id) {
                 std::collections::hash_map::Entry::Occupied(occupied) => {
                     tracing::info!(
@@ -1254,6 +1261,12 @@ impl Config {
                 .as_deref()
                 .and_then(resolve_env_value)
                 .or_else(|| std::env::var("GITHUB_COPILOT_API_KEY").ok()),
+            litellm_api_key: toml
+                .llm
+                .litellm_api_key
+                .as_deref()
+                .and_then(resolve_env_value)
+                .or_else(|| std::env::var("LITELLM_API_KEY").ok()),
             providers: toml
                 .llm
                 .providers
@@ -1263,10 +1276,15 @@ impl Config {
                         anyhow::anyhow!("failed to resolve API key for provider '{}'", provider_id)
                     })?;
                     let normalized_id = provider_id.to_lowercase();
+                    // OpenRouter's programmatic headers (X-Title, X-OpenRouter-Categories)
+                    // are applied as a baseline; TOML extra_headers extend rather than
+                    // replace. For all other providers, TOML is the only source.
                     let extra_headers = if normalized_id == "openrouter" {
-                        openrouter_extra_headers()
+                        let mut headers = openrouter_extra_headers();
+                        headers.extend(config.extra_headers);
+                        headers
                     } else {
-                        vec![]
+                        config.extra_headers
                     };
                     Ok((
                         normalized_id,
@@ -1275,7 +1293,7 @@ impl Config {
                             base_url: config.base_url,
                             api_key,
                             name: config.name,
-                            use_bearer_auth: false,
+                            use_bearer_auth: config.use_bearer_auth,
                             extra_headers,
                             api_version: config.api_version,
                             deployment: config.deployment,
@@ -1311,9 +1329,7 @@ impl Config {
         }
 
         if let Some(openai_key) = llm.openai_key.clone() {
-            let base_url = std::env::var("OPENAI_API_BASE")
-                .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                .unwrap_or_else(|_| OPENAI_PROVIDER_BASE_URL.to_string());
+            let base_url = openai_base_url();
             llm.providers
                 .entry("openai".to_string())
                 .or_insert_with(|| ProviderConfig {

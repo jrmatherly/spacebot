@@ -456,7 +456,19 @@ impl LlmManager {
     }
 
     /// Record that a model hit a rate limit.
+    ///
+    /// Skips tracking for `litellm/`-prefixed models because LiteLLM's Router
+    /// owns rate-limit semantics for proxied deployments. Letting both
+    /// Spacebot's rate_limited HashMap and LiteLLM's Router react to 429s
+    /// creates cascading fallback failures.
     pub async fn record_rate_limit(&self, model_name: &str) {
+        if model_name.starts_with("litellm/") {
+            tracing::debug!(
+                model = %model_name,
+                "skipping rate-limit tracking for litellm/-prefixed model (proxy owns rate-limit semantics)"
+            );
+            return;
+        }
         self.rate_limited
             .write()
             .await
@@ -465,7 +477,12 @@ impl LlmManager {
     }
 
     /// Check if a model is currently in rate limit cooldown.
+    ///
+    /// Always returns false for `litellm/`-prefixed models (see `record_rate_limit`).
     pub async fn is_rate_limited(&self, model_name: &str, cooldown_secs: u64) -> bool {
+        if model_name.starts_with("litellm/") {
+            return false;
+        }
         let map = self.rate_limited.read().await;
         if let Some(limited_at) = map.get(model_name) {
             limited_at.elapsed().as_secs() < cooldown_secs
@@ -480,5 +497,40 @@ impl LlmManager {
             .write()
             .await
             .retain(|_, limited_at| limited_at.elapsed().as_secs() < cooldown_secs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rate_limit_tracking_skipped_for_litellm_prefixed_models() {
+        // LiteLLM's Router owns rate-limit semantics; Spacebot must not
+        // double-track or it creates cascading fallback failures.
+        let config = crate::api::providers::build_test_llm_config("anthropic", "test-key");
+        let manager = LlmManager::new(config).await.expect("create manager");
+
+        manager
+            .record_rate_limit("litellm/anthropic/claude-sonnet-4")
+            .await;
+
+        let is_limited = manager
+            .is_rate_limited("litellm/anthropic/claude-sonnet-4", 60)
+            .await;
+        assert!(
+            !is_limited,
+            "litellm/-prefixed models must not be rate-limited by Spacebot"
+        );
+
+        // Control: non-LiteLLM prefix still records and checks normally.
+        manager.record_rate_limit("anthropic/claude-sonnet-4").await;
+        let direct_limited = manager
+            .is_rate_limited("anthropic/claude-sonnet-4", 60)
+            .await;
+        assert!(
+            direct_limited,
+            "non-litellm/-prefixed models continue to rate-limit normally"
+        );
     }
 }

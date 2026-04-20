@@ -174,6 +174,40 @@ Env var parity for common proxy setups:
 
 User TOML still wins over env via the internal `or_insert_with` pattern.
 
+### LiteLLM as a first-class provider (v0.5.2+)
+
+Starting in v0.5.2, Spacebot recognizes `[llm.providers.litellm]` as a
+first-class provider block. This pattern avoids the per-upstream-provider
+`base_url` override shown above. You route everything through a single
+LiteLLM endpoint and use `litellm/<model_name>` identifiers:
+
+```toml
+[llm.providers.litellm]
+api_type = "openai_chat_completions"
+base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
+api_key = "env:LITELLM_API_KEY"
+```
+
+Then route specific models via task-level config or the agent defaults:
+`litellm/claude-sonnet-4-6`, `litellm/gpt-5`, `litellm/claude-opus-4-7`, etc.
+
+Two distinct keys matter for LiteLLM:
+
+| Key | Scope | Where it lives |
+|---|---|---|
+| `LITELLM_MASTER_KEY` | LiteLLM proxy admin credential — used only inside the proxy to authorize `/key/generate` calls | LiteLLM proxy env vars (never on the Spacebot side) |
+| `LITELLM_API_KEY` | Virtual key scoped to a user/team/budget | Spacebot env or secret store; referenced from `[llm.providers.litellm]` |
+
+Operators use `LITELLM_MASTER_KEY` once to issue a `sk-*`-prefixed virtual key
+via the proxy's `/key/generate` endpoint, then configure Spacebot to use that
+virtual key as `LITELLM_API_KEY`.
+
+`litellm/`-prefixed model names skip Spacebot's local rate-limit tracking
+so the LiteLLM Router owns rate-limit semantics and Spacebot doesn't
+double-track. The `ProviderStatus.litellm` API field reflects whether
+the provider block is configured so the Settings UI can render the
+LiteLLM card.
+
 ## Observability (OTLP)
 
 Spacebot exports traces via OTLP. Default transport is HTTP/protobuf

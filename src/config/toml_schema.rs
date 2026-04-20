@@ -192,6 +192,66 @@ pub(super) struct TomlProviderConfig {
     pub(super) api_version: Option<String>,
     #[serde(default)]
     pub(super) deployment: Option<String>,
+    /// Additional HTTP headers to include in every request to this provider.
+    /// Used for custom-provider wiring (e.g., LiteLLM's `x-litellm-tags`,
+    /// OpenRouter's `X-Title`/`X-OpenRouter-Categories`). Propagates to
+    /// `ProviderConfig.extra_headers` at load time.
+    #[serde(default)]
+    pub(super) extra_headers: Vec<(String, String)>,
+    /// When true, send the API key as `Authorization: Bearer <key>` instead
+    /// of the provider default (Anthropic's `x-api-key` for direct routes,
+    /// etc.). Required for some proxy auth flows.
+    #[serde(default)]
+    pub(super) use_bearer_auth: bool,
+}
+
+/// Validated provider routing key. Guarantees non-empty, no `/`, no whitespace.
+///
+/// Parsed from TOML via a custom `Deserialize` impl so invalid names fail at
+/// load time rather than during `from_toml_inner` validation. Exposes a `&str`
+/// accessor via `AsRef<str>` for ergonomic use.
+#[derive(Debug)]
+pub(super) struct ProviderName(String);
+
+impl ProviderName {
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub(super) fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for ProviderName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for ProviderName {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        if raw.is_empty() {
+            return Err(serde::de::Error::custom(
+                "[[providers]] name must not be empty",
+            ));
+        }
+        if raw.contains('/') {
+            return Err(serde::de::Error::custom(format!(
+                "[[providers]] name '{raw}' must not contain '/'"
+            )));
+        }
+        if raw.chars().any(char::is_whitespace) {
+            return Err(serde::de::Error::custom(format!(
+                "[[providers]] name '{raw}' must not contain whitespace"
+            )));
+        }
+        Ok(Self(raw))
+    }
 }
 
 /// Top-level `[[providers]]` array entry. Same shape as `TomlProviderConfig`
@@ -210,7 +270,7 @@ pub(super) struct TomlProviderConfig {
 /// the table form wins because it is the more specific path.
 #[derive(Deserialize, Debug)]
 pub(super) struct TopLevelProviderEntry {
-    pub(super) name: String,
+    pub(super) name: ProviderName,
     pub(super) api_type: super::ApiType,
     pub(super) base_url: String,
     pub(super) api_key: String,
@@ -218,6 +278,13 @@ pub(super) struct TopLevelProviderEntry {
     pub(super) api_version: Option<String>,
     #[serde(default)]
     pub(super) deployment: Option<String>,
+    /// Parity with TomlProviderConfig. Custom HTTP headers forwarded to this
+    /// provider on every request.
+    #[serde(default)]
+    pub(super) extra_headers: Vec<(String, String)>,
+    /// Parity with TomlProviderConfig. Override auth header style.
+    #[serde(default)]
+    pub(super) use_bearer_auth: bool,
 }
 
 impl From<TopLevelProviderEntry> for TomlProviderConfig {
@@ -226,9 +293,11 @@ impl From<TopLevelProviderEntry> for TomlProviderConfig {
             api_type: entry.api_type,
             base_url: entry.base_url,
             api_key: entry.api_key,
-            name: Some(entry.name),
+            name: Some(entry.name.into_inner()),
             api_version: entry.api_version,
             deployment: entry.deployment,
+            extra_headers: entry.extra_headers,
+            use_bearer_auth: entry.use_bearer_auth,
         }
     }
 }
@@ -257,6 +326,7 @@ pub(super) struct TomlLlmConfigFields {
     pub(super) moonshot_key: Option<String>,
     pub(super) zai_coding_plan_key: Option<String>,
     pub(super) github_copilot_key: Option<String>,
+    pub(super) litellm_api_key: Option<String>,
     #[serde(default)]
     pub(super) providers: HashMap<String, TomlProviderConfig>,
     #[serde(default)]
@@ -288,6 +358,7 @@ pub(super) struct TomlLlmConfig {
     pub(super) moonshot_key: Option<String>,
     pub(super) zai_coding_plan_key: Option<String>,
     pub(super) github_copilot_key: Option<String>,
+    pub(super) litellm_api_key: Option<String>,
     pub(super) providers: HashMap<String, TomlProviderConfig>,
 }
 
@@ -344,6 +415,7 @@ impl<'de> Deserialize<'de> for TomlLlmConfig {
             moonshot_key: fields.moonshot_key,
             zai_coding_plan_key: fields.zai_coding_plan_key,
             github_copilot_key: fields.github_copilot_key,
+            litellm_api_key: fields.litellm_api_key,
             providers: fields.providers,
         })
     }

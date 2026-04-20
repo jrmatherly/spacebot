@@ -62,6 +62,9 @@ pub(super) struct ProviderStatus {
     zai_coding_plan: bool,
     github_copilot: bool,
     azure: bool,
+    /// True when `[llm.providers.litellm]` block is configured OR
+    /// `litellm_api_key` is set in LlmConfig.
+    litellm: bool,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -203,7 +206,7 @@ fn normalize_openai_chatgpt_model(model: &str) -> Option<String> {
     }
 }
 
-fn build_test_llm_config(provider: &str, credential: &str) -> crate::config::LlmConfig {
+pub(crate) fn build_test_llm_config(provider: &str, credential: &str) -> crate::config::LlmConfig {
     let mut providers = HashMap::new();
     if let Some(provider_config) = crate::config::default_provider_config(provider, credential) {
         providers.insert(provider.to_string(), provider_config);
@@ -232,6 +235,7 @@ fn build_test_llm_config(provider: &str, credential: &str) -> crate::config::Llm
         moonshot_key: (provider == "moonshot").then(|| credential.to_string()),
         zai_coding_plan_key: (provider == "zai-coding-plan").then(|| credential.to_string()),
         github_copilot_key: (provider == "github-copilot").then(|| credential.to_string()),
+        litellm_api_key: (provider == "litellm").then(|| credential.to_string()),
         providers,
     }
 }
@@ -404,6 +408,7 @@ pub(super) async fn get_providers(
         zai_coding_plan,
         github_copilot,
         azure,
+        litellm,
     ) = if config_path.exists() {
         let content = tokio::fs::read_to_string(&config_path).await.map_err(|error| {
             tracing::error!(%error, path = %config_path.display(), "failed to read config.toml for providers");
@@ -479,6 +484,29 @@ pub(super) async fn get_providers(
                 .and_then(|azure| azure.get("base_url"))
                 .and_then(|base_url| base_url.as_str())
                 .is_some_and(|url| !url.trim().is_empty()),
+            // LiteLLM: the virtual api-key field is set, OR either TOML
+            // form names a litellm provider — table form
+            // [llm.providers.litellm] or top-level [[providers]] with
+            // name = "litellm".
+            has_value("litellm_api_key", "LITELLM_API_KEY")
+                || doc
+                    .get("llm")
+                    .and_then(|llm| llm.get("providers"))
+                    .and_then(|providers| providers.get("litellm"))
+                    .is_some()
+                || doc
+                    .get("providers")
+                    .and_then(|providers| providers.as_array_of_tables())
+                    .is_some_and(|arr| {
+                        arr.iter().any(|entry| {
+                            entry
+                                .get("name")
+                                .and_then(|name| name.as_str())
+                                .map(|name| name.to_lowercase())
+                                .as_deref()
+                                == Some("litellm")
+                        })
+                    }),
         )
     } else {
         (
@@ -505,6 +533,7 @@ pub(super) async fn get_providers(
             env_set("ZAI_CODING_PLAN_API_KEY"),
             env_set("GITHUB_COPILOT_API_KEY"),
             false,
+            env_set("LITELLM_API_KEY"),
         )
     };
 
@@ -532,6 +561,7 @@ pub(super) async fn get_providers(
         zai_coding_plan,
         github_copilot,
         azure,
+        litellm,
     };
     let has_any = providers.anthropic
         || providers.openai
@@ -555,7 +585,8 @@ pub(super) async fn get_providers(
         || providers.moonshot
         || providers.zai_coding_plan
         || providers.github_copilot
-        || providers.azure;
+        || providers.azure
+        || providers.litellm;
 
     Ok(Json(ProvidersResponse { providers, has_any }))
 }
@@ -1382,6 +1413,7 @@ pub(super) async fn test_provider_model(
             moonshot_key: None,
             zai_coding_plan_key: None,
             github_copilot_key: None,
+            litellm_api_key: None,
             providers: {
                 let mut providers = HashMap::new();
                 providers.insert(

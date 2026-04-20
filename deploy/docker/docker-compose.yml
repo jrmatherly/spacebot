@@ -330,6 +330,39 @@ services:
         max-size: "5m"
         max-file: "2"
 
+  # ====================================================================
+  # litellm — litellm profile. Self-hosted LiteLLM proxy.
+  # Operators issue Spacebot a virtual API key via the proxy's
+  # /key/generate endpoint; that virtual key becomes LITELLM_API_KEY in
+  # Spacebot's own config. The master key below is admin-only.
+  # ====================================================================
+  litellm:
+    profiles: [litellm]
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: spacebot-litellm
+    restart: unless-stopped
+    ports:
+      - "${SPACEBOT_BIND:-127.0.0.1}:4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - spacebot-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4000/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   spacebot-net:
     driver: bridge

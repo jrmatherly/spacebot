@@ -2529,4 +2529,37 @@ openai_key = "test-key"
         // OPENAI_API_BASE is the canonical OpenAI SDK var; takes precedence.
         assert_eq!(openai.base_url, "http://primary.example.com/v1");
     }
+
+    #[test]
+    fn toml_provider_config_accepts_extra_headers_and_use_bearer_auth() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[llm.providers.custom]
+api_type = "openai_chat_completions"
+base_url = "http://example.com"
+api_key = "test-key"
+extra_headers = [["X-Custom", "value"], ["X-Other", "value2"]]
+use_bearer_auth = true
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+        let custom = config
+            .llm
+            .providers
+            .get("custom")
+            .expect("custom provider populated");
+        assert_eq!(
+            custom.extra_headers,
+            vec![
+                ("X-Custom".to_string(), "value".to_string()),
+                ("X-Other".to_string(), "value2".to_string()),
+            ]
+        );
+        assert!(custom.use_bearer_auth);
+    }
 }

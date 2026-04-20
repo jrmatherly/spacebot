@@ -3750,6 +3750,11 @@ export interface components {
             github_copilot: boolean;
             groq: boolean;
             kilo: boolean;
+            /**
+             * @description True when `[llm.providers.litellm]` block is configured OR
+             *     `litellm_api_key` is set in LlmConfig.
+             */
+            litellm: boolean;
             minimax: boolean;
             minimax_cn: boolean;
             mistral: boolean;

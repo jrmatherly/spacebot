@@ -72,3 +72,34 @@ api_key = "test-key"
     assert_eq!(provider.base_url, mock_server.uri());
     assert_eq!(provider.api_key, "test-key");
 }
+
+#[tokio::test]
+async fn from_openai_body_parses_litellm_anthropic_cache_tokens() {
+    // LiteLLM forwards Anthropic's response through its OpenAI-compat shim.
+    // The usage object's exact layout varies by LiteLLM version. This test
+    // pins our parser's behavior against the OpenAI-shape nested position
+    // (`prompt_tokens_details.cached_tokens`) that LiteLLM emits by default.
+    //
+    // Research-doc v3 item #9 claimed this parsing was missing. It is not —
+    // `src/llm/usage.rs:44-46` already reads the nested position. This test
+    // is a regression guard so future refactors don't silently drop it.
+
+    let litellm_response = serde_json::json!({
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "prompt_tokens_details": {
+                "cached_tokens": 80
+            }
+        }
+    });
+
+    let usage = spacebot::llm::usage::ExtendedUsage::from_openai_body(&litellm_response);
+    assert_eq!(
+        usage.cache_read_tokens, 80,
+        "cache_read_tokens must be parsed from prompt_tokens_details.cached_tokens"
+    );
+    assert_eq!(usage.output_tokens, 50);
+    // Non-cached input = 100 - 80 = 20.
+    assert_eq!(usage.input_tokens, 20);
+}
