@@ -18,6 +18,7 @@ cargo run -- start       # Start the daemon (port 19898)
 - `cargo test --tests --no-run` to compile integration tests
 - `cargo fmt --all` to format, `cargo clippy --all-targets` to lint
 - `cargo audit --ignore RUSTSEC-2023-0071` for security audit
+- If a unit test hangs for >60s on code that spawns background tasks (OTLP, LanceDB indexers, etc.), it is the current-thread-runtime deadlock — use `#[tokio::test(flavor = "multi_thread")]`. See `.claude/skills/test-runtime-patterns/SKILL.md`.
 
 ## Architecture
 
@@ -63,6 +64,8 @@ Always use `bun`, never npm/pnpm/yarn:
 | `bun run test` | Run tests |
 
 If TypeScript types changed: `just check-typegen` to verify schema sync.
+
+`packages/api-client/src/schema.d.ts` is **generated** and hook-blocked from hand edits. Modify `src/api/**/*.rs` utoipa annotations, then run `just typegen`.
 
 ## Reference Docs
 
