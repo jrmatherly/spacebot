@@ -1,6 +1,6 @@
 # Spacebot Project Index
 
-**Version:** 0.4.1 | **Edition:** 2024 | **LOC:** ~130K Rust | **License:** FSL-1.1-ALv2
+**Version:** 0.5.1 | **Edition:** 2024 | **LOC:** ~130K Rust | **License:** FSL-1.1-ALv2
 
 A Rust single-binary agentic system with process-level concurrency, structured memory persistence, and multi-channel team orchestration.
 
