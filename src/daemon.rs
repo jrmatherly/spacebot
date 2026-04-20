@@ -420,6 +420,28 @@ fn warn_on_port_protocol_mismatch(endpoint: &str, protocol: &str) {
 
 #[cfg(test)]
 mod otlp_protocol_tests {
+    // Tests that exercise build_otlp_provider's full path (constructing the
+    // BatchSpanProcessor with `opentelemetry_sdk::runtime::Tokio`) MUST use
+    // #[tokio::test(flavor = "multi_thread")] because:
+    //   1. runtime::Tokio::spawn calls tokio::spawn() at BatchSpanProcessor::new
+    //      time, which requires an active Tokio runtime handle.
+    //   2. The BatchSpanProcessor worker task blocks on tokio::time::sleep to
+    //      drive its scheduled-delay ticker. A current-thread runtime can only
+    //      make progress on one task at a time, so when the test function exits
+    //      and the runtime goes out of scope, the worker blocks runtime shutdown
+    //      indefinitely — producing the same deadlock documented upstream in
+    //      opentelemetry_sdk/src/runtime.rs comment on `TokioCurrentThread`.
+    // A multi-thread runtime avoids the deadlock by running the worker on a
+    // separate worker thread, letting `Runtime::drop`'s task-cancellation path
+    // complete cleanly. Mirrors the upstream test pattern in
+    // opentelemetry_sdk-0.31.0/src/trace/span_processor_with_async_runtime.rs
+    // (tests `test_timeout_tokio_timeout`, `test_concurrent_exports_expected`,
+    // etc., all use `flavor = "multi_thread"` for the same reason).
+    //
+    // Tests that early-return before reaching that code path can stay as plain
+    // #[test] — that asymmetry preserves signal about which tests exercise the
+    // runtime-requiring path. See PR #77 follow-up and
+    // .scratchpad/2026-04-20-otlp-test-runtime-fix-findings.md.
     use super::*;
 
     fn cfg(endpoint: Option<&str>, protocol: Option<&str>) -> TelemetryConfig {
@@ -437,8 +459,8 @@ mod otlp_protocol_tests {
         assert!(build_otlp_provider(&cfg(None, None)).is_none());
     }
 
-    #[test]
-    fn http_proto_default_when_protocol_unset() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn http_proto_default_when_protocol_unset() {
         // Absence of panic + Some return proves the http path was taken.
         let p = build_otlp_provider(&cfg(Some("http://localhost:4318"), None));
         assert!(p.is_some());
@@ -454,8 +476,8 @@ mod otlp_protocol_tests {
     }
 
     #[cfg(feature = "otlp-grpc")]
-    #[test]
-    fn grpc_protocol_with_feature_builds_exporter() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn grpc_protocol_with_feature_builds_exporter() {
         // When the feature is enabled, build_otlp_provider must NOT panic and
         // must return Some (the exporter builds even if the endpoint is not
         // actually reachable — gRPC connection is lazy until the first export).
@@ -463,8 +485,8 @@ mod otlp_protocol_tests {
         assert!(p.is_some());
     }
 
-    #[test]
-    fn http_json_protocol_builds_exporter() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn http_json_protocol_builds_exporter() {
         // http/json shares the HTTP transport arm with http/protobuf; this
         // test pins the case-sensitivity-insensitive match on the distinct
         // input string so a future refactor can't drop one arm silently.
@@ -472,8 +494,8 @@ mod otlp_protocol_tests {
         assert!(p.is_some());
     }
 
-    #[test]
-    fn protocol_matching_is_case_insensitive() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn protocol_matching_is_case_insensitive() {
         // Operators frequently set OTEL_EXPORTER_OTLP_PROTOCOL=GRPC (uppercase).
         // Without the feature, the uppercase form must still match the grpc
         // arm and return None rather than falling through to the "unsupported"
