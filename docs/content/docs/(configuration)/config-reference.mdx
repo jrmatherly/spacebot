@@ -122,6 +122,13 @@ Mixing up the pairing yields a double-`/v1` path that silently 404s on the proxy
 | `extra_headers` | `Vec<(string, string)>` | `[]` | Custom HTTP headers forwarded on every request |
 | `use_bearer_auth` | `bool` | `false` | Send as `Authorization: Bearer <key>` instead of provider default |
 
+> **Singular form compat alias.** `[llm.provider.<id>]` and
+> `[llm.providers.<id>]` are both recognized; the deserializer treats
+> them identically. New configs should use the plural form for
+> consistency with the schema and the array form `[[providers]]`. The
+> singular form remains supported indefinitely for backward compatibility
+> with configs written before 2026-04-20.
+
 ```toml
 [llm.providers.anthropic]
 api_type = "anthropic"

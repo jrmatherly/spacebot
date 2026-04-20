@@ -58,9 +58,9 @@ When the ConfigMap omits `[api].auth_token`, every request passes through unauth
 
 **Question.** Do `*_BASE_URL` overrides isolate per-provider, or do they leak across OpenAI-compatible providers (Together, Fireworks, Groq)?
 
-**Answer.** Each provider has its own `base_url` field on `ProviderConfig` (`src/config/types.rs:293`). The LLM manager uses model-prefix routing (`anthropic/...` → Anthropic client, `openai/...` → OpenAI client, etc.), not endpoint-discriminated routing. Setting `[llm.provider.openai].base_url` in the config isolates to OpenAI calls only; Together/Fireworks/Groq each have their own `base_url` field and are unaffected.
+**Answer.** Each provider has its own `base_url` field on `ProviderConfig` (`src/config/types.rs:293`). The LLM manager uses model-prefix routing (`anthropic/...` → Anthropic client, `openai/...` → OpenAI client, etc.), not endpoint-discriminated routing. Setting `[llm.providers.openai].base_url` in the config isolates to OpenAI calls only; Together/Fireworks/Groq each have their own `base_url` field and are unaffected.
 
-**Cluster-side impact.** Safe hybrid routing. `[llm.provider.anthropic].base_url` and `[llm.provider.openai].base_url` point at the in-cluster LiteLLM proxy; other providers use their canonical endpoints.
+**Cluster-side impact.** Safe hybrid routing. `[llm.providers.anthropic].base_url` and `[llm.providers.openai].base_url` point at the in-cluster LiteLLM proxy; other providers use their canonical endpoints.
 
 ### G5 — `readOnlyRootFilesystem` compatibility
 
@@ -139,12 +139,12 @@ bind = "0.0.0.0"
 [sandbox]
 mode = "disabled"  # v1.0 safe default; flip to "enabled" in v1.1 after bwrap preflight passes
 
-[llm.provider.anthropic]
+[llm.providers.anthropic]
 api_type = "anthropic"
 api_key = "${ANTHROPIC_API_KEY}"
 base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
 
-[llm.provider.openai]
+[llm.providers.openai]
 api_type = "openai_responses"
 api_key = "${OPENAI_API_KEY}"
 base_url = "http://litellm.ai.svc.cluster.local:4000/v1"

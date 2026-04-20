@@ -3191,6 +3191,15 @@ export interface components {
             requires_restart: boolean;
             success: boolean;
         };
+        /**
+         * @description LiteLLM modal sends extra_headers as named objects `{name, value}`
+         *     for TypeScript ergonomics. Handler converts to `Vec<(String, String)>`
+         *     at the TOML write boundary via `HeaderEntry::entries_to_tuples`.
+         */
+        HeaderEntry: {
+            name: string;
+            value: string;
+        };
         HealthResponse: {
             status: string;
         };
@@ -3731,8 +3740,10 @@ export interface components {
             api_version?: string | null;
             base_url?: string | null;
             deployment?: string | null;
+            extra_headers?: components["schemas"]["HeaderEntry"][] | null;
             model: string;
             provider: string;
+            use_bearer_auth?: boolean | null;
         };
         ProviderModelTestResponse: {
             message: string;
@@ -3777,8 +3788,10 @@ export interface components {
             api_version?: string | null;
             base_url?: string | null;
             deployment?: string | null;
+            extra_headers?: components["schemas"]["HeaderEntry"][] | null;
             model: string;
             provider: string;
+            use_bearer_auth?: boolean | null;
         };
         ProviderUpdateResponse: {
             message: string;
