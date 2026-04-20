@@ -402,7 +402,7 @@ fn cmd_start(
     // Run onboarding interactively before daemonizing
     let resolved_config_path = if config_path.is_some() {
         config_path.clone()
-    } else if spacebot::config::Config::needs_onboarding() {
+    } else if spacebot::config::Config::needs_onboarding_for_config(config_path.as_deref()) {
         // Returns Some(path) if CLI wizard ran, None if user chose the UI.
         spacebot::config::run_onboarding().with_context(|| "onboarding failed")?
     } else {

@@ -2468,6 +2468,29 @@ api_key = "key"
     }
 
     #[test]
+    fn needs_onboarding_for_config_honors_config_path() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        unsafe { std::env::remove_var("SPACEBOT_DIR") };
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(&config_path, "[llm]\n").expect("write config");
+
+        // With --config pointing to the temp config, onboarding should NOT be
+        // needed (config.toml exists at the resolved instance_dir = temp.path()).
+        assert!(!Config::needs_onboarding_for_config(Some(&config_path)));
+    }
+
+    #[test]
+    fn needs_onboarding_no_arg_wrapper_still_works() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+        // Just confirm the existing no-arg signature still compiles and returns a bool.
+        let _: bool = Config::needs_onboarding();
+    }
+
+    #[test]
     fn openai_api_base_wins_over_openai_base_url_when_both_set() {
         let _lock = env_test_lock().lock();
         let _env = EnvGuard::new();

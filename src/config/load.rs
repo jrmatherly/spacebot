@@ -379,8 +379,21 @@ impl Config {
     }
 
     /// Check whether a first-run onboarding is needed (no config file and no env keys/providers).
+    ///
+    /// Backward-compatible no-arg wrapper. Delegates to
+    /// `needs_onboarding_for_config(None)`, which uses the default instance dir
+    /// resolution (`SPACEBOT_DIR` > XDG default). Callers that know the
+    /// `--config` path should use `needs_onboarding_for_config(Some(...))` so
+    /// the onboarding check matches the daemon's instance_dir resolution.
     pub fn needs_onboarding() -> bool {
-        let instance_dir = Self::default_instance_dir();
+        Self::needs_onboarding_for_config(None)
+    }
+
+    /// Check whether first-run onboarding is needed, honoring an optional
+    /// `--config` path so the check matches the daemon's instance_dir
+    /// resolution (`SPACEBOT_DIR` > `--config` parent > default).
+    pub fn needs_onboarding_for_config(config_path_arg: Option<&Path>) -> bool {
+        let instance_dir = Self::instance_dir_for_config(config_path_arg);
         let config_path = instance_dir.join("config.toml");
         if config_path.exists() {
             return false;
