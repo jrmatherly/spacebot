@@ -128,6 +128,32 @@ export LITELLM_API_KEY=sk-virtual-...
 cargo run --release -- start --foreground
 ```
 
+## Using the Settings UI
+
+The Spacebot web UI at `/settings?tab=providers` includes a LiteLLM
+provider card. Click **Update** to open a modal that persists the same
+`[llm.providers.litellm]` block described above:
+
+- **API Key** — your LiteLLM virtual key (`LITELLM_API_KEY`, not the
+  master key). Leaving the field empty on re-save reuses the existing
+  key — safe when the underlying value is a `secret:...` reference.
+- **Base URL** — required. The UI validates the URL starts with
+  `http://` or `https://`. The handler hardcodes `api_type =
+  "openai_completions"`, so **do not append `/v1`** to the base URL.
+- **Use Bearer authorization header** — checkbox, default checked.
+  Uncheck only if your LiteLLM deployment uses `x-api-key` instead of
+  `Authorization: Bearer`.
+- **Extra headers** — optional key/value list for LiteLLM tags,
+  budgets, and routing hints. Leaving empty on re-save preserves any
+  existing values set via `config.toml` — operator-set headers are
+  never silently cleared.
+
+**Routing note.** Saving writes the chosen model to all five process-type
+routes (`channel`, `branch`, `worker`, `compactor`, `cortex`) under
+`[defaults.routing]`. Edit individual routes in `config.toml` afterward
+for per-process-type routing like the "Mixing Proxied and Direct
+Providers" pattern shown below.
+
 ## Mixing Proxied and Direct Providers
 
 Nothing prevents Spacebot from using LiteLLM for some model routes and direct provider APIs for others. Useful when the proxy has aggressive budgets on expensive models but you want cheaper models direct:

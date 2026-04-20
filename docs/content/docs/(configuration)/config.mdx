@@ -50,18 +50,18 @@ opencode_zen_key = "env:OPENCODE_ZEN_API_KEY"
 opencode_go_key = "env:OPENCODE_GO_API_KEY"
 
 # Custom LLM providers (alternative to legacy keys)
-[llm.provider.my_anthropic]
+[llm.providers.my_anthropic]
 api_type = "anthropic"
 base_url = "https://api.anthropic.com"
 api_key = "env:MY_ANTHROPIC_KEY"
 name = "My Custom Anthropic"
 
-[llm.provider.my_openai]
+[llm.providers.my_openai]
 api_type = "openai_responses"
 base_url = "https://api.openai.com"
 api_key = "env:MY_OPENAI_KEY"
 
-[llm.provider.local_openai]
+[llm.providers.local_openai]
 api_type = "openai_completions"
 base_url = "http://localhost:8080" # do not include /v1; Spacebot appends endpoint paths
 api_key = "env:LOCAL_OPENAI_KEY"
@@ -346,12 +346,12 @@ openai_key = "env:OPENAI_API_KEY"
 
 **Internal representation (auto-created):**
 ```toml
-[llm.provider.anthropic]
+[llm.providers.anthropic]
 api_type = "anthropic"
 base_url = "https://api.anthropic.com"
 api_key = "env:ANTHROPIC_API_KEY"
 
-[llm.provider.openai]
+[llm.providers.openai]
 api_type = "openai_completions"
 base_url = "https://api.openai.com"
 api_key = "env:OPENAI_API_KEY"
@@ -387,7 +387,7 @@ If you define a custom provider with the same ID as a legacy key, your custom co
 Custom providers allow configuring LLM providers with custom endpoints and API types. Use either legacy keys **or** custom providers.
 
 ```toml
-[llm.provider.<id>]
+[llm.providers.<id>]
 api_type = "anthropic"          # Required - see supported values below
 base_url = "https://api..."     # Required - valid URL
 api_key = "env:API_KEY"         # Required - API key (supports env:VAR_NAME format)
@@ -421,7 +421,7 @@ name = "My Provider"            # Optional - friendly name for display
 
 **Anthropic-compatible provider:**
 ```toml
-[llm.provider.custom_anthropic]
+[llm.providers.custom_anthropic]
 api_type = "anthropic"
 base_url = "https://api.anthropic.com"
 api_key = "env:CUSTOM_ANTHROPIC_KEY"
@@ -430,7 +430,7 @@ name = "Anthropic EU"
 
 **Azure OpenAI provider:**
 ```toml
-[llm.provider.azure]
+[llm.providers.azure]
 api_type = "azure"
 base_url = "https://my-resource.openai.azure.com"
 api_key = "env:AZURE_API_KEY"
@@ -447,7 +447,7 @@ name = "Azure OpenAI"
 
 **OpenAI Completions provider:**
 ```toml
-[llm.provider.local_llm]
+[llm.providers.local_llm]
 api_type = "openai_completions"
 base_url = "http://localhost:8080" # no /v1 in base_url
 api_key = "env:LOCAL_LLM_KEY"
@@ -486,12 +486,12 @@ Routing selects providers by the prefix before the first `/` in the model name.
 channel = "my_openai/gpt-4o-mini"
 worker = "custom_anthropic/claude-3-5-sonnet"
 
-[llm.provider.my_openai]
+[llm.providers.my_openai]
 api_type = "openai_completions"
 base_url = "https://api.openai.com"
 api_key = "env:OPENAI_API_KEY"
 
-[llm.provider.custom_anthropic]
+[llm.providers.custom_anthropic]
 api_type = "anthropic"
 base_url = "https://api.anthropic.com"
 api_key = "env:ANTHROPIC_API_KEY"
