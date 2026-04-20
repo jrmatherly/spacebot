@@ -1079,17 +1079,9 @@ impl Config {
         // serde populated it first; on conflict, the array entry is dropped and
         // we log a breadcrumb so operators can tell which form won.
         for entry in toml.top_level_providers.drain(..) {
-            let normalized_id = entry.name.to_lowercase();
-            if normalized_id.is_empty()
-                || normalized_id.contains('/')
-                || normalized_id.chars().any(char::is_whitespace)
-            {
-                return Err(ConfigError::Invalid(format!(
-                    "[[providers]] name '{}' must not contain '/' or whitespace and must be non-empty",
-                    entry.name
-                ))
-                .into());
-            }
+            let normalized_id = entry.name.as_str().to_lowercase();
+            // Validation moved into ProviderName's Deserialize impl; invalid
+            // names now fail at parse time. No runtime check needed here.
             match toml.llm.providers.entry(normalized_id) {
                 std::collections::hash_map::Entry::Occupied(occupied) => {
                     tracing::info!(
