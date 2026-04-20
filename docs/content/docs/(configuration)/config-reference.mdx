@@ -102,8 +102,19 @@ Use these blocks to define providers that need more than an API key: Azure deplo
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `api_type` | `string` | required | One of: `openai_completions`, `openai_chat_completions`, `kilo_gateway`, `openai_responses`, `anthropic`, `gemini`, `azure` |
-| `base_url` | `string` | required | API endpoint |
+| `api_type` | `string` | required | One of: `openai_completions`, `openai_chat_completions`, `kilo_gateway`, `openai_responses`, `anthropic`, `gemini`, `azure`. See pairing rule below. |
+| `base_url` | `string` | required | API endpoint. See pairing rule below. |
+
+**`api_type` ↔ `base_url` pairing rule.** The `openai_*` variants differ in how they extend `base_url`:
+
+| `api_type` | Appends | `base_url` must |
+|---|---|---|
+| `openai_completions` | `/v1/chat/completions` | NOT end in `/v1` (e.g., `http://host:4000`) |
+| `openai_chat_completions` | `/chat/completions` | already include `/v1` (e.g., `http://host:4000/v1`) |
+| `openai_responses` | `/v1/responses` | NOT end in `/v1` |
+| `anthropic`, `gemini`, `azure`, `kilo_gateway` | provider-specific full paths | see provider examples below |
+
+Mixing up the pairing yields a double-`/v1` path that silently 404s on the proxy side. If unsure, strip `/v1` from your `base_url` and use `openai_completions`.
 | `api_key` | `string` | required | Credential (use `secret:` / `env:`) |
 | `name` | `Option<string>` | — | Routing key override; defaults to `<id>` from the section header |
 | `api_version` | `Option<string>` | — | Azure OpenAI api-version |
@@ -125,8 +136,8 @@ api_version = "2025-04-01-preview"
 deployment = "gpt-5-nano"
 
 [llm.providers.litellm]
-api_type = "openai_completions"                    # /v1/chat/completions (canonical for LiteLLM)
-base_url = "http://localhost:4000/v1"
+api_type = "openai_completions"                    # appends /v1/chat/completions to base_url
+base_url = "http://localhost:4000"                 # NO /v1 here — the api_type appends it
 api_key = "secret:LITELLM_API_KEY"
 use_bearer_auth = true
 extra_headers = [

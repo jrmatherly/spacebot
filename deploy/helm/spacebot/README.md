@@ -183,10 +183,15 @@ LiteLLM endpoint and use `litellm/<model_name>` identifiers:
 
 ```toml
 [llm.providers.litellm]
-api_type = "openai_chat_completions"
+api_type = "openai_chat_completions"       # pairs with base_url that ends in /v1
 base_url = "http://litellm.ai.svc.cluster.local:4000/v1"
 api_key = "env:LITELLM_API_KEY"
 ```
+
+Pairing rule: `openai_chat_completions` appends `/chat/completions` to the
+`base_url`. Use `openai_completions` instead when `base_url` points at the
+host without `/v1` (it prepends `/v1/chat/completions` for you). Either
+works; don't mix them or you'll hit a double-`/v1` path.
 
 Then route specific models via task-level config or the agent defaults:
 `litellm/claude-sonnet-4-6`, `litellm/gpt-5`, `litellm/claude-opus-4-7`, etc.

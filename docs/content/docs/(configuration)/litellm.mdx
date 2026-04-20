@@ -76,8 +76,8 @@ Edit `deploy/docker/config.toml` (mounted into the Spacebot container at `/etc/s
 
 ```toml
 [llm.providers.litellm]
-api_type = "openai_completions"                  # LiteLLM serves /v1/chat/completions. Bare "openai" is NOT accepted — valid values are openai_completions, openai_chat_completions, kilo_gateway, openai_responses, anthropic, gemini, azure.
-base_url = "http://litellm:4000/v1"              # service DNS inside compose network
+api_type = "openai_completions"                  # NOT "openai" — see /docs/config-reference for valid values
+base_url = "http://litellm:4000"                 # service DNS; do NOT include /v1 (openai_completions appends it)
 api_key = "env:LITELLM_API_KEY"                  # resolve from env
 use_bearer_auth = true                           # Bearer instead of x-api-key
 ```
@@ -109,7 +109,7 @@ If your LiteLLM already runs elsewhere (company proxy, Kubernetes cluster, Cloud
 ```toml
 [llm.providers.litellm]
 api_type = "openai_completions"
-base_url = "https://litellm.internal.example.com/v1"
+base_url = "https://litellm.internal.example.com"      # no /v1 — openai_completions appends it
 api_key = "env:LITELLM_API_KEY"
 use_bearer_auth = true
 
@@ -139,7 +139,7 @@ api_key = "env:ANTHROPIC_API_KEY"        # direct Anthropic for workers
 
 [llm.providers.litellm]
 api_type = "openai_completions"
-base_url = "http://litellm:4000/v1"
+base_url = "http://litellm:4000"           # no /v1 — openai_completions appends it
 api_key = "env:LITELLM_API_KEY"
 use_bearer_auth = true
 
