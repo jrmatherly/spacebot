@@ -170,9 +170,46 @@ pub async fn put_secret(
     match store.set(&name, &body.value, category) {
         Ok(()) => {
             let reload_required = category == SecretCategory::System;
+            let mut reload_outcome = "skipped (tool-category secret)".to_string();
+            if reload_required {
+                // Re-parse config.toml so the new secret value reaches
+                // LlmManager immediately. Without this, the response body's
+                // `reload_required: true` is misleading: the caller would need
+                // to touch config.toml on disk to trigger the file-watcher reload.
+                //
+                // Re-parsing (not just cloning the in-memory config) is required
+                // because `secret:` references are resolved at parse time via
+                // `resolve_env_value`. A bare clone would keep the old resolved value.
+                let config_path = state.config_path.read().await.clone();
+                match crate::config::Config::load_from_path(&config_path) {
+                    Ok(new_config) => {
+                        if let Some(manager) = state.llm_manager.read().await.as_ref() {
+                            manager.reload_config(new_config.llm.clone());
+                            reload_outcome = "reloaded".to_string();
+                            tracing::info!(
+                                secret = %name,
+                                "System-category secret updated; LlmManager config reloaded"
+                            );
+                        } else {
+                            reload_outcome = "llm_manager not yet initialized".to_string();
+                            tracing::warn!(
+                                secret = %name,
+                                "System secret written but LlmManager is None; reload deferred to daemon init"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        reload_outcome = format!("re-parse failed: {error}");
+                        tracing::error!(
+                            %error,
+                            secret = %name,
+                            "System secret written but config re-parse failed; reload skipped"
+                        );
+                    }
+                }
+            }
             let message = if reload_required {
-                "Secret updated. Reload config or restart for the new value to take effect."
-                    .to_string()
+                format!("Secret updated ({reload_outcome}).")
             } else {
                 "Secret updated. Available to workers immediately.".to_string()
             };
