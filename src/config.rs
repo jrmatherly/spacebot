@@ -2315,6 +2315,10 @@ tool_use_enforcement = ["gemini", "deepseek"]
             "spacedrive must be a known key"
         );
         assert!(keys.contains(&"instance"), "instance must be a known key");
+        assert!(
+            keys.contains(&"providers"),
+            "providers must be a known key"
+        );
     }
 
     #[test]
@@ -2365,6 +2369,102 @@ tool_use_enforcement = ["gemini", "deepseek"]
             .get("openai")
             .expect("openai provider");
         assert_eq!(openai.base_url, "http://alt.example.com/v1");
+    }
+
+    #[test]
+    fn top_level_providers_array_merges_into_llm_providers() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://litellm.example.com/anthropic"
+api_key = "test-key-1"
+
+[[providers]]
+name = "openai"
+api_type = "openai_completions"
+base_url = "http://litellm.example.com/v1"
+api_key = "test-key-2"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+
+        let anthropic = config
+            .llm
+            .providers
+            .get("anthropic")
+            .expect("anthropic populated from top-level array");
+        assert_eq!(anthropic.base_url, "http://litellm.example.com/anthropic");
+        assert_eq!(anthropic.api_key, "test-key-1");
+
+        let openai = config
+            .llm
+            .providers
+            .get("openai")
+            .expect("openai populated from top-level array");
+        assert_eq!(openai.base_url, "http://litellm.example.com/v1");
+        assert_eq!(openai.api_key, "test-key-2");
+    }
+
+    #[test]
+    fn llm_providers_table_form_wins_over_top_level_array_on_conflict() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "anthropic"
+api_type = "anthropic"
+base_url = "http://from-array.example.com"
+api_key = "from-array"
+
+[llm.providers.anthropic]
+api_type = "anthropic"
+base_url = "http://from-table.example.com"
+api_key = "from-table"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let config = Config::load_from_path(temp.path()).expect("load");
+
+        let anthropic = config
+            .llm
+            .providers
+            .get("anthropic")
+            .expect("anthropic populated");
+        // Table form ([llm.providers.<id>], more specific path) wins because
+        // serde populates it into the HashMap before the merge runs, and the
+        // merge uses entry().or_insert_with() (a no-op on existing keys).
+        assert_eq!(anthropic.base_url, "http://from-table.example.com");
+        assert_eq!(anthropic.api_key, "from-table");
+    }
+
+    #[test]
+    fn top_level_providers_with_invalid_name_rejected() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let toml = r#"
+[[providers]]
+name = "bad/name"
+api_type = "anthropic"
+base_url = "http://example.com"
+api_key = "key"
+"#;
+
+        let temp = tempfile::NamedTempFile::new().expect("create temp file");
+        std::fs::write(temp.path(), toml).expect("write toml");
+
+        let result = Config::load_from_path(temp.path());
+        assert!(result.is_err(), "expected error for provider name with /");
     }
 
     #[test]

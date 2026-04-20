@@ -82,6 +82,7 @@ const KNOWN_TOP_LEVEL_KEYS: &[&str] = &[
     "telemetry",
     "spacedrive",
     "instance",
+    "providers",
 ];
 
 #[cfg(test)]
@@ -1034,10 +1035,34 @@ impl Config {
     }
 
     fn from_toml_inner(
-        toml: TomlConfig,
+        mut toml: TomlConfig,
         instance_dir: PathBuf,
         strict_bindings: bool,
     ) -> Result<Self> {
+        // Merge top-level [[providers]] array entries (cluster-friendly form)
+        // into toml.llm.providers BEFORE validation runs. The struct-literal
+        // at ~:1207 consumes toml.llm.providers via .into_iter(), so the
+        // merge must happen here. entry().or_insert_with() ensures the table
+        // form ([llm.providers.<id>]) wins on conflict because serde populated
+        // it first.
+        for entry in toml.top_level_providers.drain(..) {
+            let normalized_id = entry.name.to_lowercase();
+            if normalized_id.is_empty()
+                || normalized_id.contains('/')
+                || normalized_id.chars().any(char::is_whitespace)
+            {
+                return Err(ConfigError::Invalid(format!(
+                    "[[providers]] name '{}' must not contain '/' or whitespace and must be non-empty",
+                    entry.name
+                ))
+                .into());
+            }
+            toml.llm
+                .providers
+                .entry(normalized_id)
+                .or_insert_with(|| entry.into());
+        }
+
         // Validate providers before processing
         for (provider_id, config) in &toml.llm.providers {
             // Validate provider_id
