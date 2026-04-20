@@ -10,6 +10,21 @@ on:
   pull_request_review:
     types: [submitted]
 
+concurrency:
+  # Serialize @claude invocations per-issue / per-PR per-event-type. The
+  # event_name segment prevents an issue_comment on PR #100 from colliding
+  # with a pull_request_review_comment on the same PR. The `||` fallback
+  # handles the four trigger shapes: issue_comment + issues populate
+  # event.issue.number; pull_request_review_comment + pull_request_review
+  # populate event.pull_request.number.
+  group: claude-invoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  # Do NOT cancel in progress. Each @claude mention is a discrete user
+  # request — an unrelated comment landing on the same issue while Claude
+  # is working would otherwise kill a running agent mid-thought. Queueing
+  # is the correct semantic; reference google-github-actions/run-gemini-cli#195
+  # which documented this exact failure mode and resolved it the same way.
+  cancel-in-progress: false
+
 jobs:
   claude:
     if: |

@@ -10,6 +10,18 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+concurrency:
+  # Cancel superseded reviews per-PR. Only the latest commit's review is
+  # meaningful — if a developer pushes three commits in quick succession,
+  # the first two reviews are stale before they finish posting. Unlike
+  # claude.yml's invoke pattern, this workflow only fires on pull_request
+  # state changes (no comment-driven triggers), so cancel-in-progress: true
+  # cannot be hijacked by unrelated comment activity. No `github.ref !=
+  # 'refs/heads/main'` carve-out needed because pull_request events never
+  # fire on main.
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     # Skip automated dependency / bot PRs. CI gates (Check & Clippy, Test, Security Audit)
