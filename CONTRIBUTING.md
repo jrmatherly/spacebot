@@ -201,7 +201,7 @@ just update-frontend-hash     # update Nix hash after frontend dep changes
 
 ## Migrations
 
-SQLite migrations are **immutable**. Never edit an existing migration file. Always create a new timestamped migration for schema changes.
+SQLite migrations are **append-only by default**. Always create a new timestamped migration for schema changes. Historical migration files may be reformatted for clarity (see CLAUDE.md Database Migrations), but their SQL semantics must not change: SQLx stores migration checksums in `_sqlx_migrations` at apply time, so editing an already-applied migration will cause startup to fail on that database until the stored checksum is repaired or the database is reset.
 
 ---
 
