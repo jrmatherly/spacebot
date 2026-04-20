@@ -18,20 +18,24 @@ BINARIES_DIR="$REPO_ROOT/desktop/src-tauri/binaries"
 HOST_TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
 TARGET_TRIPLE="${TAURI_ENV_TARGET_TRIPLE:-$HOST_TRIPLE}"
 
-# Build mode
-BUILD_MODE="release"
-CARGO_FLAGS="--release"
-if [[ "${1:-}" != "--release" ]]; then
+# Build mode — array form is safe for flag values containing spaces AND
+# compatible with macOS bash 3.2 (`"${arr[@]}"` on an empty array under
+# `set -u` triggers "unbound variable"; seeding the array with the
+# always-present --manifest-path keeps it non-empty).
+CARGO_FLAGS=(--manifest-path "$REPO_ROOT/Cargo.toml")
+if [[ "${1:-}" == "--release" ]]; then
+    BUILD_MODE="release"
+    CARGO_FLAGS+=(--release)
+else
     BUILD_MODE="debug"
-    CARGO_FLAGS=""
 fi
 
 echo "Building spacebot ($BUILD_MODE) for $TARGET_TRIPLE..."
 if [[ "$TARGET_TRIPLE" != "$HOST_TRIPLE" ]]; then
-    cargo build $CARGO_FLAGS --target "$TARGET_TRIPLE" --manifest-path "$REPO_ROOT/Cargo.toml"
+    cargo build "${CARGO_FLAGS[@]}" --target "$TARGET_TRIPLE"
     SRC_BIN="$REPO_ROOT/target/$TARGET_TRIPLE/$BUILD_MODE/spacebot"
 else
-    cargo build $CARGO_FLAGS --manifest-path "$REPO_ROOT/Cargo.toml"
+    cargo build "${CARGO_FLAGS[@]}"
     SRC_BIN="$REPO_ROOT/target/$BUILD_MODE/spacebot"
 fi
 
