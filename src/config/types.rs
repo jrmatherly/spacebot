@@ -360,6 +360,18 @@ pub struct LlmConfig {
     pub moonshot_key: Option<String>,
     pub zai_coding_plan_key: Option<String>,
     pub github_copilot_key: Option<String>,
+    /// Virtual API key for a self-hosted LiteLLM proxy (v1.70.1+).
+    ///
+    /// Operators create the virtual key via LiteLLM's `/key/generate` endpoint
+    /// (scoped to users/teams/budgets) and expose it to Spacebot via
+    /// `env:LITELLM_API_KEY` or `secret:LITELLM_API_KEY`. Do NOT use the
+    /// LiteLLM master key here — master keys are admin credentials for
+    /// creating virtual keys, not for client consumption.
+    ///
+    /// Typically referenced as `api_key = "env:LITELLM_API_KEY"` in the
+    /// `[llm.providers.litellm]` block; this field is the resolved value.
+    /// Auto-categorized as System by `secret_fields()`.
+    pub litellm_api_key: Option<String>,
     pub providers: HashMap<String, ProviderConfig>,
 }
 
@@ -435,6 +447,10 @@ impl std::fmt::Debug for LlmConfig {
                 "github_copilot_key",
                 &self.github_copilot_key.as_ref().map(|_| "[REDACTED]"),
             )
+            .field(
+                "litellm_api_key",
+                &self.litellm_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("providers", &self.providers)
             .finish()
     }
@@ -465,6 +481,7 @@ impl LlmConfig {
             || self.moonshot_key.is_some()
             || self.zai_coding_plan_key.is_some()
             || self.github_copilot_key.is_some()
+            || self.litellm_api_key.is_some()
             || !self.providers.is_empty()
     }
 }
@@ -599,6 +616,11 @@ impl SystemSecrets for LlmConfig {
             SecretField {
                 toml_key: "github_copilot_key",
                 secret_name: "GITHUB_COPILOT_API_KEY",
+                instance_pattern: None,
+            },
+            SecretField {
+                toml_key: "litellm_api_key",
+                secret_name: "LITELLM_API_KEY",
                 instance_pattern: None,
             },
         ]

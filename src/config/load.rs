@@ -534,6 +534,7 @@ impl Config {
             moonshot_key: std::env::var("MOONSHOT_API_KEY").ok(),
             zai_coding_plan_key: std::env::var("ZAI_CODING_PLAN_API_KEY").ok(),
             github_copilot_key: std::env::var("GITHUB_COPILOT_API_KEY").ok(),
+            litellm_api_key: std::env::var("LITELLM_API_KEY").ok(),
             providers: HashMap::new(),
         };
 
@@ -1268,6 +1269,12 @@ impl Config {
                 .as_deref()
                 .and_then(resolve_env_value)
                 .or_else(|| std::env::var("GITHUB_COPILOT_API_KEY").ok()),
+            litellm_api_key: toml
+                .llm
+                .litellm_api_key
+                .as_deref()
+                .and_then(resolve_env_value)
+                .or_else(|| std::env::var("LITELLM_API_KEY").ok()),
             providers: toml
                 .llm
                 .providers
