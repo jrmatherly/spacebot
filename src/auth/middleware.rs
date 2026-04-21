@@ -316,19 +316,33 @@ pub async fn sync_groups_for_principal(
             .collect()
     };
 
-    sqlx::query("DELETE FROM team_memberships WHERE principal_key = ?")
-        .bind(&principal_key)
-        .execute(pool)
-        .await?;
-
+    // Upsert teams OUTSIDE the transaction. `upsert_team` is individually
+    // idempotent (INSERT ... ON CONFLICT DO UPDATE), so a partial failure
+    // across teams just leaves extra `teams` rows with correct data — not
+    // an authz concern. Teams without memberships are inert.
     let source = if ctx.groups_overage {
         "graph_overage"
     } else {
         "token_claim"
     };
+    let mut team_ids: Vec<String> = Vec::with_capacity(groups.len());
     for group in groups {
         let display = group.display_name.as_deref().unwrap_or("(unnamed)");
         let team = upsert_team(pool, &group.id, display).await?;
+        team_ids.push(team.id);
+    }
+
+    // Atomic replace-set on `team_memberships`. Without the transaction,
+    // a crash or sqlx error between DELETE and the last INSERT leaves the
+    // principal with a PARTIAL set of memberships, causing Phase 4 to
+    // silently 403 resources the user actually has access to. Commit only
+    // succeeds when the full new set is persisted.
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM team_memberships WHERE principal_key = ?")
+        .bind(&principal_key)
+        .execute(&mut *tx)
+        .await?;
+    for team_id in &team_ids {
         sqlx::query(
             r#"
             INSERT INTO team_memberships (principal_key, team_id, source)
@@ -339,11 +353,12 @@ pub async fn sync_groups_for_principal(
             "#,
         )
         .bind(&principal_key)
-        .bind(&team.id)
+        .bind(team_id)
         .bind(source)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

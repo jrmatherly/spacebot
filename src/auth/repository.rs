@@ -133,6 +133,13 @@ pub async fn upsert_team(
 /// `display_photo_b64` (nullable, NULL when Graph returned 404) and stamps
 /// `photo_updated_at = now`. Stamping on absence anchors the weekly TTL,
 /// so a confirmed-absent photo is not re-fetched until the next week.
+///
+/// Returns `Err` when zero rows were affected: the `principal_key` row
+/// does not exist yet. This can happen when the photo-sync spawn races
+/// ahead of the user-upsert spawn on a user's very first authenticated
+/// request. The caller (fire-and-forget from `entra_auth_middleware`)
+/// logs at `warn!`; the next request will retry once the user row exists.
+///
 /// Returns `anyhow::Result` per the sibling pattern documented at the
 /// top of the file.
 pub async fn upsert_user_photo(
@@ -140,7 +147,7 @@ pub async fn upsert_user_photo(
     principal_key: &str,
     photo_b64: Option<&str>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE users
         SET display_photo_b64 = ?,
@@ -154,6 +161,12 @@ pub async fn upsert_user_photo(
     .execute(pool)
     .await
     .with_context(|| format!("update user photo for {principal_key}"))?;
+    if result.rows_affected() == 0 {
+        anyhow::bail!(
+            "upsert_user_photo: no users row for principal_key={principal_key} \
+             (photo sync raced ahead of user upsert; next request retries)"
+        );
+    }
     Ok(())
 }
 
