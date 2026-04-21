@@ -884,6 +884,13 @@ impl ApiState {
         self.cron_schedulers.store(Arc::new(schedulers));
     }
 
+    /// Install the Entra validator post-construction. Called from main.rs
+    /// after `ApiConfig::entra_auth` has been resolved, before
+    /// `start_http_server` reads the field to pick the middleware branch.
+    pub fn set_entra_auth(&self, validator: Arc<crate::auth::EntraValidator>) {
+        self.entra_auth.store(Arc::new(Some(validator)));
+    }
+
     /// Set the global task store.
     pub fn set_task_store(&self, store: Arc<TaskStore>) {
         self.task_store.store(Arc::new(Some(store)));

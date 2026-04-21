@@ -1679,6 +1679,26 @@ async fn run(
     };
 
     let _http_handle = if config.api.enabled {
+        // Build the Entra validator before starting the server so branch
+        // selection in `start_http_server` picks the right middleware.
+        if let Some(entra_cfg) = config.api.entra_auth.clone() {
+            if entra_cfg.mock_mode {
+                anyhow::bail!(
+                    "[api.auth.entra].mock_mode = true is not accepted at daemon startup. \
+                     Use integration tests (Phase 4 Task 4.7 mock validator) or disable \
+                     `mock_mode` before starting the daemon."
+                );
+            }
+            tracing::info!(
+                tenant_id = %entra_cfg.tenant_id,
+                "initializing Entra JWT validator"
+            );
+            let validator = spacebot::auth::EntraValidator::new(entra_cfg)
+                .await
+                .context("initialize Entra JWT validator")?;
+            api_state.set_entra_auth(Arc::new(validator));
+        }
+
         // IPv6 addresses need brackets when combined with port: [::]:19898
         let raw_bind = config
             .api
