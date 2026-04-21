@@ -1,6 +1,13 @@
 //! Thin wrapper around `jwt-authorizer` providing Entra-specific claim
 //! extraction. The crate handles JWKS caching, OIDC discovery, and signature
 //! verification. We layer on the Spacebot-specific validation rules.
+//!
+//! The [`JwtValidator`] trait abstracts over token validators so integration
+//! tests can substitute a mock without running a real JWKS endpoint. The
+//! companion [`DynJwtValidator`] trait (object-safe via `Pin<Box<dyn
+//! Future>>`) is what `ApiState` holds, because `impl Future` in return
+//! position is not object-safe. See `rust-patterns.md` § "Trait Design"
+//! for the RPITIT + Dyn-companion pattern.
 
 use crate::auth::config::EntraAuthConfig;
 use crate::auth::context::{AuthContext, PrincipalType};
@@ -10,7 +17,41 @@ use jsonwebtoken::Algorithm;
 use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
 use serde::Deserialize;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+/// Validate an Entra-issued bearer token. Production uses [`EntraValidator`];
+/// integration tests swap in `auth::testing::MockValidator` (Task 4.7).
+///
+/// Implementations return a fully-populated [`AuthContext`] on success and
+/// an [`AuthError`] on failure. The enum's variants map to HTTP status codes
+/// via [`AuthError::status`].
+pub trait JwtValidator: Send + Sync {
+    fn validate(
+        &self,
+        bearer: &str,
+    ) -> impl Future<Output = Result<AuthContext, AuthError>> + Send;
+}
+
+/// Dyn-compatible companion to [`JwtValidator`]. Blanket impl forwards every
+/// `JwtValidator` to a `Box<dyn Future>` return so `Arc<dyn DynJwtValidator>`
+/// is object-safe. `ApiState.entra_auth` holds this variant.
+pub trait DynJwtValidator: Send + Sync {
+    fn validate_dyn<'a>(
+        &'a self,
+        bearer: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthContext, AuthError>> + Send + 'a>>;
+}
+
+impl<T: JwtValidator + ?Sized> DynJwtValidator for T {
+    fn validate_dyn<'a>(
+        &'a self,
+        bearer: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthContext, AuthError>> + Send + 'a>> {
+        Box::pin(<Self as JwtValidator>::validate(self, bearer))
+    }
+}
 
 /// Claims extracted from Entra v2 tokens. Unused claims are ignored.
 /// `_claim_names` / `_claim_sources` appear on groups-overage tokens. We
@@ -93,14 +134,10 @@ impl EntraValidator {
         })
     }
 
-    /// Read-only access to the resolved Entra config. Used by the auth
-    /// middleware to thread `group_cache_ttl_secs` into Phase 3's group-sync
-    /// helper without re-reading the TOML.
-    pub(crate) fn config(&self) -> &EntraAuthConfig {
-        &self.cfg
-    }
-
     /// Validate a raw bearer token string and produce an `AuthContext`.
+    ///
+    /// Also reachable via the [`JwtValidator`] trait so `ApiState.entra_auth`
+    /// can hold any validator that implements it (mock or real).
     pub async fn validate(&self, bearer: &str) -> Result<AuthContext, AuthError> {
         let token_data = self
             .inner
@@ -160,6 +197,18 @@ impl EntraValidator {
             display_email: claims.preferred_username.or(claims.email).map(Arc::from),
             display_name: claims.name.map(Arc::from),
         })
+    }
+}
+
+impl JwtValidator for EntraValidator {
+    fn validate(
+        &self,
+        bearer: &str,
+    ) -> impl Future<Output = Result<AuthContext, AuthError>> + Send {
+        // Delegate to the inherent method so callers using the concrete
+        // type continue to work. The compiler erases this into the same
+        // `impl Future` as `async fn validate(...)` above.
+        Self::validate(self, bearer)
     }
 }
 

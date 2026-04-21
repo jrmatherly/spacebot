@@ -57,7 +57,20 @@ pub struct ApiState {
     /// request time (the branch is chosen in `start_http_server`). Wrapped
     /// in `ArcSwap` to match the post-construction field-population pattern
     /// used for `task_store`, `wiki_store`, etc.
-    pub entra_auth: Arc<ArcSwap<Option<Arc<crate::auth::EntraValidator>>>>,
+    ///
+    /// Held as `Arc<dyn DynJwtValidator>` so integration tests can swap in
+    /// [`crate::auth::testing::MockValidator`] (Phase 4 Task 4.7) without
+    /// wiring a real JWKS endpoint. Production wires the concrete
+    /// [`crate::auth::EntraValidator`]. The [`start_http_server`] branch
+    /// check at `src/api/server.rs:314` reads this field via `.is_some()`.
+    pub entra_auth: Arc<ArcSwap<Option<Arc<dyn crate::auth::jwks::DynJwtValidator>>>>,
+    /// Held alongside `entra_auth` so code paths that need the resolved Entra
+    /// config (e.g., the middleware's Phase 3 group-sync spawn reading
+    /// `group_cache_ttl_secs`) can access it without coupling to a specific
+    /// validator type. Populated by `set_entra_auth_config` when Entra is wired;
+    /// `None` for static-token deployments and mock-backed tests that don't
+    /// need Graph integration.
+    pub entra_config: Arc<ArcSwap<Option<crate::auth::EntraAuthConfig>>>,
     /// Microsoft Graph client for resolving Entra group memberships and
     /// fetching user display photos via OBO. Populated post-construction
     /// from `main.rs` after the secrets store loads `web_api_client_secret`.
@@ -339,6 +352,7 @@ impl ApiState {
             started_at: Instant::now(),
             auth_token: None,
             entra_auth: Arc::new(ArcSwap::from_pointee(None)),
+            entra_config: Arc::new(ArcSwap::from_pointee(None)),
             graph_client: ArcSwap::from_pointee(None),
             event_tx,
             agent_pools: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -899,8 +913,22 @@ impl ApiState {
     /// Install the Entra validator post-construction. Called from main.rs
     /// after `ApiConfig::entra_auth` has been resolved, before
     /// `start_http_server` reads the field to pick the middleware branch.
-    pub fn set_entra_auth(&self, validator: Arc<crate::auth::EntraValidator>) {
+    ///
+    /// Takes `Arc<dyn DynJwtValidator>` so production can install
+    /// [`crate::auth::EntraValidator`] (which implements the trait via the
+    /// blanket impl in `src/auth/jwks.rs`) and integration tests can install
+    /// [`crate::auth::testing::MockValidator`].
+    pub fn set_entra_auth(&self, validator: Arc<dyn crate::auth::jwks::DynJwtValidator>) {
         self.entra_auth.store(Arc::new(Some(validator)));
+    }
+
+    /// Install the resolved Entra config alongside the validator. Held
+    /// separately from the trait object because the config carries fields
+    /// (`group_cache_ttl_secs`, `allowed_scopes`, etc.) that the middleware
+    /// reads outside the validation hot path. Decoupling keeps `MockValidator`
+    /// free of a mandatory config dependency.
+    pub fn set_entra_auth_config(&self, cfg: crate::auth::EntraAuthConfig) {
+        self.entra_config.store(Arc::new(Some(cfg)));
     }
 
     /// Install the Microsoft Graph client post-construction. Called from

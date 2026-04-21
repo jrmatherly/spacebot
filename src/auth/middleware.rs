@@ -4,7 +4,8 @@
 //! whether `ApiState.entra_auth` is populated.
 
 use crate::api::ApiState;
-use crate::auth::{AuthError, EntraValidator};
+use crate::auth::AuthError;
+use crate::auth::jwks::DynJwtValidator;
 
 use axum::Json;
 use axum::extract::{Request, State};
@@ -28,7 +29,7 @@ pub async fn entra_auth_middleware(
     }
 
     let guard = state.entra_auth.load();
-    let validator: &EntraValidator = match guard.as_ref() {
+    let validator: &dyn DynJwtValidator = match guard.as_ref() {
         Some(v) => v.as_ref(),
         None => {
             tracing::error!("entra_auth_middleware attached but validator absent");
@@ -62,7 +63,7 @@ pub async fn entra_auth_middleware(
     let bearer_token: Option<String> = bearer_result.as_ref().ok().cloned();
 
     let result = match bearer_result {
-        Ok(token) => validator.validate(&token).await,
+        Ok(token) => validator.validate_dyn(&token).await,
         Err(err) => Err(err),
     };
 
@@ -132,12 +133,17 @@ pub async fn entra_auth_middleware(
             if let Some(graph) = graph_guard.as_ref().as_ref().map(Arc::clone) {
                 let pool_opt = state.instance_pool.load().as_ref().clone();
                 if let (Some(pool), Some(user_token)) = (pool_opt, bearer_token.clone()) {
+                    // `entra_config` holds the resolved Entra config separately
+                    // from the validator trait object, so this lookup doesn't
+                    // depend on whether the installed validator is the real
+                    // `EntraValidator` or a `MockValidator`. Mocks leave this
+                    // None and the middleware falls back to the 300s default.
                     let ttl_secs = state
-                        .entra_auth
+                        .entra_config
                         .load()
                         .as_ref()
                         .as_ref()
-                        .map(|v| v.config().group_cache_ttl_secs)
+                        .map(|c| c.group_cache_ttl_secs)
                         .unwrap_or(300);
 
                     // Pre-compute principal_key once so both spawns carry it
