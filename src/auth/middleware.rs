@@ -120,8 +120,11 @@ pub async fn entra_auth_middleware(
             }
 
             // Phase 3: resolve Graph group memberships when overage is set
-            // OR sync claim-provided groups. Skipped silently when Graph
-            // is unwired (deployments without ENTRA_GRAPH_CLIENT_SECRET).
+            // OR sync claim-provided groups, AND fetch the user's display
+            // photo (A-19). Same OBO token (User.Read) covers both. Skipped
+            // silently when Graph is unwired (deployments without
+            // ENTRA_GRAPH_CLIENT_SECRET).
+            //
             // A-11: pagination lives inside `list_member_groups` for the
             // /groups?$filter lookup. `getMemberObjects` itself does not
             // paginate (OData action).
@@ -129,7 +132,6 @@ pub async fn entra_auth_middleware(
             if let Some(graph) = graph_guard.as_ref().as_ref().map(Arc::clone) {
                 let pool_opt = state.instance_pool.load().as_ref().clone();
                 if let (Some(pool), Some(user_token)) = (pool_opt, bearer_token.clone()) {
-                    let ctx_for_task = ctx.clone();
                     let ttl_secs = state
                         .entra_auth
                         .load()
@@ -137,17 +139,23 @@ pub async fn entra_auth_middleware(
                         .as_ref()
                         .map(|v| v.config().group_cache_ttl_secs)
                         .unwrap_or(300);
-                    let sync_span = tracing::info_span!(
+
+                    // Group sync (overage resolution + team_memberships persist).
+                    let group_pool = pool.clone();
+                    let group_graph = Arc::clone(&graph);
+                    let group_token = user_token.clone();
+                    let group_ctx = ctx.clone();
+                    let group_span = tracing::info_span!(
                         "auth.sync_groups",
                         principal_key = %ctx.principal_key(),
                     );
                     tokio::spawn(
                         async move {
                             if let Err(error) = sync_groups_for_principal(
-                                &pool,
-                                &graph,
-                                &ctx_for_task,
-                                &user_token,
+                                &group_pool,
+                                &group_graph,
+                                &group_ctx,
+                                &group_token,
                                 ttl_secs,
                             )
                             .await
@@ -158,7 +166,32 @@ pub async fn entra_auth_middleware(
                                 );
                             }
                         }
-                        .instrument(sync_span),
+                        .instrument(group_span),
+                    );
+
+                    // A-19 photo sync. Same OBO scope. Weekly TTL inside helper.
+                    let photo_ctx = ctx.clone();
+                    let photo_span = tracing::info_span!(
+                        "auth.sync_photo",
+                        principal_key = %ctx.principal_key(),
+                    );
+                    tokio::spawn(
+                        async move {
+                            if let Err(error) = sync_user_photo_for_principal(
+                                &pool,
+                                &graph,
+                                &photo_ctx,
+                                &user_token,
+                            )
+                            .await
+                            {
+                                tracing::warn!(
+                                    %error,
+                                    "photo sync failed; SPA falls back to initials",
+                                );
+                            }
+                        }
+                        .instrument(photo_span),
                     );
                 }
             }
@@ -248,5 +281,50 @@ pub async fn sync_groups_for_principal(
         .execute(pool)
         .await?;
     }
+    Ok(())
+}
+
+/// Fetch the signed-in user's photo via Graph and persist into
+/// `users.display_photo_b64` (A-19). Weekly TTL via `photo_updated_at`.
+/// Skips the Graph call when the existing timestamp is younger than 7
+/// days. A confirmed-absent photo (404) writes NULL bytes but stamps
+/// `now`, so the next refresh is also one week out.
+///
+/// `#[doc(hidden)] pub` for the same reason as `sync_groups_for_principal`:
+/// Phase 3 integration tests live in a separate crate.
+#[doc(hidden)]
+pub async fn sync_user_photo_for_principal(
+    pool: &sqlx::SqlitePool,
+    graph: &crate::auth::graph::GraphClient,
+    ctx: &crate::auth::AuthContext,
+    user_token: &str,
+) -> anyhow::Result<()> {
+    use base64::Engine as _;
+
+    let principal_key = ctx.principal_key();
+
+    let last: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT photo_updated_at FROM users WHERE principal_key = ?",
+    )
+    .bind(&principal_key)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    if let Some(ts) = last {
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts) {
+            let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+            if age < chrono::Duration::days(7) {
+                return Ok(());
+            }
+        }
+    }
+
+    let bytes_opt = graph.fetch_user_photo(user_token).await?;
+    let b64_opt = bytes_opt
+        .as_deref()
+        .map(|b| base64::engine::general_purpose::STANDARD.encode(b));
+
+    crate::auth::repository::upsert_user_photo(pool, &principal_key, b64_opt.as_deref()).await?;
     Ok(())
 }

@@ -129,6 +129,34 @@ pub async fn upsert_team(
     Ok(row)
 }
 
+/// Update the display-photo cache for an existing user (A-19). Writes
+/// `display_photo_b64` (nullable, NULL when Graph returned 404) and stamps
+/// `photo_updated_at = now`. Stamping on absence anchors the weekly TTL,
+/// so a confirmed-absent photo is not re-fetched until the next week.
+/// Returns `anyhow::Result` per the sibling pattern documented at the
+/// top of the file.
+pub async fn upsert_user_photo(
+    pool: &SqlitePool,
+    principal_key: &str,
+    photo_b64: Option<&str>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE users
+        SET display_photo_b64 = ?,
+            photo_updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE principal_key = ?
+        "#,
+    )
+    .bind(photo_b64)
+    .bind(principal_key)
+    .execute(pool)
+    .await
+    .with_context(|| format!("update user photo for {principal_key}"))?;
+    Ok(())
+}
+
 /// Upsert resource ownership at resource-creation time.
 /// Callers: every handler that creates an owned resource (Phase 4).
 pub async fn set_ownership(
