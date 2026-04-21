@@ -30,7 +30,12 @@ CREATE TABLE users (
     last_seen_at TEXT,
 
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+
+    -- Domain-bound value enforcement. Mirrors resource_ownership.visibility's
+    -- CHECK pattern so every authz-critical enum column has a DB-level guard.
+    CHECK (principal_type IN ('user', 'service_principal', 'system')),
+    CHECK (status IN ('active', 'disabled', 'deleted'))
 );
 
 -- Uniqueness on (tenant_id, object_id) redundant with principal_key

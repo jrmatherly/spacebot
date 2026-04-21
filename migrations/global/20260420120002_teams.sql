@@ -17,7 +17,9 @@ CREATE TABLE teams (
     status TEXT NOT NULL DEFAULT 'active',
 
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+
+    CHECK (status IN ('active', 'archived'))
 );
 
 CREATE INDEX idx_teams_status ON teams(status);

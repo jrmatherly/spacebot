@@ -14,7 +14,9 @@ CREATE TABLE team_memberships (
     -- Source of the observation: 'token_claim' or 'graph_overage'.
     source TEXT NOT NULL,
 
-    PRIMARY KEY (principal_key, team_id)
+    PRIMARY KEY (principal_key, team_id),
+
+    CHECK (source IN ('token_claim', 'graph_overage'))
 );
 
 CREATE INDEX idx_memberships_principal ON team_memberships(principal_key);
