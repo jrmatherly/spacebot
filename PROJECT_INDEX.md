@@ -39,7 +39,7 @@ spacebot/
 ├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (15 integration test files)
+└── tests/                          (16 integration test files)
 ```
 
 ---
@@ -49,7 +49,7 @@ spacebot/
 | Entry Point | Purpose |
 |---|---|
 | **src/main.rs** | CLI daemon (start/stop/restart/status, skill, auth) |
-| **src/lib.rs** | Library root with 35 public modules |
+| **src/lib.rs** | Library root with 36 public modules |
 | **src/bin/openapi_spec.rs** | Generates OpenAPI 3.0 JSON from Rust types |
 | **src/bin/cargo-bump.rs** | Version bumper tool |
 

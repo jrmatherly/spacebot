@@ -354,8 +354,8 @@ All metrics are prefixed with `spacebot_`. The registry uses a private `promethe
 |-------|-------|
 | Type | `IntCounterVec` |
 | Labels | `branch`, `reason` |
-| Instrumented in | `src/api/server.rs` — `api_auth_middleware` |
-| Description | Auth-middleware rejections. `branch` is `static_token` (Phase 0) or `entra_jwt` (Phase 1+). `reason` is a machine-readable failure cause. Static-token path emits: `header_missing` (no `Authorization` header), `header_non_ascii` (header value is not valid UTF-8), `scheme_missing` (no `Bearer ` prefix), `token_mismatch` (bearer string did not match configured token). JWT path will add: `signature_invalid`, `issuer_mismatch`, `audience_mismatch`, `expired`, `jwks_fetch_failed`. |
+| Instrumented in | `src/api/server.rs` — `api_auth_middleware`; `src/auth/middleware.rs` — `entra_auth_middleware` |
+| Description | Auth-middleware rejections. `branch` is `static_token` (Phase 0) or `entra_jwt` (Phase 1+, shipped 2026-04-20). `reason` is a machine-readable failure cause. Static-token path emits: `header_missing` (no `Authorization` header), `header_non_ascii` (header value is not valid UTF-8), `scheme_missing` (no `Bearer ` prefix), `token_mismatch` (bearer string did not match configured token). Entra JWT path emits: `missing_header`, `malformed_header` (non-UTF8 value or non-Bearer scheme), `invalid_token` (signature / issuer / audience / kid mismatch), `temporal_invalid` (expired or `nbf` in future), `jwks_unreachable` (503-class; JWKS fetch or server misconfig), `forbidden` (403-class; user missing required scope or service-principal missing any app role). Label strings are stable across releases per the `AuthError::metric_reason()` contract. |
 
 ### Cron
 
