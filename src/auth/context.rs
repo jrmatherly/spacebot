@@ -5,8 +5,11 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use std::sync::Arc;
 
-/// Stable identifier category for the authenticated principal.
-/// See research §12 A-5.
+/// Stable identifier category for the authenticated principal. The four
+/// variants map to disjoint authz paths: human users authenticate via
+/// delegated Entra tokens, service principals via client-credentials
+/// grant, the system (cortex) principal constructs internally, and the
+/// static-token branch represents operator-level coarse access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalType {
@@ -43,7 +46,8 @@ pub struct AuthContext {
     /// needed to enumerate. Phase 3 populates.
     pub groups_overage: bool,
     /// Display-only email (`preferred_username` or `email` claim).
-    /// NEVER consulted for authorization. See §12 E-7.
+    /// Not suitable for authorization: the claim is mutable at the Entra
+    /// side, so only the composite (tid, oid) is a stable identity key.
     pub display_email: Option<Arc<str>>,
     /// Display-only name. NEVER consulted for authorization.
     pub display_name: Option<Arc<str>>,

@@ -9,19 +9,17 @@ use mock_entra::MockTenant;
 use std::sync::Arc;
 
 fn cfg_for(tenant: &MockTenant) -> spacebot::auth::EntraAuthConfig {
-    spacebot::auth::EntraAuthConfig {
-        tenant_id: Arc::from(tenant.tenant_id.as_str()),
-        audience: Arc::from(tenant.audience.as_str()),
-        allowed_scopes: vec!["api.access".into()],
-        jwks_cache_ttl_secs: 3600,
-        clock_skew_leeway_secs: 60,
-        group_cache_ttl_secs: 300,
-        spa_client_id: Arc::from("test-spa"),
-        spa_scopes: vec![Arc::from("api://test/api.access")],
-        mock_mode: false,
-        jwks_url_override: Some(tenant.jwks_url()),
-        issuer_override: Some(tenant.issuer()),
-    }
+    // Construct via the doc-hidden test constructor. `EntraAuthConfig` now
+    // has `pub(crate)` override fields so this is the only way external
+    // tests can point the validator at a Wiremock-backed tenant.
+    spacebot::auth::EntraAuthConfig::new_for_test(
+        Arc::from(tenant.tenant_id.as_str()),
+        Arc::from(tenant.audience.as_str()),
+        vec!["api.access".into()],
+        Arc::from("test-spa"),
+        vec![Arc::from("api://test/api.access")],
+    )
+    .with_test_overrides(tenant.jwks_url(), tenant.issuer())
 }
 
 #[tokio::test]
@@ -79,11 +77,10 @@ async fn validator_rejects_wrong_signature() {
 }
 
 #[tokio::test]
-async fn validator_rejects_missing_bearer_via_middleware() {
-    // This test doesn't exercise the middleware directly (that would need
-    // a full router harness). It exercises the validator's behavior on an
-    // empty token, which maps to `InvalidToken` in jwt-authorizer because
-    // parsing an empty string fails.
+async fn validator_rejects_empty_token_string() {
+    // The previous name (`..._via_middleware`) was misleading: this test
+    // calls the validator directly. Middleware-level bearer-parsing tests
+    // live in the router-integration suite below.
     let tenant = MockTenant::start().await;
     let cfg = cfg_for(&tenant);
     let validator = spacebot::auth::EntraValidator::new(cfg)
@@ -92,4 +89,251 @@ async fn validator_rejects_missing_bearer_via_middleware() {
 
     let err = validator.validate("").await.expect_err("must reject");
     assert_eq!(err.status(), axum::http::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn validator_accepts_service_principal_with_roles() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_service_principal_token("sp-oid-1", &["SpacebotService"]);
+    let ctx = validator.validate(&token).await.expect("valid SP token");
+
+    assert_eq!(
+        ctx.principal_type,
+        spacebot::auth::PrincipalType::ServicePrincipal,
+        "tokens without `scp` claim classify as ServicePrincipal"
+    );
+    assert!(ctx.has_role("SpacebotService"));
+    assert_eq!(&*ctx.oid, "sp-oid-1");
+}
+
+#[tokio::test]
+async fn validator_rejects_service_principal_with_no_roles() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_service_principal_token("sp-oid-2", &[]);
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("SP with no roles must be rejected");
+    // Forbidden (403), not Unauthorized (401): the token is syntactically
+    // valid but the principal lacks app roles.
+    assert_eq!(err.status(), axum::http::StatusCode::FORBIDDEN);
+    assert_eq!(err.metric_reason(), "forbidden");
+}
+
+#[tokio::test]
+async fn validator_rejects_user_with_wrong_scope() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    // User token with an unrelated scope (e.g., a Microsoft Graph token
+    // pasted into a Spacebot request).
+    let token = tenant.mint_user_token_with_scope("user-oid-3", "user.read");
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("wrong scope must be rejected");
+    assert_eq!(err.status(), axum::http::StatusCode::FORBIDDEN);
+    assert_eq!(err.metric_reason(), "forbidden");
+}
+
+#[tokio::test]
+async fn validator_rejects_expired_token() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_expired_token("user-oid-4");
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("expired token must be rejected");
+    assert_eq!(err.status(), axum::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(err.metric_reason(), "temporal_invalid");
+}
+
+#[tokio::test]
+async fn validator_rejects_not_yet_valid_token() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_not_yet_valid_token("user-oid-5");
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("nbf-in-future token must be rejected");
+    assert_eq!(err.status(), axum::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(err.metric_reason(), "temporal_invalid");
+}
+
+#[tokio::test]
+async fn validator_rejects_wrong_audience() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_token_with_aud("user-oid-6", "api://other-app");
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("wrong audience must be rejected");
+    assert_eq!(err.status(), axum::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(err.metric_reason(), "invalid_token");
+}
+
+#[tokio::test]
+async fn validator_rejects_wrong_issuer() {
+    let tenant = MockTenant::start().await;
+    let cfg = cfg_for(&tenant);
+    let validator = spacebot::auth::EntraValidator::new(cfg)
+        .await
+        .expect("validator init");
+
+    let token = tenant.mint_token_with_iss(
+        "user-oid-7",
+        "https://login.microsoftonline.com/evil-tenant/v2.0",
+    );
+    let err = validator
+        .validate(&token)
+        .await
+        .expect_err("wrong issuer must be rejected");
+    assert_eq!(err.status(), axum::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(err.metric_reason(), "invalid_token");
+}
+
+// ---------------------------------------------------------------------------
+// Router-level middleware integration tests.
+//
+// These drive the middleware in-process via `tower::ServiceExt::oneshot`,
+// matching the pattern in `tests/api_auth_middleware.rs`. Covers branches
+// that pure validator-level tests don't reach: bearer header parsing,
+// validator-absent 500, response body shape, status propagation.
+// ---------------------------------------------------------------------------
+
+mod router_level {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode, header};
+    use spacebot::api::ApiState;
+    use spacebot::api::test_support::build_test_router_entra;
+    use tower::ServiceExt as _;
+
+    async fn router_for(tenant: &MockTenant) -> axum::Router {
+        let state = Arc::new(ApiState::new_for_tests(None));
+        let cfg = cfg_for(tenant);
+        let validator = spacebot::auth::EntraValidator::new(cfg)
+            .await
+            .expect("validator init");
+        state.set_entra_auth(Arc::new(validator));
+        build_test_router_entra(state)
+    }
+
+    fn req_with_auth(path: &str, bearer: Option<&str>) -> Request<Body> {
+        let mut b = Request::builder().uri(path);
+        if let Some(token) = bearer {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        b.body(Body::empty()).unwrap()
+    }
+
+    fn req_with_raw_auth(path: &str, raw_auth: &str) -> Request<Body> {
+        Request::builder()
+            .uri(path)
+            .header(header::AUTHORIZATION, raw_auth)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn middleware_rejects_missing_authorization_header() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        let res = app
+            .oneshot(req_with_auth("/api/status", None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn middleware_rejects_non_bearer_scheme() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        let res = app
+            .oneshot(req_with_raw_auth(
+                "/api/status",
+                "Basic dXNlcjpwYXNzd29yZA==",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn middleware_rejects_non_ascii_authorization_header() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        // Build a Request with a non-ASCII byte in the Authorization value.
+        // `HeaderValue::from_bytes` accepts it; `.to_str()` fails at
+        // middleware time and maps to MalformedHeader.
+        let mut req = Request::builder()
+            .uri("/api/status")
+            .body(Body::empty())
+            .unwrap();
+        let bad = axum::http::HeaderValue::from_bytes(b"Bearer \xff\xfe")
+            .expect("construct non-ASCII header value");
+        req.headers_mut().insert(header::AUTHORIZATION, bad);
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn middleware_rejects_bearer_with_bad_token() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        let res = app
+            .oneshot(req_with_auth("/api/status", Some("not.a.jwt")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn middleware_bypasses_auth_for_health_endpoint() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        // `/api/health` must succeed even with no Authorization header.
+        // Exact path match: `/api/healthy` (theoretical future route) would
+        // not bypass.
+        let res = app
+            .oneshot(req_with_auth("/api/health", None))
+            .await
+            .unwrap();
+        // `/api/health` exists in the API router as a real handler; this
+        // test asserts the bypass is applied, not the handler body.
+        assert_ne!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "health bypass must skip auth"
+        );
+    }
 }

@@ -1,7 +1,7 @@
 //! Test helper: spin up a Wiremock-backed fake Entra OIDC discovery + JWKS
 //! endpoint, and issue test JWTs signed with a generated RSA key.
 //!
-//! Not a production path — only Phase 1 integration tests use this.
+//! Not a production path. Only Phase 1 integration tests use this.
 
 use base64::Engine;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
@@ -128,7 +128,6 @@ impl MockTenant {
     }
 
     /// Mint a token with a bad signature (signed with a throwaway key).
-    #[allow(dead_code)]
     pub fn mint_wrong_sig_token(&self, oid: &str) -> String {
         let mut rng = OsRng;
         let other_key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
@@ -152,5 +151,122 @@ impl MockTenant {
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some(self.kid.clone());
         encode(&header, &claims, &other_signing_key).expect("jwt encode")
+    }
+
+    /// Mint a user token with a caller-chosen `scp` value. Used to exercise
+    /// the scope-mismatch rejection path.
+    pub fn mint_user_token_with_scope(&self, oid: &str, scp: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": self.issuer(),
+            "aud": self.audience,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now + 3600,
+            "nbf": now - 60,
+            "iat": now,
+            "scp": scp,
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
+    }
+
+    /// Mint a service-principal (app-only) token. No `scp` claim, so the
+    /// validator classifies the principal as `ServicePrincipal`. `roles`
+    /// controls whether the required-role gate rejects.
+    pub fn mint_service_principal_token(&self, oid: &str, roles: &[&str]) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": self.issuer(),
+            "aud": self.audience,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now + 3600,
+            "nbf": now - 60,
+            "iat": now,
+            "roles": roles,
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
+    }
+
+    /// Mint a token whose `exp` is in the past (expired).
+    pub fn mint_expired_token(&self, oid: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": self.issuer(),
+            "aud": self.audience,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now - 3600,
+            "nbf": now - 7200,
+            "iat": now - 7200,
+            "scp": "api.access",
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
+    }
+
+    /// Mint a token whose `nbf` is in the future (not-yet-valid).
+    pub fn mint_not_yet_valid_token(&self, oid: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": self.issuer(),
+            "aud": self.audience,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now + 7200,
+            "nbf": now + 3600,
+            "iat": now,
+            "scp": "api.access",
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
+    }
+
+    /// Mint a token with a caller-chosen `aud` value.
+    pub fn mint_token_with_aud(&self, oid: &str, aud: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": self.issuer(),
+            "aud": aud,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now + 3600,
+            "nbf": now - 60,
+            "iat": now,
+            "scp": "api.access",
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
+    }
+
+    /// Mint a token with a caller-chosen `iss` value.
+    pub fn mint_token_with_iss(&self, oid: &str, iss: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": iss,
+            "aud": self.audience,
+            "tid": self.tenant_id,
+            "oid": oid,
+            "sub": oid,
+            "exp": now + 3600,
+            "nbf": now - 60,
+            "iat": now,
+            "scp": "api.access",
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(self.kid.clone());
+        encode(&header, &claims, &self.signing_key).expect("jwt encode")
     }
 }

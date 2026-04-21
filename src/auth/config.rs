@@ -14,13 +14,13 @@ pub struct EntraAuthConfig {
     pub tenant_id: Arc<str>,
     /// Expected `aud` claim value. For v2.0 tokens this is the Web API
     /// registration's **client ID GUID**, not the Application ID URI.
-    /// See research §12 E-5.
+    /// Requires `accessTokenAcceptedVersion: 2` in the app manifest.
     pub audience: Arc<str>,
     /// Required scopes (`scp` claim, space-separated). Typically `["api.access"]`.
     /// If empty, `scp` presence is not checked (app-only tokens are allowed).
     pub allowed_scopes: Vec<String>,
     /// How long to cache JWKS before re-fetching. Microsoft recommends 24h
-    /// max. Research §11.2(3).
+    /// max. Entra rotates signing keys roughly weekly.
     pub jwks_cache_ttl_secs: u64,
     /// Clock-skew tolerance in seconds. Default 60. Never exceed 300.
     pub clock_skew_leeway_secs: u64,
@@ -36,18 +36,17 @@ pub struct EntraAuthConfig {
     pub spa_scopes: Vec<Arc<str>>,
     /// Mock mode for local dev / CI. When true, tokens are "validated" by
     /// accepting any JWT with `aud`, `tid`, `oid` claims without signature
-    /// check. Phase 4 Task 4.7 ships the mock validator. See research §12 F-8.
+    /// check. The mock validator itself is not shipped yet; setting this
+    /// true is rejected at daemon startup.
     pub mock_mode: bool,
-    /// Test-only override for the computed JWKS URL. Allows integration tests
-    /// to point the validator at a Wiremock-backed fake tenant. MUST be
-    /// `None` in production; the config loader rejects non-None values
-    /// unless `mock_mode` is also true or the config came from a test
-    /// helper.
-    pub jwks_url_override: Option<String>,
+    /// Test-only override for the computed JWKS URL. Not settable outside the
+    /// `auth` module by construction. Integration tests use
+    /// `EntraAuthConfig::new_test_with_overrides` below; the production loader
+    /// always leaves this `None`.
+    pub(crate) jwks_url_override: Option<String>,
     /// Test-only override for the issuer claim validator. Paired with
-    /// `jwks_url_override` so Wiremock-backed tests can assert the full
-    /// `iss` / `aud` / signature path. MUST be `None` in production.
-    pub issuer_override: Option<String>,
+    /// `jwks_url_override`.
+    pub(crate) issuer_override: Option<String>,
 }
 
 impl EntraAuthConfig {
@@ -71,6 +70,43 @@ impl EntraAuthConfig {
             "https://login.microsoftonline.com/{}/discovery/v2.0/keys",
             self.tenant_id
         )
+    }
+
+    /// Integration-test constructor. Always-compiled (`#[doc(hidden)]`) so
+    /// tests under `tests/*.rs`, which compile as separate crates, can build
+    /// a config without naming the `pub(crate)` override fields. Paired with
+    /// [`Self::with_test_overrides`].
+    #[doc(hidden)]
+    pub fn new_for_test(
+        tenant_id: Arc<str>,
+        audience: Arc<str>,
+        allowed_scopes: Vec<String>,
+        spa_client_id: Arc<str>,
+        spa_scopes: Vec<Arc<str>>,
+    ) -> Self {
+        Self {
+            tenant_id,
+            audience,
+            allowed_scopes,
+            jwks_cache_ttl_secs: 3600,
+            clock_skew_leeway_secs: 60,
+            group_cache_ttl_secs: 300,
+            spa_client_id,
+            spa_scopes,
+            mock_mode: false,
+            jwks_url_override: None,
+            issuer_override: None,
+        }
+    }
+
+    /// Integration-test helper that injects Wiremock-backed JWKS and issuer
+    /// URLs. The override fields are `pub(crate)` so no other code path can
+    /// set them.
+    #[doc(hidden)]
+    pub fn with_test_overrides(mut self, jwks_url: String, issuer: String) -> Self {
+        self.jwks_url_override = Some(jwks_url);
+        self.issuer_override = Some(issuer);
+        self
     }
 }
 

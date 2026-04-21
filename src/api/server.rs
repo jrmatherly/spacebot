@@ -651,4 +651,31 @@ pub mod test_support {
                 ));
         protected.layer(cors).with_state(state)
     }
+
+    /// Build the protected router with the Entra-JWT middleware branch
+    /// attached, for integration testing of the JWT path. Mirrors
+    /// [`build_test_router`] but selects the Entra branch. Keep in sync
+    /// with the branch-selection block in [`super::start_http_server`].
+    pub fn build_test_router_entra(state: Arc<ApiState>) -> Router {
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::mirror_request())
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+
+        let (api_routes, _api) = api_router().split_for_parts();
+        let protected =
+            Router::new()
+                .nest("/api", api_routes)
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    crate::auth::middleware::entra_auth_middleware,
+                ));
+        protected.layer(cors).with_state(state)
+    }
 }

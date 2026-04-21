@@ -796,7 +796,7 @@ Routes platform conversations to agents. Checked in order; first match wins. Unm
 
 ### `[api.auth.entra]`
 
-Optional. When present with `enabled = true`, the daemon validates incoming `Authorization: Bearer <jwt>` headers as Microsoft Entra ID v2 JWTs via a cached JWKS. Replaces the static `auth_token` branch for that run; the two branches are mutually exclusive at request time.
+Optional. When present with `enabled = true`, the daemon validates incoming `Authorization: Bearer <jwt>` headers as Microsoft Entra ID v2 JWTs via a cached JWKS. Replaces the static `auth_token` branch for that run. The two branches are mutually exclusive at request time.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -809,7 +809,7 @@ Optional. When present with `enabled = true`, the daemon validates incoming `Aut
 | `group_cache_ttl_secs` | integer | 300 | Graph group-membership cache TTL (Phase 3 consumes) |
 | `spa_client_id` | string | `""` | SPA app-registration client ID GUID. Returned via `/api/auth/config` to the browser (never a secret) |
 | `spa_scopes` | string[] | `[]` | Scopes the SPA requests during sign-in |
-| `mock_mode` | bool | false | **Dev only.** Bypass signature validation. Rejected at daemon startup; use integration-test helpers |
+| `mock_mode` | bool | false | **Dev only.** Bypass signature validation. Rejected at daemon startup. Use integration-test helpers instead |
 
 Example (K8s ConfigMap):
 

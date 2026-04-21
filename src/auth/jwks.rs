@@ -2,14 +2,15 @@
 //! extraction. The crate handles JWKS caching, OIDC discovery, and signature
 //! verification. We layer on the Spacebot-specific validation rules.
 
-use jsonwebtoken::Algorithm;
-use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
-use serde::Deserialize;
-use std::sync::Arc;
-
 use crate::auth::config::EntraAuthConfig;
 use crate::auth::context::{AuthContext, PrincipalType};
 use crate::auth::errors::AuthError;
+
+use jsonwebtoken::Algorithm;
+use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
+use serde::Deserialize;
+
+use std::sync::Arc;
 
 /// Claims extracted from Entra v2 tokens. Unused claims are ignored.
 /// `_claim_names` / `_claim_sources` appear on groups-overage tokens. We
@@ -18,7 +19,7 @@ use crate::auth::errors::AuthError;
 pub struct EntraClaims {
     /// Tenant ID.
     pub tid: String,
-    /// Object ID — the stable identity key.
+    /// Object ID. The stable identity key for authorization.
     pub oid: String,
     /// App roles. Absent entirely if the principal has none (not an empty array).
     #[serde(default)]
@@ -53,12 +54,6 @@ pub struct EntraValidator {
 }
 
 impl EntraValidator {
-    /// Access the resolved config (read-only). Used by admin endpoints that
-    /// surface tenant_id and audience for diagnostic purposes.
-    pub fn config(&self) -> &EntraAuthConfig {
-        &self.cfg
-    }
-
     pub async fn new(cfg: EntraAuthConfig) -> anyhow::Result<Self> {
         if cfg.mock_mode {
             anyhow::bail!(
@@ -66,20 +61,24 @@ impl EntraValidator {
                  use MockValidator instead (Phase 4 Task 4.7)"
             );
         }
-        // `Validation` chainable API is `jwt_authorizer::validation::Validation`.
-        // `Algorithm::RS256` is re-exported by `jwt_authorizer` from
-        // `jsonwebtoken`; we import it directly from `jsonwebtoken` to make
-        // the dependency explicit (A-05).
+        // `Algorithm::RS256` is imported from `jsonwebtoken` (not
+        // `jwt_authorizer`) because jwt_authorizer does not re-export it.
+        // Both crates are in [dependencies] for this reason.
         let aud_refs: Vec<&str> = vec![cfg.audience.as_ref()];
         let iss_string = cfg.issuer_override.clone().unwrap_or_else(|| cfg.issuer());
         let iss_refs: Vec<&str> = vec![iss_string.as_str()];
+        // `nbf` validation is off by default in jwt-authorizer 0.15; enable
+        // it so not-yet-valid tokens are rejected (prevents tokens minted
+        // with future `nbf` from being accepted ahead of schedule).
         let validation = Validation::new()
             .aud(&aud_refs)
             .iss(&iss_refs)
             .leeway(cfg.clock_skew_leeway_secs)
+            .nbf(true)
             .algs(vec![Algorithm::RS256]);
 
-        // A-08: prefer the override (test-only) over the computed URL.
+        // Test override wins over computed URL so Wiremock-backed
+        // integration tests can point the validator at a fake tenant.
         let jwks_url = cfg
             .jwks_url_override
             .clone()
@@ -158,20 +157,23 @@ impl EntraValidator {
 }
 
 fn map_authorizer_err(e: jwt_authorizer::error::AuthError) -> AuthError {
+    use jsonwebtoken::errors::ErrorKind;
     use jwt_authorizer::error::AuthError as JE;
-    // jwt-authorizer 0.15 variant shapes (verified against installed crate 2026-04-20):
-    //   MissingToken()                 — unit with empty parens
-    //   InvalidToken(jsonwebtoken err) — tuple
-    //   InvalidKey(String)             — tuple
-    //   InvalidKeyAlg(Algorithm)       — tuple
-    //   InvalidKid(String)             — tuple
-    //   InvalidClaims()                — unit with empty parens
-    //   JwksRefreshError(String)       — tuple
-    //   JwksSerialisationError(err)    — tuple
-    //   NoAuthorizer() / NoAuthorizerLayer() — server misconfig (map to 503)
+    // No `_ =>` wildcard: a jwt-authorizer minor-version variant must trigger
+    // a compile-break so the auth surface is audited before rollout. Do not
+    // add a catch-all arm.
     match e {
         JE::MissingToken() => AuthError::MissingHeader,
-        JE::InvalidToken(_) => AuthError::InvalidToken,
+        // Split InvalidToken by inner jsonwebtoken ErrorKind so operators can
+        // distinguish expired-token spam (retry hint) from bad-signature spam
+        // (attack signal) via the `temporal_invalid` vs `invalid_token`
+        // metric labels.
+        JE::InvalidToken(err) => match err.kind() {
+            ErrorKind::ExpiredSignature | ErrorKind::ImmatureSignature => {
+                AuthError::TemporalInvalid
+            }
+            _ => AuthError::InvalidToken,
+        },
         JE::InvalidKey(_) => AuthError::InvalidToken,
         JE::InvalidKeyAlg(_) => AuthError::InvalidToken,
         JE::InvalidClaims() => AuthError::InvalidToken,

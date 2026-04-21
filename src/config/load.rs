@@ -54,6 +54,22 @@ pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     }
 }
 
+/// Resolve an `env:`/`secret:` reference (or literal) and fail-fast if an
+/// `env:` or `secret:` prefix is present but unresolvable. Use this for
+/// required-at-startup config values where a literal fallback would quietly
+/// produce malformed output downstream (e.g. a URL containing the literal
+/// string "env:ENTRA_TENANT_ID").
+fn resolve_required_ref(field: &str, value: &str) -> anyhow::Result<String> {
+    let is_reference = value.starts_with("env:") || value.starts_with("secret:");
+    match resolve_env_value(value) {
+        Some(v) => Ok(v),
+        None if is_reference => anyhow::bail!(
+            "{field} references {value} but the referenced env/secret could not be resolved"
+        ),
+        None => Ok(value.to_string()),
+    }
+}
+
 /// Resolve OpenAI's `base_url` from env, falling back to the provider default.
 ///
 /// Honors `OPENAI_API_BASE` (canonical OpenAI SDK var) first, then
@@ -2618,36 +2634,40 @@ impl Config {
 
         let bindings = validate_named_messaging_adapters(&messaging, bindings, strict_bindings)?;
 
-        let entra_auth = toml.api.auth.entra.as_ref().and_then(|e| {
-            if !e.enabled {
-                return None;
+        let entra_auth = match toml.api.auth.entra.as_ref() {
+            Some(e) if e.enabled => {
+                // Resolve env:/secret: references for fields that commonly come
+                // from operator environment injection. Unresolved references
+                // fail-fast at startup rather than booting with a literal
+                // "env:..." string that would produce a malformed JWKS URL and
+                // surface much later as a runtime 503.
+                let tenant_id = resolve_required_ref("[api.auth.entra].tenant_id", &e.tenant_id)?;
+                let audience = resolve_required_ref("[api.auth.entra].audience", &e.audience)?;
+                let spa_client_id = if e.spa_client_id.is_empty() {
+                    String::new()
+                } else {
+                    resolve_required_ref("[api.auth.entra].spa_client_id", &e.spa_client_id)?
+                };
+                Some(crate::auth::EntraAuthConfig {
+                    tenant_id: std::sync::Arc::from(tenant_id.as_str()),
+                    audience: std::sync::Arc::from(audience.as_str()),
+                    allowed_scopes: e.allowed_scopes.clone(),
+                    jwks_cache_ttl_secs: e.jwks_cache_ttl_secs,
+                    clock_skew_leeway_secs: e.clock_skew_leeway_secs,
+                    group_cache_ttl_secs: e.group_cache_ttl_secs,
+                    spa_client_id: std::sync::Arc::from(spa_client_id.as_str()),
+                    spa_scopes: e
+                        .spa_scopes
+                        .iter()
+                        .map(|s| std::sync::Arc::from(s.as_str()))
+                        .collect(),
+                    mock_mode: e.mock_mode,
+                    jwks_url_override: None,
+                    issuer_override: None,
+                })
             }
-            // Resolve env:/secret: references for fields that commonly come
-            // from operator environment injection. tenant_id and audience
-            // are GUIDs; allowing env resolution keeps config.toml clean in
-            // K8s ConfigMap + Secret deployments.
-            let tenant_id = resolve_env_value(&e.tenant_id).unwrap_or_else(|| e.tenant_id.clone());
-            let audience = resolve_env_value(&e.audience).unwrap_or_else(|| e.audience.clone());
-            let spa_client_id =
-                resolve_env_value(&e.spa_client_id).unwrap_or_else(|| e.spa_client_id.clone());
-            Some(crate::auth::EntraAuthConfig {
-                tenant_id: std::sync::Arc::from(tenant_id.as_str()),
-                audience: std::sync::Arc::from(audience.as_str()),
-                allowed_scopes: e.allowed_scopes.clone(),
-                jwks_cache_ttl_secs: e.jwks_cache_ttl_secs,
-                clock_skew_leeway_secs: e.clock_skew_leeway_secs,
-                group_cache_ttl_secs: e.group_cache_ttl_secs,
-                spa_client_id: std::sync::Arc::from(spa_client_id.as_str()),
-                spa_scopes: e
-                    .spa_scopes
-                    .iter()
-                    .map(|s| std::sync::Arc::from(s.as_str()))
-                    .collect(),
-                mock_mode: e.mock_mode,
-                jwks_url_override: None,
-                issuer_override: None,
-            })
-        });
+            _ => None,
+        };
 
         let api = ApiConfig {
             enabled: toml.api.enabled,
