@@ -104,10 +104,7 @@ async fn cannot_link_agents_owned_by_others() {
     let allowed = can_link_channel(&pool, &alice, "agent-a", "agent-b")
         .await
         .unwrap();
-    assert!(
-        !allowed,
-        "alice must not link to bob's personal agent"
-    );
+    assert!(!allowed, "alice must not link to bob's personal agent");
 }
 
 #[tokio::test]

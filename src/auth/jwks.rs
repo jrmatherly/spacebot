@@ -28,10 +28,8 @@ use std::sync::Arc;
 /// an [`AuthError`] on failure. The enum's variants map to HTTP status codes
 /// via [`AuthError::status`].
 pub trait JwtValidator: Send + Sync {
-    fn validate(
-        &self,
-        bearer: &str,
-    ) -> impl Future<Output = Result<AuthContext, AuthError>> + Send;
+    fn validate(&self, bearer: &str)
+    -> impl Future<Output = Result<AuthContext, AuthError>> + Send;
 }
 
 /// Dyn-compatible companion to [`JwtValidator`]. Blanket impl forwards every
