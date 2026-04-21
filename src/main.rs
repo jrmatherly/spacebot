@@ -1735,19 +1735,32 @@ async fn run(
                                 tracing::info!("Graph client wired (OBO ready)");
                             }
                             Err(error) => {
-                                tracing::warn!(
+                                tracing::error!(
                                     %error,
                                     "Graph client construction failed; group sync disabled",
                                 );
                             }
                         }
                     }
+                    // `NotFound` is the expected state on fresh deployments
+                    // before the operator runs `spacebot secrets set`. Other
+                    // variants (StoreLocked, decryption failures, transient
+                    // redb errors) are operational incidents and deserve
+                    // `error!` severity so they surface in PagerDuty.
+                    Err(spacebot::error::SecretsError::NotFound { .. }) => {
+                        tracing::info!(
+                            "ENTRA_GRAPH_CLIENT_SECRET not configured; Graph \
+                             client unwired. Set it via `spacebot secrets set \
+                             ENTRA_GRAPH_CLIENT_SECRET` and restart to enable \
+                             group sync and photo sync.",
+                        );
+                    }
                     Err(error) => {
-                        tracing::warn!(
+                        tracing::error!(
                             %error,
-                            "ENTRA_GRAPH_CLIENT_SECRET not found in secret store; \
-                             group sync and photo sync disabled. Set it via \
-                             `spacebot secrets set ENTRA_GRAPH_CLIENT_SECRET` and restart.",
+                            "secret store failed while reading \
+                             ENTRA_GRAPH_CLIENT_SECRET; Graph client unwired. \
+                             Operator attention required.",
                         );
                     }
                 },

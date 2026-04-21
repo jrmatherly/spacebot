@@ -160,7 +160,14 @@ pub async fn entra_auth_middleware(
                             )
                             .await
                             {
+                                let reason = classify_graph_sync_error(&error);
+                                #[cfg(feature = "metrics")]
+                                crate::telemetry::Metrics::global()
+                                    .auth_graph_sync_failures_total
+                                    .with_label_values(&["groups", reason])
+                                    .inc();
                                 tracing::warn!(
+                                    reason,
                                     %error,
                                     "group sync failed; team/org authz fail-closed",
                                 );
@@ -185,7 +192,14 @@ pub async fn entra_auth_middleware(
                             )
                             .await
                             {
+                                let reason = classify_graph_sync_error(&error);
+                                #[cfg(feature = "metrics")]
+                                crate::telemetry::Metrics::global()
+                                    .auth_graph_sync_failures_total
+                                    .with_label_values(&["photo", reason])
+                                    .inc();
                                 tracing::warn!(
+                                    reason,
                                     %error,
                                     "photo sync failed; SPA falls back to initials",
                                 );
@@ -210,13 +224,31 @@ pub async fn entra_auth_middleware(
                 && (ctx.groups_overage || !ctx.groups.is_empty())
             {
                 let key = ctx.principal_key();
-                let has_memberships: Option<i64> = sqlx::query_scalar(
+                let has_memberships: Option<i64> = match sqlx::query_scalar(
                     "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
                 )
                 .bind(&key)
                 .fetch_optional(&pool)
                 .await
-                .unwrap_or(None);
+                {
+                    Ok(v) => v,
+                    Err(error) => {
+                        // DB unavailable mid-request. Returning 202 here would
+                        // send the SPA into an infinite Retry-After loop
+                        // without logging the underlying cause. Fail closed
+                        // with 503 so the SPA can surface the real error.
+                        tracing::error!(
+                            principal_key = %key,
+                            %error,
+                            "race probe sqlx error; failing closed with 503",
+                        );
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({"error": "instance db unavailable"})),
+                        )
+                            .into_response();
+                    }
+                };
                 if has_memberships.is_none() {
                     #[cfg(feature = "metrics")]
                     crate::telemetry::Metrics::global()
@@ -405,4 +437,22 @@ pub async fn sync_user_photo_for_principal(
 
     crate::auth::repository::upsert_user_photo(pool, &principal_key, b64_opt.as_deref()).await?;
     Ok(())
+}
+
+/// Classify a Phase 3 Graph-sync error into a low-cardinality `reason` label
+/// for `auth_graph_sync_failures_total`. Walks the anyhow context chain via
+/// `downcast_ref` so wrapped errors surface their root cause. Keep the label
+/// set small (Prometheus cardinality) and stable (dashboards lock on these).
+fn classify_graph_sync_error(error: &anyhow::Error) -> &'static str {
+    if let Some(graph_err) = error.downcast_ref::<crate::auth::graph::GraphError>() {
+        return match graph_err {
+            crate::auth::graph::GraphError::OboFailed(_) => "obo_failed",
+            crate::auth::graph::GraphError::Status { .. } => "http_status",
+            crate::auth::graph::GraphError::Http(_) => "reqwest",
+        };
+    }
+    if error.downcast_ref::<sqlx::Error>().is_some() {
+        return "sqlx";
+    }
+    "other"
 }
