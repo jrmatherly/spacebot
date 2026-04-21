@@ -23,7 +23,7 @@ categories = ["email", "network-programming", "parser-implementations"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/djc/tokio-imap"
 [dependencies.nom]
-version = "5"
+version = "8"
 features = ["std"]
 default-features = false
 [dev-dependencies.assert_matches]
