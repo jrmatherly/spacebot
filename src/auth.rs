@@ -9,8 +9,13 @@ pub mod context;
 pub mod errors;
 pub mod jwks;
 pub mod middleware;
+pub mod principals;
 
 pub use config::EntraAuthConfig;
 pub use context::{AuthContext, PrincipalType};
 pub use errors::AuthError;
 pub use jwks::EntraValidator;
+pub use principals::{
+    ResourceOwnershipRecord, ServiceAccountRecord, TeamMembershipRecord, TeamRecord, UserRecord,
+    Visibility,
+};
