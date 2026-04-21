@@ -76,6 +76,12 @@ updates:
           - "storybook"
           - "@storybook/*"
           - "@chromatic-com/storybook"
+    # Pin @types/node to match the project's Node 24 policy. Major bumps
+    # (25.x, 26.x, …) must be proposed manually after the runtime Node
+    # version in .github/workflows/release.yml is bumped.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/spaceui/examples/showcase"
@@ -92,3 +98,9 @@ updates:
     commit-message:
       prefix: "deps(docs)"
     open-pull-requests-limit: 5
+    # Pin @types/node to match the project's Node 24 policy. Major bumps
+    # (25.x, 26.x, …) must be proposed manually after the runtime Node
+    # version in .github/workflows/release.yml is bumped.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
