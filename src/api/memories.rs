@@ -142,8 +142,43 @@ fn default_neighbor_depth() -> u32 {
 )]
 pub(super) async fn list_memories(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<MemoriesListQuery>,
 ) -> Result<Json<MemoriesListResponse>, StatusCode> {
+    // Phase 4 authz gate: read access to an agent's memories requires read
+    // access to the agent resource itself. Admins and LegacyStatic principals
+    // bypass (see `docs/design-docs/entra-role-permission-matrix.md`). Users
+    // who aren't the owner AND can't reach the agent via team/org visibility
+    // see 404 (matrix row: "Memory | read | no (404)" for non-owners).
+    //
+    // When the instance pool isn't attached (boot window, static-token
+    // deployments without the Phase 2 data model), the check is a no-op:
+    // there's no authz to enforce without the `resource_ownership` table.
+    // This preserves backward compatibility with Phase 2 deployments.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, agent_id = %query.agent_id, "authz check_read_with_audit failed");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            // Phase 5 replaces this with an `AuditAppender::append` call
+            // against the hash-chained audit log. For now, the tracing log
+            // is enough for operator-side visibility while Phase 5 is WIP.
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    }
+
     let searches = state.memory_searches.load();
     let memory_search = searches.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
     let store = memory_search.store();

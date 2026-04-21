@@ -423,6 +423,46 @@ impl ApiState {
         state
     }
 
+    /// Test-only constructor that returns an `ApiState` with an in-memory
+    /// instance-DB pool bound (migrations applied) and a [`MockValidator`]
+    /// installed on `entra_auth`. Integration tests under `tests/*.rs` use
+    /// this to exercise the middleware + handler authz path without a real
+    /// JWKS endpoint.
+    ///
+    /// Returns `(state, pool)`; the pool is shared with the state (the setter
+    /// clones it). Tests typically seed users + ownership rows on the returned
+    /// pool before exercising the router via `build_test_router_entra`.
+    ///
+    /// [`MockValidator`]: crate::auth::testing::MockValidator
+    #[doc(hidden)]
+    pub async fn new_test_state_with_mock_entra() -> (Arc<Self>, sqlx::SqlitePool) {
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let (provider_tx, _provider_rx) = mpsc::channel(16);
+        let (agent_tx, _agent_rx) = mpsc::channel(16);
+        let (agent_remove_tx, _agent_remove_rx) = mpsc::channel(16);
+        let (injection_tx, _injection_rx) = mpsc::channel(16);
+        let state =
+            Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("sqlite in-memory pool");
+        sqlx::migrate!("./migrations/global")
+            .run(&pool)
+            .await
+            .expect("global migrations apply cleanly");
+        state.set_instance_pool(pool.clone());
+
+        let mock: Arc<dyn crate::auth::jwks::DynJwtValidator> =
+            Arc::new(crate::auth::testing::MockValidator::new());
+        state.entra_auth.store(Arc::new(Some(mock)));
+
+        (Arc::new(state), pool)
+    }
+
     /// Register a channel's status block so the API can read snapshots.
     pub async fn register_channel_status(
         &self,
