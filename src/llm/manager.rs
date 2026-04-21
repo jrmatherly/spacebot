@@ -8,7 +8,7 @@
 //! `reload_config()` when config.toml changes, and all subsequent
 //! `get_api_key()` calls read the new values lock-free.
 
-use crate::auth::OAuthCredentials as AnthropicOAuthCredentials;
+use crate::anthropic_oauth::OAuthCredentials as AnthropicOAuthCredentials;
 use crate::config::{ApiType, LlmConfig, ProviderConfig};
 use crate::error::{LlmError, Result};
 use crate::github_copilot_auth::CopilotToken;
@@ -67,7 +67,7 @@ impl LlmManager {
 
     /// Set the instance directory and load any existing OAuth credentials.
     pub async fn set_instance_dir(&self, instance_dir: PathBuf) {
-        if let Ok(Some(creds)) = crate::auth::load_credentials(&instance_dir) {
+        if let Ok(Some(creds)) = crate::anthropic_oauth::load_credentials(&instance_dir) {
             tracing::info!("loaded Anthropic OAuth credentials from auth.json");
             *self.anthropic_oauth_credentials.write().await = Some(creds);
         }
@@ -98,7 +98,7 @@ impl LlmManager {
             .build()
             .with_context(|| "failed to build HTTP client")?;
 
-        let anthropic_oauth_credentials = match crate::auth::load_credentials(&instance_dir) {
+        let anthropic_oauth_credentials = match crate::anthropic_oauth::load_credentials(&instance_dir) {
             Ok(Some(creds)) => {
                 tracing::info!("loaded Anthropic OAuth credentials from auth.json");
                 Some(creds)
@@ -183,7 +183,7 @@ impl LlmManager {
             Ok(new_creds) => {
                 // Save to disk
                 if let Some(ref instance_dir) = self.instance_dir
-                    && let Err(error) = crate::auth::save_credentials(instance_dir, &new_creds)
+                    && let Err(error) = crate::anthropic_oauth::save_credentials(instance_dir, &new_creds)
                 {
                     tracing::warn!(%error, "failed to persist refreshed Anthropic OAuth credentials");
                 }

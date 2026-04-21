@@ -416,7 +416,7 @@ impl Config {
         }
 
         // OAuth credentials count as configured
-        if crate::auth::credentials_path(&instance_dir).exists()
+        if crate::anthropic_oauth::credentials_path(&instance_dir).exists()
             || crate::openai_auth::credentials_path(&instance_dir).exists()
         {
             return false;

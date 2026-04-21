@@ -439,12 +439,12 @@ name = "My OpenRouter"
 
         // Create an OAuth credentials file in the EnvGuard's temp dir
         let instance_dir = Config::default_instance_dir();
-        let creds = crate::auth::OAuthCredentials {
+        let creds = crate::anthropic_oauth::OAuthCredentials {
             access_token: "sk-ant-oat01-test".to_string(),
             refresh_token: "sk-ant-ort01-test".to_string(),
             expires_at: chrono::Utc::now().timestamp_millis() + 3_600_000,
         };
-        crate::auth::save_credentials(&instance_dir, &creds).expect("failed to save credentials");
+        crate::anthropic_oauth::save_credentials(&instance_dir, &creds).expect("failed to save credentials");
 
         assert!(!Config::needs_onboarding());
     }
