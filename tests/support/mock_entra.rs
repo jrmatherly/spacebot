@@ -36,8 +36,7 @@ impl MockTenant {
         let pkcs8 = private_key
             .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
             .expect("pkcs8 pem serialize");
-        let signing_key =
-            EncodingKey::from_rsa_pem(pkcs8.as_bytes()).expect("rsa encoding key");
+        let signing_key = EncodingKey::from_rsa_pem(pkcs8.as_bytes()).expect("rsa encoding key");
 
         // JWK `n` and `e` are base64url-unpadded encodings of modulus and
         // public exponent.
