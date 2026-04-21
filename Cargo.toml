@@ -22,6 +22,11 @@ rig = { version = "0.35", package = "rig-core", features = ["derive"] }
 # HTTP clients for LLM providers
 reqwest = { version = "0.13", features = ["json", "stream", "form", "query", "gzip"] }
 
+# Auth: Entra JWT validation with JWKS caching and OIDC discovery.
+jwt-authorizer = "0.15"
+# Required for Algorithm::RS256 (NOT re-exported by jwt-authorizer).
+jsonwebtoken = "9"
+
 # Databases
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
 lancedb = "0.27"
