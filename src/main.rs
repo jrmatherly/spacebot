@@ -3095,6 +3095,7 @@ async fn initialize_agents(
             working_memory,
             api_state: Some(api_state.clone()),
             wiki_store: Some(global_wiki_store.clone()),
+            auth_context: spacebot::auth::AuthContext::legacy_static(),
         };
 
         let agent = spacebot::Agent {

@@ -510,6 +510,7 @@ pub(super) async fn trigger_warmup(
                 working_memory,
                 api_state: None,
                 wiki_store: None,
+                auth_context: crate::auth::AuthContext::legacy_static(),
             };
             let mut logger = CortexLogger::new(sqlite_pool);
             if let Some(store) = notif_store_warmup {
@@ -943,6 +944,7 @@ pub async fn create_agent_internal(
         },
         api_state: Some(state.clone()),
         wiki_store: state.wiki_store.load().as_ref().clone(),
+        auth_context: crate::auth::AuthContext::legacy_static(),
     };
 
     let event_rx = event_tx.subscribe();
