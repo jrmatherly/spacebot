@@ -14,6 +14,7 @@ compile_error!(
 pub mod agent;
 pub mod anthropic_oauth;
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod conversation;
 pub mod cron;
