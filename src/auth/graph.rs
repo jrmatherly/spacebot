@@ -30,6 +30,10 @@ pub struct GraphConfig {
     pub web_api_client_secret: Arc<str>,
     /// Default `https://graph.microsoft.com/v1.0`. Override only for tests.
     pub graph_api_base: Arc<str>,
+    /// Default `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`.
+    /// Configurable so integration tests can point it at a Wiremock server
+    /// alongside the Graph stubs. `main.rs` constructs the production URL.
+    pub obo_token_endpoint: Arc<str>,
     pub request_timeout_secs: u64,
 }
 
@@ -75,10 +79,7 @@ impl GraphClient {
     /// OBO exchange serves both operations.
     #[tracing::instrument(skip(self, user_token))]
     async fn obo_exchange(&self, user_token: &str) -> Result<String, GraphError> {
-        let url = format!(
-            "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-            self.cfg.tenant_id
-        );
+        let url = self.cfg.obo_token_endpoint.as_ref();
         let params = [
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             ("client_id", self.cfg.web_api_client_id.as_ref()),
@@ -87,7 +88,7 @@ impl GraphClient {
             ("scope", "https://graph.microsoft.com/User.Read"),
             ("requested_token_use", "on_behalf_of"),
         ];
-        let res = self.http.post(&url).form(&params).send().await?;
+        let res = self.http.post(url).form(&params).send().await?;
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();

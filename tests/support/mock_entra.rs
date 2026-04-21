@@ -270,3 +270,71 @@ impl MockTenant {
         encode(&header, &claims, &self.signing_key).expect("jwt encode")
     }
 }
+
+/// Mount the OBO token-exchange stub. Returns a fixed `access_token` so
+/// downstream Graph stubs see a `Bearer` header but don't need to verify it.
+/// Phase 3 callers point `GraphConfig::obo_token_endpoint` at the URL
+/// returned by `obo_endpoint_url(&server)`.
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_obo_stub(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/oauth2/v2.0/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": "fake-graph-token",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Convenience: the URL Phase 3 should set as `GraphConfig::obo_token_endpoint`
+/// when wired against a Wiremock-backed `mount_obo_stub`.
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub fn obo_endpoint_url(server: &MockServer) -> String {
+    format!("{}/oauth2/v2.0/token", server.uri())
+}
+
+/// Mount Wiremock stubs for Phase 3 Graph endpoints. Serves
+/// `/me/getMemberObjects` (returns the GUIDs in `groups`) and a single
+/// `/groups?$filter=...` stub that returns ALL stubbed groups in one
+/// response body. This matches the chunked-filter wire shape the Phase 3
+/// `list_member_groups` implementation produces (one filter request per
+/// chunk of 15 IDs). Pass an empty vec to simulate "user is in no groups".
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_graph_stub(server: &MockServer, groups: Vec<(String, String)>) {
+    let ids: Vec<String> = groups.iter().map(|(id, _)| id.clone()).collect();
+
+    Mock::given(method("POST"))
+        .and(path("/me/getMemberObjects"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": ids })))
+        .mount(server)
+        .await;
+
+    let groups_json: Vec<serde_json::Value> = groups
+        .iter()
+        .map(|(id, name)| json!({ "id": id, "displayName": name }))
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/groups"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": groups_json })))
+        .mount(server)
+        .await;
+}
+
+/// Mount the `/me/photo/$value` binary-response stub. Pass `None` to
+/// simulate user-has-no-photo (Graph returns 404).
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_photo_stub(server: &MockServer, photo_bytes: Option<Vec<u8>>) {
+    let resp = match photo_bytes {
+        Some(bytes) => ResponseTemplate::new(200)
+            .set_body_bytes(bytes)
+            .insert_header("Content-Type", "image/jpeg"),
+        None => ResponseTemplate::new(404),
+    };
+    Mock::given(method("GET"))
+        .and(path("/me/photo/$value"))
+        .respond_with(resp)
+        .mount(server)
+        .await;
+}
