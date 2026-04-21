@@ -10,7 +10,7 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (215 .rs files)
+├── src/                           (223 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
@@ -33,13 +33,13 @@ spacebot/
 │   └── api-client/                - OpenAPI TypeScript client (code-gen from Rust spec; consumed by interface/)
 ├── docs/                           (38 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (48 SQL migrations: 41 flat per-agent + 7 instance-wide under global/, 2026-02 → 2026-04)
+├── migrations/                     (53 SQL migrations: 41 flat per-agent + 12 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
 ├── prompts/                        (91 Jinja2 system prompt templates)
 ├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (16 integration test files)
+└── tests/                          (17 integration test files)
 ```
 
 ---

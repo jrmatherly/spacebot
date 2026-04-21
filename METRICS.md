@@ -357,6 +357,24 @@ All metrics are prefixed with `spacebot_`. The registry uses a private `promethe
 | Instrumented in | `src/api/server.rs` — `api_auth_middleware`; `src/auth/middleware.rs` — `entra_auth_middleware` |
 | Description | Auth-middleware rejections. `branch` is `static_token` (Phase 0) or `entra_jwt` (Phase 1+, shipped 2026-04-20). `reason` is a machine-readable failure cause. Static-token path emits: `header_missing` (no `Authorization` header), `header_non_ascii` (header value is not valid UTF-8), `scheme_missing` (no `Bearer ` prefix), `token_mismatch` (bearer string did not match configured token). Entra JWT path emits: `missing_header`, `malformed_header` (non-UTF8 value or non-Bearer scheme), `invalid_token` (signature / issuer / audience / kid mismatch), `temporal_invalid` (expired or `nbf` in future), `jwks_unreachable` (503-class; JWKS fetch or server misconfig), `forbidden` (403-class; user missing required scope or service-principal missing any app role). Label strings are stable across releases per the `AuthError::metric_reason()` contract. |
 
+#### `spacebot_auth_upsert_failures_total`
+
+| Field | Value |
+|-------|-------|
+| Type | `IntCounterVec` |
+| Labels | `reason` |
+| Instrumented in | `src/auth/middleware.rs` — fire-and-forget user upsert on successful Entra auth |
+| Description | Post-auth user-row upsert failures (Phase 2, shipped 2026-04-21). The auth event itself succeeded; this counts the downstream `upsert_user_from_auth` call failing. Relevant for SOC 2 audit-trail completeness of principal records. `reason` is `invalid_principal_type` (a `PrincipalType::LegacyStatic` reached the Entra branch, which should never happen in practice) or `sqlx` (any underlying DB error — check the co-emitted `error!` log for context). |
+
+#### `spacebot_auth_upsert_skipped_total`
+
+| Field | Value |
+|-------|-------|
+| Type | `IntCounter` |
+| Labels | (none) |
+| Instrumented in | `src/auth/middleware.rs` — `instance_pool == None` branch |
+| Description | Post-auth user-row upsert skipped because `ApiState.instance_pool` is not attached. Expected to fire only during early-startup races where auth arrives before `set_instance_pool` ran. A persistent non-zero value indicates a startup-ordering regression. Phase 2, shipped 2026-04-21. |
+
 ### Cron
 
 #### `spacebot_cron_executions_total`
