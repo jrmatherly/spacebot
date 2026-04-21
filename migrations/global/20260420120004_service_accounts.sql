@@ -15,7 +15,7 @@ CREATE TABLE service_accounts (
     owner_principal_key TEXT NOT NULL REFERENCES users(principal_key) ON DELETE RESTRICT,
 
     -- Assigned app roles (JSON array of strings). Authoritative source for
-    -- this principal's roles; Graph doesn't enumerate app-role assignments
+    -- this principal's roles. Graph doesn't enumerate app-role assignments
     -- for service principals the same way as users.
     assigned_roles_json TEXT NOT NULL DEFAULT '[]',
 

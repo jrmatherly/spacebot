@@ -1,6 +1,6 @@
--- Team memberships. Populated by Phase 3's Graph reconciliation; read by
--- Phase 4's authz helpers. Overage-resolved memberships are cached here
--- per `group_cache_ttl_secs`.
+-- Team memberships. Populated by the Graph reconciliation loop (future phase).
+-- Read by the authz helpers (future phase). Overage-resolved memberships are
+-- cached here per `group_cache_ttl_secs`.
 
 CREATE TABLE team_memberships (
     principal_key TEXT NOT NULL REFERENCES users(principal_key) ON DELETE CASCADE,

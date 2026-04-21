@@ -41,7 +41,7 @@ fn make_ctx(tid: &str, oid: &str) -> AuthContext {
 #[tokio::test]
 async fn migrations_apply_cleanly() {
     let _pool = setup_pool().await;
-    // If we got here, 5 new migrations + prior ones applied without error.
+    // If we got here, all global migrations applied without error.
 }
 
 #[tokio::test]

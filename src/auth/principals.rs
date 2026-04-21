@@ -1,5 +1,6 @@
-//! Record types for the Phase 2 authz data model. One-to-one mapping with
-//! SQL tables; no business logic here.
+//! Record types for the Phase 2 authz data model. Kept 1:1 with SQL tables
+//! so `sqlx::FromRow` derivation is trivial. Business logic lives in
+//! `repository.rs`.
 
 use serde::{Deserialize, Serialize};
 

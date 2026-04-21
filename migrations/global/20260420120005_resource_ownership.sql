@@ -7,7 +7,7 @@ CREATE TABLE resource_ownership (
     -- Resource kind: 'agent' | 'memory' | 'task' | 'wiki_page' | 'channel' |
     -- 'worker' | 'cron_job' | 'cortex_chat_thread' | 'portal_conversation'
     -- | 'project' | 'notification' | 'saved_attachment'.
-    -- Add new kinds via migration; never reuse a kind string.
+    -- Add new kinds via migration. Never reuse a kind string.
     resource_type TEXT NOT NULL,
 
     -- Resource's native ID. The interpretation depends on resource_type;
@@ -21,8 +21,9 @@ CREATE TABLE resource_ownership (
     -- The principal who owns this resource. References users.principal_key.
     owner_principal_key TEXT NOT NULL REFERENCES users(principal_key) ON DELETE RESTRICT,
 
-    -- Sharing scope: 'personal' | 'team' | 'org'. Rename 'global' → 'org'
-    -- from research §12 A-3 is permanent.
+    -- Sharing scope: 'personal' | 'team' | 'org'. The legacy 'global' value
+    -- from the research draft is NOT accepted; use 'org' for instance-wide
+    -- visibility.
     visibility TEXT NOT NULL DEFAULT 'personal',
 
     -- When visibility = 'team', the team it's shared with.

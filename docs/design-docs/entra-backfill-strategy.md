@@ -16,8 +16,8 @@ data loss from the user's perspective.
    suggested "backfill to system-user + org visibility"; the security review
    (§12 S-I3) vetoed this as a privacy regression.
 
-2. **"Not-yet-owned" is a valid state.** Phase 4's `require_read_access`
-   helper treats `resource_ownership` miss as:
+2. **"Not-yet-owned" is a valid state.** Phase 4's read-access helper
+   treats `resource_ownership` miss as:
    - Read: allowed ONLY to principals with role `SpacebotAdmin`.
    - Write: denied unconditionally. Admin must claim or assign the resource
      first.
