@@ -272,18 +272,40 @@ pub async fn entra_auth_middleware(
 ///
 /// `#[doc(hidden)] pub` so integration tests in `tests/*.rs` (separate
 /// crates without `cfg(test)` visibility) can drive it directly.
-/// `_ttl_secs` plumbed for Task 3.4's TTL-skip logic.
+/// `ttl_secs` short-circuits the Graph call when persisted memberships
+/// are younger than the configured TTL (default 300s).
 #[doc(hidden)]
 pub async fn sync_groups_for_principal(
     pool: &sqlx::SqlitePool,
     graph: &crate::auth::graph::GraphClient,
     ctx: &crate::auth::AuthContext,
     user_token: &str,
-    _ttl_secs: u64,
+    ttl_secs: u64,
 ) -> anyhow::Result<()> {
     use crate::auth::repository::upsert_team;
 
     let principal_key = ctx.principal_key();
+
+    // Cache TTL skip: if any existing membership row is younger than the
+    // configured TTL, treat the cached set as authoritative and don't
+    // hammer Graph on every request. MIN(observed_at) is the oldest of
+    // the persisted rows; if it is fresh, all of them are.
+    let oldest: Option<String> = sqlx::query_scalar(
+        "SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = ?",
+    )
+    .bind(&principal_key)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    if let Some(ts) = oldest {
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts) {
+            let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+            if age < chrono::Duration::seconds(ttl_secs as i64) {
+                return Ok(());
+            }
+        }
+    }
 
     let groups = if ctx.groups_overage || ctx.groups.is_empty() {
         graph.list_member_groups(user_token).await?
