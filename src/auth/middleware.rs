@@ -62,6 +62,18 @@ pub async fn entra_auth_middleware(
 
     match result {
         Ok(ctx) => {
+            // Fire-and-forget user upsert. The request itself proceeds
+            // regardless; upsert failures are logged for operational audit.
+            if let Some(pool) = state.instance_pool.load().as_ref().clone() {
+                let ctx_for_task = ctx.clone();
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        crate::auth::repository::upsert_user_from_auth(&pool, &ctx_for_task).await
+                    {
+                        tracing::warn!(?e, "upsert_user_from_auth failed");
+                    }
+                });
+            }
             request.extensions_mut().insert(ctx);
             next.run(request).await
         }

@@ -68,9 +68,7 @@ async fn upsert_user_is_idempotent() {
 #[tokio::test]
 async fn team_upsert_keys_on_external_id() {
     let pool = setup_pool().await;
-    let t1 = upsert_team(&pool, "grp-111", "Platform")
-        .await
-        .expect("t1");
+    let t1 = upsert_team(&pool, "grp-111", "Platform").await.expect("t1");
     let t2 = upsert_team(&pool, "grp-111", "Platform (renamed)")
         .await
         .expect("t2");

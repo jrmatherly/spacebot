@@ -1655,6 +1655,7 @@ async fn run(
     api_state.set_task_store(global_task_store.clone());
     api_state.set_wiki_store(global_wiki_store.clone());
     api_state.set_notification_store(global_notification_store.clone());
+    api_state.set_instance_pool(instance_pool.clone());
     let api_state = Arc::new(api_state);
 
     // Keep the secrets API available in setup mode so encrypted stores can be
