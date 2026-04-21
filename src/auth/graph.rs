@@ -1,14 +1,17 @@
 //! Microsoft Graph API client for group resolution and user photo fetch.
-//! Handles JWT `groups`-claim overage (SPA 6 / JWT 200 thresholds per
-//! research §12 E-2) and the A-19 photo cache refresh.
+//! Re-resolves transitive memberships via `/me/getMemberObjects` when the
+//! JWT signals overage (the `groups_overage` bit on `AuthContext`; the
+//! thresholds that trigger overage are enforced by Entra, not here). Also
+//! handles the A-19 user photo cache refresh via `/me/photo/$value`.
 //!
 //! Permission model: delegated `User.Read` via OBO. One scope covers both
-//! `/me/getMemberObjects` (Task 3.1 decision) and `/me/photo/$value` (A-19).
-//! See `docs/design-docs/entra-app-registrations.md` § "Graph API permissions".
+//! endpoints. See `docs/design-docs/entra-app-registrations.md` § "Graph
+//! API permissions".
 
 use reqwest::{Client, header};
 use serde::Deserialize;
 
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,15 +21,20 @@ pub enum GraphError {
     Http(#[from] reqwest::Error),
     #[error("graph returned {status}: {body}")]
     Status { status: u16, body: String },
-    #[error("OBO token exchange failed: {0}")]
-    OboFailed(String),
+    /// OBO token exchange rejected. `status` is the HTTP status from
+    /// `login.microsoftonline.com`; callers use it to distinguish retryable
+    /// (5xx, 429) from terminal (400, 401 invalid_grant) failures.
+    #[error("OBO token exchange failed with {status}: {body}")]
+    OboFailed { status: u16, body: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GraphConfig {
     pub tenant_id: Arc<str>,
     pub web_api_client_id: Arc<str>,
-    /// Resolved from the secret store at startup. Never logged.
+    /// Resolved from the secret store at startup. The manual `Debug` impl
+    /// below redacts this field so any accidental `dbg!`, tracing event,
+    /// or panic-payload dump cannot leak the secret.
     pub web_api_client_secret: Arc<str>,
     /// Default `https://graph.microsoft.com/v1.0`. Override only for tests.
     pub graph_api_base: Arc<str>,
@@ -35,6 +43,22 @@ pub struct GraphConfig {
     /// alongside the Graph stubs. `main.rs` constructs the production URL.
     pub obo_token_endpoint: Arc<str>,
     pub request_timeout_secs: u64,
+}
+
+impl fmt::Debug for GraphConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Mirrors the pattern used by `SettingsStore`, `SendAgentMessageTool`,
+        // etc. — omit secret-bearing fields via `finish_non_exhaustive` so
+        // a reader can still tell this is a `GraphConfig` without exposing
+        // the credential.
+        f.debug_struct("GraphConfig")
+            .field("tenant_id", &self.tenant_id)
+            .field("web_api_client_id", &self.web_api_client_id)
+            .field("graph_api_base", &self.graph_api_base)
+            .field("obo_token_endpoint", &self.obo_token_endpoint)
+            .field("request_timeout_secs", &self.request_timeout_secs)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug)]
@@ -75,8 +99,10 @@ impl GraphClient {
     ///
     /// Scope: `User.Read`. Least-privileged delegated permission that covers
     /// both `/me/getMemberObjects` (signed-in-user transitive memberships,
-    /// Task 3.1 decision) and `/me/photo/$value` (A-19 photo fetch). A single
-    /// OBO exchange serves both operations.
+    /// Task 3.1 decision) and `/me/photo/$value` (A-19 photo fetch). The
+    /// scope is shared across both operations; each call performs its own
+    /// OBO exchange because the resulting Graph tokens are short-lived and
+    /// not cached. A per-request token cache is a Phase 10 hardening item.
     #[tracing::instrument(skip(self, user_token))]
     async fn obo_exchange(&self, user_token: &str) -> Result<String, GraphError> {
         let url = self.cfg.obo_token_endpoint.as_ref();
@@ -96,7 +122,10 @@ impl GraphClient {
                 graph.obo.status = %status,
                 "OBO token exchange failed",
             );
-            return Err(GraphError::OboFailed(format!("{status} {body}")));
+            return Err(GraphError::OboFailed {
+                status: status.as_u16(),
+                body,
+            });
         }
         let token: OboTokenResponse = res.json().await?;
         Ok(token.access_token)

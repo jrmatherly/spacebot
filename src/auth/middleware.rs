@@ -140,14 +140,21 @@ pub async fn entra_auth_middleware(
                         .map(|v| v.config().group_cache_ttl_secs)
                         .unwrap_or(300);
 
+                    // Pre-compute principal_key once so both spawns carry it
+                    // inline on their `warn!` sites. Tracing spans already
+                    // carry it, but inline attribution lets unstructured log
+                    // tails attribute a single user's sync failures directly.
+                    let principal_key_for_spawns = ctx.principal_key();
+
                     // Group sync (overage resolution + team_memberships persist).
                     let group_pool = pool.clone();
                     let group_graph = Arc::clone(&graph);
                     let group_token = user_token.clone();
                     let group_ctx = ctx.clone();
+                    let group_principal_key = principal_key_for_spawns.clone();
                     let group_span = tracing::info_span!(
                         "auth.sync_groups",
-                        principal_key = %ctx.principal_key(),
+                        principal_key = %principal_key_for_spawns,
                     );
                     tokio::spawn(
                         async move {
@@ -167,6 +174,7 @@ pub async fn entra_auth_middleware(
                                     .with_label_values(&["groups", reason])
                                     .inc();
                                 tracing::warn!(
+                                    principal_key = %group_principal_key,
                                     reason,
                                     %error,
                                     "group sync failed; team/org authz fail-closed",
@@ -178,9 +186,10 @@ pub async fn entra_auth_middleware(
 
                     // A-19 photo sync. Same OBO scope. Weekly TTL inside helper.
                     let photo_ctx = ctx.clone();
+                    let photo_principal_key = principal_key_for_spawns.clone();
                     let photo_span = tracing::info_span!(
                         "auth.sync_photo",
-                        principal_key = %ctx.principal_key(),
+                        principal_key = %principal_key_for_spawns,
                     );
                     tokio::spawn(
                         async move {
@@ -199,6 +208,7 @@ pub async fn entra_auth_middleware(
                                     .with_label_values(&["photo", reason])
                                     .inc();
                                 tracing::warn!(
+                                    principal_key = %photo_principal_key,
                                     reason,
                                     %error,
                                     "photo sync failed; SPA falls back to initials",
@@ -446,7 +456,7 @@ pub async fn sync_user_photo_for_principal(
 fn classify_graph_sync_error(error: &anyhow::Error) -> &'static str {
     if let Some(graph_err) = error.downcast_ref::<crate::auth::graph::GraphError>() {
         return match graph_err {
-            crate::auth::graph::GraphError::OboFailed(_) => "obo_failed",
+            crate::auth::graph::GraphError::OboFailed { .. } => "obo_failed",
             crate::auth::graph::GraphError::Status { .. } => "http_status",
             crate::auth::graph::GraphError::Http(_) => "reqwest",
         };
