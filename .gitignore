@@ -68,3 +68,10 @@ PROJECT-STATUS.md
 # Docker Compose
 deploy/docker/.env
 deploy/docker/data/
+
+# Graphify (opt-in knowledge graph tool — see .scratchpad/completed/2026-04-21-graphify-research.md)
+# Ignore all graphify outputs. GRAPH_REPORT.md.keep is an intentional escape
+# hatch for milestone snapshots — copy GRAPH_REPORT.md to GRAPH_REPORT.md.keep
+# (token header stripped via scripts/graphify-rebuild.sh --snapshot) to commit.
+graphify-out/
+!graphify-out/GRAPH_REPORT.md.keep
