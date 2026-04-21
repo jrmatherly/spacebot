@@ -10,6 +10,16 @@
             "statusMessage": "Formatting Rust files"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\"file_path\":\\s*\"[^\"]*/src/api/[^\"]*\\.rs\"'; then OUT=$(just check-typegen 2>&1); RC=$?; if [ $RC -ne 0 ]; then echo \"⚠️  typegen drift detected after src/api/*.rs edit. Run 'just typegen' and commit packages/api-client/src/schema.d.ts alongside your handler change.\" >&2; echo \"$OUT\" | tail -10 >&2; exit 2; fi; fi",
+            "statusMessage": "Checking OpenAPI typegen drift"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -28,6 +38,15 @@
           {
             "type": "command",
             "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'packages/api-client/src/schema.d.ts'; then echo '{\"decision\": \"block\", \"reason\": \"schema.d.ts is generated output. Modify src/api/**/*.rs utoipa annotations, then run `just typegen` to regenerate.\"}'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\"file_path\":\\s*\"[^\"]*(/\\.env($|\\.)|secrets\\.redb|\\.keychain-access|\\.github-token|\\.cargo/credentials)'; then echo '{\"decision\": \"block\", \"reason\": \"This file holds secrets. Edit refused. For .env values, edit .env.example and document the variable. For runtime secrets use `spacebot secrets` CLI or the OS Keychain UI. secrets.redb is the encrypted store; never hand-edit.\"}'; fi"
           }
         ]
       }

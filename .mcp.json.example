@@ -22,7 +22,14 @@
     "  - chrome-devtools     — user-scoped, global install",
     "  - playwright          — user-scoped, global install",
     "",
-    "  Only servers that are missing or should be team-shared belong in THIS file."
+    "  Only servers that are missing or should be team-shared belong in THIS file.",
+    "",
+    "PROMOTED-TO-TEAM-SHARED:",
+    "  - microsoft-docs      — added 2026-04-21 as part of the Entra ID rollout (Phase 3",
+    "                          depends on Microsoft Graph docs; Phase 6 depends on MSAL.js",
+    "                          docs). Previously user-scoped via the microsoft-docs plugin.",
+    "                          Keep the plugin install too; this file just makes it",
+    "                          resolvable inside agents that don't inherit user-scoped MCP."
   ],
 
   "mcpServers": {
@@ -35,6 +42,14 @@
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
+    },
+
+    "microsoft-docs": {
+      "_purpose": "Authoritative Microsoft Learn + Azure SDK docs. Covers Microsoft Graph (Entra Phase 3's @odata.nextLink pagination per A-11, /me/photo/$value per A-19), MSAL.js v5 (Phase 6 cacheLocation gotchas per A-16/A-17, /api/me endpoint contract per A-18), Tauri OAuth redirect URI rules (Phase 8 IP-literal requirement), Conditional Access semantics.",
+      "_why_team_shared": "The Entra rollout (Phases 3-10) depends on Microsoft Graph + MSAL.js correctness. A user-scoped plugin install drifts across machines and agent runs. Team-sharing via .mcp.json guarantees every contributor and CI run hits the same docs surface.",
+      "_prerequisites": "None. Serves public Microsoft Learn content. No auth, no API key.",
+      "command": "npx",
+      "args": ["-y", "@microsoft/mcp-docs"]
     },
 
     "_disabled_postgres": {
