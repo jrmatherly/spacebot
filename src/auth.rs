@@ -13,6 +13,7 @@ pub mod jwks;
 pub mod middleware;
 pub mod principals;
 pub mod repository;
+pub mod roles;
 
 pub use config::EntraAuthConfig;
 pub use context::{AuthContext, PrincipalType};
@@ -22,3 +23,4 @@ pub use principals::{
     ResourceOwnershipRecord, ServiceAccountRecord, TeamMembershipRecord, TeamRecord, UserRecord,
     Visibility,
 };
+pub use roles::{ROLE_ADMIN, ROLE_SERVICE, ROLE_USER, is_admin, require_role};
