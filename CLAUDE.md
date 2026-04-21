@@ -67,6 +67,20 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 
 `packages/api-client/src/schema.d.ts` is **generated** and hook-blocked from hand edits. Modify `src/api/**/*.rs` utoipa annotations, then run `just typegen`.
 
+## Graphify (opt-in)
+
+Graphify is a local knowledge-graph tool installed per-developer via `pipx install graphifyy`. It is not wired into any CI, hook, or automatic workflow. Use it when a semantic cross-document question would benefit from Leiden clustering over design docs, RFCs, and screenshots. For structural Rust code questions, use the existing `code-review-graph` MCP instead.
+
+Three entry points, all opt-in:
+
+```
+just graphify-rebuild docs/design-docs/   # build directed graph for design docs
+just graphify-query "<question>"          # query the built graph
+just graphify-clean                       # drop graphify-out/ entirely
+```
+
+Full rationale, cost sizing, integration decisions, and the cross-project audit live in `.scratchpad/completed/2026-04-21-graphify-research.md`. `.graphifyignore` at the repo root governs what gets ingested. Do not remove `node_modules/` or `spacedrive/` from that list without reading the research doc first.
+
 ## Reference Docs
 
 - `RUST_STYLE_GUIDE.md` — Full Rust coding conventions
