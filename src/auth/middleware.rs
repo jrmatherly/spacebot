@@ -56,6 +56,11 @@ pub async fn entra_auth_middleware(
             },
         };
 
+    // Clone the bearer before `validator.validate` consumes it. The OBO
+    // flow in Phase 3's group-sync spawn needs the original user token
+    // (assertion in the OAuth2 OBO grant), not the parsed AuthContext.
+    let bearer_token: Option<String> = bearer_result.as_ref().ok().cloned();
+
     let result = match bearer_result {
         Ok(token) => validator.validate(&token).await,
         Err(err) => Err(err),
@@ -113,6 +118,51 @@ pub async fn entra_auth_middleware(
                      user row upsert skipped",
                 );
             }
+
+            // Phase 3: resolve Graph group memberships when overage is set
+            // OR sync claim-provided groups. Skipped silently when Graph
+            // is unwired (deployments without ENTRA_GRAPH_CLIENT_SECRET).
+            // A-11: pagination lives inside `list_member_groups` for the
+            // /groups?$filter lookup. `getMemberObjects` itself does not
+            // paginate (OData action).
+            let graph_guard = state.graph_client.load();
+            if let Some(graph) = graph_guard.as_ref().as_ref().map(Arc::clone) {
+                let pool_opt = state.instance_pool.load().as_ref().clone();
+                if let (Some(pool), Some(user_token)) = (pool_opt, bearer_token.clone()) {
+                    let ctx_for_task = ctx.clone();
+                    let ttl_secs = state
+                        .entra_auth
+                        .load()
+                        .as_ref()
+                        .as_ref()
+                        .map(|v| v.config().group_cache_ttl_secs)
+                        .unwrap_or(300);
+                    let sync_span = tracing::info_span!(
+                        "auth.sync_groups",
+                        principal_key = %ctx.principal_key(),
+                    );
+                    tokio::spawn(
+                        async move {
+                            if let Err(error) = sync_groups_for_principal(
+                                &pool,
+                                &graph,
+                                &ctx_for_task,
+                                &user_token,
+                                ttl_secs,
+                            )
+                            .await
+                            {
+                                tracing::warn!(
+                                    %error,
+                                    "group sync failed; team/org authz fail-closed",
+                                );
+                            }
+                        }
+                        .instrument(sync_span),
+                    );
+                }
+            }
+
             request.extensions_mut().insert(ctx);
             next.run(request).await
         }
@@ -130,4 +180,73 @@ pub async fn entra_auth_middleware(
             (err.status(), Json(json!({"error": err.to_string()}))).into_response()
         }
     }
+}
+
+/// Resolve group memberships for an authenticated principal and persist
+/// them into `team_memberships`. Called from `entra_auth_middleware` as a
+/// fire-and-forget spawn after successful auth.
+///
+/// Behaviour:
+/// - When `ctx.groups_overage` is true, calls Graph `/me/getMemberObjects`
+///   to enumerate transitive memberships.
+/// - Otherwise, uses the `groups` claim already on the JWT (no Graph call).
+/// - Replaces all rows for `principal_key` (delete-and-insert) so revoked
+///   memberships propagate.
+///
+/// `#[doc(hidden)] pub` so integration tests in `tests/*.rs` (separate
+/// crates without `cfg(test)` visibility) can drive it directly.
+/// `_ttl_secs` plumbed for Task 3.4's TTL-skip logic.
+#[doc(hidden)]
+pub async fn sync_groups_for_principal(
+    pool: &sqlx::SqlitePool,
+    graph: &crate::auth::graph::GraphClient,
+    ctx: &crate::auth::AuthContext,
+    user_token: &str,
+    _ttl_secs: u64,
+) -> anyhow::Result<()> {
+    use crate::auth::repository::upsert_team;
+
+    let principal_key = ctx.principal_key();
+
+    let groups = if ctx.groups_overage || ctx.groups.is_empty() {
+        graph.list_member_groups(user_token).await?
+    } else {
+        ctx.groups
+            .iter()
+            .map(|g| crate::auth::graph::GraphGroup {
+                id: g.to_string(),
+                display_name: None,
+            })
+            .collect()
+    };
+
+    sqlx::query("DELETE FROM team_memberships WHERE principal_key = ?")
+        .bind(&principal_key)
+        .execute(pool)
+        .await?;
+
+    let source = if ctx.groups_overage {
+        "graph_overage"
+    } else {
+        "token_claim"
+    };
+    for group in groups {
+        let display = group.display_name.as_deref().unwrap_or("(unnamed)");
+        let team = upsert_team(pool, &group.id, display).await?;
+        sqlx::query(
+            r#"
+            INSERT INTO team_memberships (principal_key, team_id, source)
+            VALUES (?, ?, ?)
+            ON CONFLICT(principal_key, team_id) DO UPDATE SET
+                observed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                source = excluded.source
+            "#,
+        )
+        .bind(&principal_key)
+        .bind(&team.id)
+        .bind(source)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }

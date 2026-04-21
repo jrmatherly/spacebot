@@ -1703,10 +1703,57 @@ async fn run(
                 tenant_id = %entra_cfg.tenant_id,
                 "initializing Entra JWT validator"
             );
-            let validator = spacebot::auth::EntraValidator::new(entra_cfg)
+            let validator = spacebot::auth::EntraValidator::new(entra_cfg.clone())
                 .await
                 .context("initialize Entra JWT validator")?;
             api_state.set_entra_auth(Arc::new(validator));
+
+            // Phase 3: Microsoft Graph client for group resolution and
+            // user photo fetch via OBO. Optional. If the secrets store is
+            // unavailable or the client secret is missing, Graph stays
+            // unwired and the middleware skips group/photo sync without
+            // erroring. Operators see a warning so misconfiguration is
+            // visible in logs.
+            match &bootstrapped_store {
+                Some(store) => match store.get("ENTRA_GRAPH_CLIENT_SECRET") {
+                    Ok(secret) => {
+                        let graph_cfg = spacebot::auth::graph::GraphConfig {
+                            tenant_id: entra_cfg.tenant_id.clone(),
+                            web_api_client_id: entra_cfg.audience.clone(),
+                            web_api_client_secret: Arc::from(secret.expose()),
+                            graph_api_base: Arc::from(
+                                "https://graph.microsoft.com/v1.0",
+                            ),
+                            request_timeout_secs: 30,
+                        };
+                        match spacebot::auth::graph::GraphClient::new(graph_cfg) {
+                            Ok(client) => {
+                                api_state.set_graph_client(Arc::new(client));
+                                tracing::info!("Graph client wired (OBO ready)");
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    %error,
+                                    "Graph client construction failed; group sync disabled",
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            "ENTRA_GRAPH_CLIENT_SECRET not found in secret store; \
+                             group sync and photo sync disabled. Set it via \
+                             `spacebot secrets set ENTRA_GRAPH_CLIENT_SECRET` and restart.",
+                        );
+                    }
+                },
+                None => {
+                    tracing::warn!(
+                        "secrets store unavailable; Graph client cannot be wired"
+                    );
+                }
+            }
         }
 
         // IPv6 addresses need brackets when combined with port: [::]:19898
