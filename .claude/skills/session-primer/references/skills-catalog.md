@@ -1,6 +1,6 @@
 # Skills Catalog
 
-The 23 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
+The 27 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
 
 ## Tier 1: Core Architecture Skills
 
@@ -44,6 +44,18 @@ These encode deep domain knowledge. Activate when working on the relevant subsys
 - AI components — ToolCall, MessageBubble, ChatComposer, TaskRow, TaskDetail
 - Integration — Vite (local HMR), Next.js, React Native/NativeWind
 - Conventions — bun only, TypeScript strict, forwardRef, CVA for variants
+
+### api-handler-add
+**Trigger:** Adding a new REST route under `src/api/`, or modifying an existing handler that changes request/response types.
+
+**Covers:**
+- Extractor order (`State` → auth → `Path` → `Query` → `Json`)
+- `#[derive(utoipa::ToSchema)]` on request/response types
+- `#[utoipa::path(...)]` annotation shape
+- Router wire-up + `utoipa::OpenApi` registration in `src/api/server.rs`
+- `just typegen` + `just check-typegen` verification loop
+- Error handling via `Result<Json<T>, StatusCode>` (no custom `ApiError` enum)
+- Canonical rule: `.claude/rules/api-handler.md`
 
 ---
 
@@ -114,7 +126,16 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 **Trigger:** "update dependencies", "check for updates", "audit deps"
 - Two modes: safe (semver-compatible) and upgrade (breaking changes)
 - Covers Rust (`cargo update/audit`), frontend (`bun update/audit`), docs
-- Known constraints: protobuf pinned, fumadocs version guard
+- Known constraints: protobuf pinned, fumadocs version guard, fastembed exact-pinned to 5.13.2 (hf-hub 0.5 regression)
+
+### entra-phase-wrap
+**Trigger:** Close out an Entra ID rollout phase — user-invocable only (runs destructive git operations).
+- Squash-merges the phase PR via `gh pr merge --squash --delete-branch`
+- Fetches + prunes stale remote-tracking refs locally
+- Creates `.scratchpad/session-primer/phase-{N+1}-resume.md` from the current-phase template
+- Phase 10 terminal variant creates `entra-rollout-complete.md` retrospective instead
+- Pre-conditions: CI green, `claude-review` zero findings, no uncommitted work
+- Pairs with the per-phase "Session-primer handoff" task documented in `.scratchpad/plans/entraid-auth/phase-*.md`
 
 ---
 
@@ -166,6 +187,21 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Catches the "bare `#[tokio::test]` + `BatchSpanProcessor`" deadlock class before a 20+ minute rebuild discovers it
 - Prescribes `#[tokio::test(flavor = "multi_thread")]` for tests whose code-under-test spawns background tasks (OTLP exporters, LanceDB indexers)
 - Referenced from root `CLAUDE.md:21` as the canonical reference for this class of hang
+
+### target-sweep-guard
+**Trigger:** Storage-pressure checkpoints — after ~10 compile cycles, before `just gate-pr` when `target/` is bloated, after a phase squash-merges, or when `du -sh target/` reports > 40 GB.
+- Checks `target/` size, runs `just sweep-target` if over threshold (default 40 GB)
+- Suggests `just clean-all` as nuclear next step if sweep didn't reclaim enough
+- Pairs with the storage-discipline sections in `.scratchpad/plans/entraid-auth/phase-*.md`
+- `--force` flag sweeps regardless of size; numeric argument overrides threshold
+
+### writing-guide-scan
+**Trigger:** Before commit during session-sync, docs-audit, or phase-wrap workflows. User-invocable only.
+- Extends `.claude/rules/writing-guide.md` regex patterns to cover `//!`, `///`, and `--` comment styles (markdown-only coverage is insufficient)
+- Default mode: em-dashes in prose, semicolons in prose, Phase-number drift (e.g., `Phase 3's reconciliation`)
+- `--strict` mode: also flags "Not X. Not Y." openers, "This isn't X, it's Y", generic improvement claims
+- Scope defaults to staged files; accepts explicit paths
+- Paired with the PostToolUse hook in `.claude/settings.json` that does passive per-edit advisory
 
 ### session-primer
 **Trigger:** Start of every new session, "prime", "bootstrap", "get up to speed", "new session"
