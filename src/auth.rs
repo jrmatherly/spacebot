@@ -20,7 +20,7 @@ pub use config::EntraAuthConfig;
 pub use context::{AuthContext, PrincipalType};
 pub use errors::AuthError;
 pub use jwks::EntraValidator;
-pub use policy::{Access, DenyReason, check_read, check_read_with_audit, check_write};
+pub use policy::{Access, DenyReason, can_link_channel, check_read, check_read_with_audit, check_write};
 pub use principals::{
     ResourceOwnershipRecord, ServiceAccountRecord, TeamMembershipRecord, TeamRecord, UserRecord,
     Visibility,

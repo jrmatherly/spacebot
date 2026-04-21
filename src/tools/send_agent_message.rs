@@ -177,6 +177,12 @@ impl Tool for SendAgentMessageTool {
             ))
         })?;
 
+        // TODO(phase-4 PR 2): call crate::auth::can_link_channel(&pool, ctx,
+        // &self.agent_id, &target_agent_id).await before the link lookup.
+        // Requires threading the instance_pool + per-turn AuthContext into
+        // SendAgentMessageTool (currently neither is available here).
+        // The helper + its 4 tests landed with the policy module in PR 1.
+
         // Look up the link between sending agent and target
         let links = self.links.load();
         let link = crate::links::find_link_between(&links, &self.agent_id, &target_agent_id)

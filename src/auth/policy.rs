@@ -180,6 +180,22 @@ pub async fn check_read_with_audit(
     Ok((decision, admin_override))
 }
 
+/// Cross-agent link policy: the acting principal must have read access to
+/// both the calling agent and the peer agent. Admin/system/legacy-static
+/// bypass applies because they bypass [`check_read`]. Returns `true` when
+/// the link is allowed. Call sites on deny should drop the routed message
+/// and log at `warn!` with the actor principal key.
+pub async fn can_link_channel(
+    pool: &SqlitePool,
+    ctx: &AuthContext,
+    self_agent_id: &str,
+    peer_agent_id: &str,
+) -> anyhow::Result<bool> {
+    let a = check_read(pool, ctx, "agent", self_agent_id).await?;
+    let b = check_read(pool, ctx, "agent", peer_agent_id).await?;
+    Ok(a.is_allowed() && b.is_allowed())
+}
+
 /// Decide write access to a resource. Stricter than read: team-visibility
 /// resources are read-shared but writable only by the owner (and admins).
 pub async fn check_write(
