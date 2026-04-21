@@ -8,6 +8,7 @@ pub mod config;
 pub mod context;
 pub mod errors;
 pub mod jwks;
+pub mod middleware;
 
 pub use config::EntraAuthConfig;
 pub use context::{AuthContext, PrincipalType};
