@@ -4,7 +4,7 @@
 //! The [`Access`] enum discriminates:
 //!   - [`Access::Allowed`] → handler proceeds.
 //!   - [`Access::Denied`]`([DenyReason::NotOwned])` → handler returns 404
-//!     (the resource has no ownership row — either pre-Entra data or truly
+//!     (the resource has no ownership row: either pre-Entra data or truly
 //!     missing; either way, do not leak existence).
 //!   - [`Access::Denied`]`([DenyReason::NotYours])` → handler returns 404
 //!     (hide existence from principals who don't own the resource).
@@ -15,7 +15,7 @@
 //! The `check_read` / `check_write` functions are async because they read
 //! the `resource_ownership` + `team_memberships` tables. Callers should
 //! pass the instance-level `SqlitePool` (the one `ApiState.instance_pool`
-//! holds) — these tables do NOT live in the per-agent databases.
+//! holds). These tables do NOT live in the per-agent databases.
 
 use sqlx::SqlitePool;
 
