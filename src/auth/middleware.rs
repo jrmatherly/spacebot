@@ -75,11 +75,9 @@ pub async fn entra_auth_middleware(
                 );
                 tokio::spawn(
                     async move {
-                        if let Err(e) = crate::auth::repository::upsert_user_from_auth(
-                            &pool,
-                            &ctx_for_task,
-                        )
-                        .await
+                        if let Err(e) =
+                            crate::auth::repository::upsert_user_from_auth(&pool, &ctx_for_task)
+                                .await
                         {
                             let reason = match e {
                                 crate::auth::repository::RepositoryError::InvalidPrincipalType => {
