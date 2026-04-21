@@ -96,7 +96,11 @@ impl EntraValidator {
 
     /// Validate a raw bearer token string and produce an `AuthContext`.
     pub async fn validate(&self, bearer: &str) -> Result<AuthContext, AuthError> {
-        let token_data = self.inner.check_auth(bearer).await.map_err(map_authorizer_err)?;
+        let token_data = self
+            .inner
+            .check_auth(bearer)
+            .await
+            .map_err(map_authorizer_err)?;
 
         let claims = token_data.claims;
 

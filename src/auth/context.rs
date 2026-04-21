@@ -90,18 +90,11 @@ where
 {
     type Rejection = (axum::http::StatusCode, &'static str);
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<AuthContext>()
-            .cloned()
-            .ok_or((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "no auth context attached",
-            ))
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts.extensions.get::<AuthContext>().cloned().ok_or((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "no auth context attached",
+        ))
     }
 }
 

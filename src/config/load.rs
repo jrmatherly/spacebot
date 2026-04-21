@@ -2628,8 +2628,8 @@ impl Config {
             // K8s ConfigMap + Secret deployments.
             let tenant_id = resolve_env_value(&e.tenant_id).unwrap_or_else(|| e.tenant_id.clone());
             let audience = resolve_env_value(&e.audience).unwrap_or_else(|| e.audience.clone());
-            let spa_client_id = resolve_env_value(&e.spa_client_id)
-                .unwrap_or_else(|| e.spa_client_id.clone());
+            let spa_client_id =
+                resolve_env_value(&e.spa_client_id).unwrap_or_else(|| e.spa_client_id.clone());
             Some(crate::auth::EntraAuthConfig {
                 tenant_id: std::sync::Arc::from(tenant_id.as_str()),
                 audience: std::sync::Arc::from(audience.as_str()),

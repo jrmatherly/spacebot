@@ -98,17 +98,18 @@ impl LlmManager {
             .build()
             .with_context(|| "failed to build HTTP client")?;
 
-        let anthropic_oauth_credentials = match crate::anthropic_oauth::load_credentials(&instance_dir) {
-            Ok(Some(creds)) => {
-                tracing::info!("loaded Anthropic OAuth credentials from auth.json");
-                Some(creds)
-            }
-            Ok(None) => None,
-            Err(error) => {
-                tracing::warn!(%error, "failed to load Anthropic OAuth credentials");
-                None
-            }
-        };
+        let anthropic_oauth_credentials =
+            match crate::anthropic_oauth::load_credentials(&instance_dir) {
+                Ok(Some(creds)) => {
+                    tracing::info!("loaded Anthropic OAuth credentials from auth.json");
+                    Some(creds)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load Anthropic OAuth credentials");
+                    None
+                }
+            };
 
         let openai_oauth_credentials = match crate::openai_auth::load_credentials(&instance_dir) {
             Ok(Some(creds)) => {
@@ -183,7 +184,8 @@ impl LlmManager {
             Ok(new_creds) => {
                 // Save to disk
                 if let Some(ref instance_dir) = self.instance_dir
-                    && let Err(error) = crate::anthropic_oauth::save_credentials(instance_dir, &new_creds)
+                    && let Err(error) =
+                        crate::anthropic_oauth::save_credentials(instance_dir, &new_creds)
                 {
                     tracing::warn!(%error, "failed to persist refreshed Anthropic OAuth credentials");
                 }

@@ -101,7 +101,10 @@ mod tests {
     #[test]
     fn discovery_and_jwks_urls_are_microsoft_hosts() {
         let cfg = sample_cfg();
-        assert!(cfg.discovery_url().contains("/v2.0/.well-known/openid-configuration"));
+        assert!(
+            cfg.discovery_url()
+                .contains("/v2.0/.well-known/openid-configuration")
+        );
         assert!(cfg.jwks_url().contains("/discovery/v2.0/keys"));
     }
 }

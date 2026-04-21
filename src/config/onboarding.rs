@@ -99,7 +99,10 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
                 .build()
                 .with_context(|| "failed to build tokio runtime")?;
 
-            runtime.block_on(crate::anthropic_oauth::login_interactive(&instance_dir, mode))?;
+            runtime.block_on(crate::anthropic_oauth::login_interactive(
+                &instance_dir,
+                mode,
+            ))?;
             Some(true)
         } else {
             None

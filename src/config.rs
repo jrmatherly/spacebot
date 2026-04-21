@@ -444,7 +444,8 @@ name = "My OpenRouter"
             refresh_token: "sk-ant-ort01-test".to_string(),
             expires_at: chrono::Utc::now().timestamp_millis() + 3_600_000,
         };
-        crate::anthropic_oauth::save_credentials(&instance_dir, &creds).expect("failed to save credentials");
+        crate::anthropic_oauth::save_credentials(&instance_dir, &creds)
+            .expect("failed to save credentials");
 
         assert!(!Config::needs_onboarding());
     }
