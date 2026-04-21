@@ -4,7 +4,7 @@
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{
-    get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+    RepositoryError, get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -124,5 +124,61 @@ async fn team_visibility_requires_team_id() {
     assert!(
         result.is_err(),
         "CHECK constraint must reject team visibility without team_id"
+    );
+}
+
+#[tokio::test]
+async fn upsert_user_rejects_legacy_static_principal() {
+    let pool = setup_pool().await;
+    let ctx = AuthContext::legacy_static();
+    let err = upsert_user_from_auth(&pool, &ctx)
+        .await
+        .expect_err("legacy_static principals must be rejected");
+    assert!(
+        matches!(err, RepositoryError::InvalidPrincipalType),
+        "expected InvalidPrincipalType, got {err:?}",
+    );
+}
+
+#[tokio::test]
+async fn get_ownership_returns_none_for_missing_row() {
+    let pool = setup_pool().await;
+    let missing = get_ownership(&pool, "memory", "never-created")
+        .await
+        .expect("read ownership");
+    assert!(
+        missing.is_none(),
+        "get_ownership must return None, not Err, for an unknown resource",
+    );
+}
+
+#[tokio::test]
+async fn raw_visibility_insert_rejects_unknown_value() {
+    // Guards the CHECK (visibility IN ('personal', 'team', 'org')) constraint
+    // against SQL paths that bypass the Visibility enum (migrations, admin
+    // tooling, backfill scripts). Uses the legacy 'global' value from the
+    // research draft, which is the most likely regression vector.
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-1", "oid-a");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO resource_ownership (
+            resource_type, resource_id, owner_principal_key, visibility
+        )
+        VALUES (?, ?, ?, ?)
+        "#,
+    )
+    .bind("memory")
+    .bind("mem-global")
+    .bind(&key)
+    .bind("global")
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "CHECK constraint must reject visibility = 'global'"
     );
 }
