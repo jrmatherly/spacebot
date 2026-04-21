@@ -58,6 +58,12 @@ pub struct ApiState {
     /// in `ArcSwap` to match the post-construction field-population pattern
     /// used for `task_store`, `wiki_store`, etc.
     pub entra_auth: Arc<ArcSwap<Option<Arc<crate::auth::EntraValidator>>>>,
+    /// Microsoft Graph client for resolving Entra group memberships and
+    /// fetching user display photos via OBO. Populated post-construction
+    /// from `main.rs` after the secrets store loads `web_api_client_secret`.
+    /// `None` until set, which is the case for static-token deployments
+    /// and during the brief startup window before `set_graph_client` runs.
+    pub graph_client: ArcSwap<Option<Arc<crate::auth::graph::GraphClient>>>,
     /// Aggregated event stream from all agents. SSE clients subscribe here.
     pub event_tx: broadcast::Sender<ApiEvent>,
     /// Per-agent SQLite pools for querying channel/conversation data.
@@ -333,6 +339,7 @@ impl ApiState {
             started_at: Instant::now(),
             auth_token: None,
             entra_auth: Arc::new(ArcSwap::from_pointee(None)),
+            graph_client: ArcSwap::from_pointee(None),
             event_tx,
             agent_pools: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             agent_configs: arc_swap::ArcSwap::from_pointee(Vec::new()),
@@ -894,6 +901,15 @@ impl ApiState {
     /// `start_http_server` reads the field to pick the middleware branch.
     pub fn set_entra_auth(&self, validator: Arc<crate::auth::EntraValidator>) {
         self.entra_auth.store(Arc::new(Some(validator)));
+    }
+
+    /// Install the Microsoft Graph client post-construction. Called from
+    /// `main.rs` after `set_entra_auth` and after the secrets store has
+    /// resolved `web_api_client_secret`. Optional: deployments without
+    /// Graph configured will have this stay `None` and the middleware
+    /// will skip group-sync and photo-sync without erroring.
+    pub fn set_graph_client(&self, client: Arc<crate::auth::graph::GraphClient>) {
+        self.graph_client.store(Arc::new(Some(client)));
     }
 
     /// Set the global task store.

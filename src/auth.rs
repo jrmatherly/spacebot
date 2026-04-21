@@ -1,12 +1,14 @@
 //! Authentication subsystem. Mirrors `src/secrets/` layout: a flat module
 //! root with sub-files per concern.
 //!
-//! Phase 1 scope: JWT validation via Entra ID. Authorization helpers land in
-//! Phase 4.
+//! Phase 1: JWT validation via Entra ID. Phase 2: principal-record
+//! persistence. Phase 3: Microsoft Graph client for group resolution and
+//! display-photo fetch. Authorization helpers land in Phase 4.
 
 pub mod config;
 pub mod context;
 pub mod errors;
+pub mod graph;
 pub mod jwks;
 pub mod middleware;
 pub mod principals;

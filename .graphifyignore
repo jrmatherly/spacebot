@@ -1,0 +1,94 @@
+# .graphifyignore — mirrors .gitignore (text-content entries) + graphify-specific additions.
+# .gitignore syntax. Keep in sync when .gitignore changes.
+
+# --- Rust build artifacts ---
+/target/
+rust_out
+.fastembed_cache/
+.build/
+
+# --- Binary / non-text / DB artifacts ---
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+
+# --- Lockfiles (valid JSON/YAML but noise for a knowledge graph) ---
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+bun.lock
+Cargo.lock
+
+# --- Node/frontend build trees (anywhere in the repo) ---
+**/node_modules/
+**/dist/
+**/.next/
+**/__pycache__/
+
+# --- Interface / SpaceUI specifics (covered by globs above, listed for clarity) ---
+interface/public/opencode-embed/
+.opencode-build-cache/
+spaceui/.storybook/storybook-static/
+
+# --- Vendored workspaces (independent ownership; graph separately if needed) ---
+spacedrive/
+vendor/
+
+# --- Generated code (codegen target; would thrash cache on every `just typegen`) ---
+packages/api-client/src/schema.d.ts
+
+# --- Desktop sidecar artifacts ---
+desktop/src-tauri/binaries/
+
+# --- IDE / editor config ---
+.idea/
+.vscode/
+
+# --- Claude Code local state ---
+.claude/settings.local.json
+.claude/agent-memory*/
+.claude/scheduled_tasks.lock
+
+# --- Legacy Claude-generated artifacts (not self-referential to graphify builds) ---
+.claude-context
+.claude-memory
+.claude-decisions
+
+# --- Legacy / retired doc trees ---
+docs/phases/
+docs/specs/
+PROJECT-STATUS.md
+
+# --- Local-only private trees ---
+.scratchpad/
+.remember/
+.full-review/
+list/
+/agents/
+
+# --- Nix build outputs ---
+result/
+.direnv/
+
+# --- Git worktree scratch space (each worktree is a full repo checkout — would duplicate corpus) ---
+.worktrees/
+
+# --- Turborepo cache (root + nested workspaces) ---
+.turbo/
+**/.turbo/
+
+# --- Serena MCP server cache (tool state; serena manages its own .serena/.gitignore for the rest) ---
+.serena/cache/
+
+# --- Compaction archives, screenshots, logs ---
+**/archives/
+**/screenshots/
+**/logs/
+
+# --- Docker Compose local state ---
+deploy/docker/.env
+deploy/docker/data/
+
+# --- Graphify's own outputs (avoid self-indexing) ---
+graphify-out/

@@ -16,8 +16,14 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 pub struct MockTenant {
     pub server: MockServer,
     pub tenant_id: String,
+    // audience/signing_key/kid/jwks are used by different test crates that
+    // include this file via #[path = ...]. Each crate only uses a subset,
+    // which triggers dead-code per-crate. Blanket allow.
+    #[allow(dead_code)]
     pub audience: String,
+    #[allow(dead_code)]
     pub signing_key: EncodingKey,
+    #[allow(dead_code)]
     pub kid: String,
     #[allow(dead_code)]
     pub jwks: serde_json::Value,
@@ -95,6 +101,7 @@ impl MockTenant {
     }
 
     /// JWKS URL override to hand to `EntraAuthConfig::jwks_url_override`.
+    #[allow(dead_code)]
     pub fn jwks_url(&self) -> String {
         format!(
             "{}/{}/discovery/v2.0/keys",
@@ -105,6 +112,7 @@ impl MockTenant {
 
     /// Mint a user (delegated) token. Has `scp` claim so validator
     /// classifies the principal as `User`.
+    #[allow(dead_code)]
     pub fn mint_user_token(&self, oid: &str, roles: &[&str], groups: &[&str]) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -128,6 +136,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a bad signature (signed with a throwaway key).
+    #[allow(dead_code)]
     pub fn mint_wrong_sig_token(&self, oid: &str) -> String {
         let mut rng = OsRng;
         let other_key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
@@ -155,6 +164,7 @@ impl MockTenant {
 
     /// Mint a user token with a caller-chosen `scp` value. Used to exercise
     /// the scope-mismatch rejection path.
+    #[allow(dead_code)]
     pub fn mint_user_token_with_scope(&self, oid: &str, scp: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -176,6 +186,7 @@ impl MockTenant {
     /// Mint a service-principal (app-only) token. No `scp` claim, so the
     /// validator classifies the principal as `ServicePrincipal`. `roles`
     /// controls whether the required-role gate rejects.
+    #[allow(dead_code)]
     pub fn mint_service_principal_token(&self, oid: &str, roles: &[&str]) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -195,6 +206,7 @@ impl MockTenant {
     }
 
     /// Mint a token whose `exp` is in the past (expired).
+    #[allow(dead_code)]
     pub fn mint_expired_token(&self, oid: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -214,6 +226,7 @@ impl MockTenant {
     }
 
     /// Mint a token whose `nbf` is in the future (not-yet-valid).
+    #[allow(dead_code)]
     pub fn mint_not_yet_valid_token(&self, oid: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -233,6 +246,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a caller-chosen `aud` value.
+    #[allow(dead_code)]
     pub fn mint_token_with_aud(&self, oid: &str, aud: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -252,6 +266,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a caller-chosen `iss` value.
+    #[allow(dead_code)]
     pub fn mint_token_with_iss(&self, oid: &str, iss: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -269,4 +284,86 @@ impl MockTenant {
         header.kid = Some(self.kid.clone());
         encode(&header, &claims, &self.signing_key).expect("jwt encode")
     }
+}
+
+/// Mount the OBO token-exchange stub. Returns a fixed `access_token` so
+/// downstream Graph stubs see a `Bearer` header but don't need to verify it.
+/// Phase 3 callers point `GraphConfig::obo_token_endpoint` at the URL
+/// returned by `obo_endpoint_url(&server)`.
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_obo_stub(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/oauth2/v2.0/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": "fake-graph-token",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Convenience: the URL Phase 3 should set as `GraphConfig::obo_token_endpoint`
+/// when wired against a Wiremock-backed `mount_obo_stub`.
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub fn obo_endpoint_url(server: &MockServer) -> String {
+    format!("{}/oauth2/v2.0/token", server.uri())
+}
+
+/// Mount an OBO stub that returns a caller-chosen HTTP status. Used by
+/// Phase 3's error-path tests (e.g. 400 invalid_grant, 401 expired assertion).
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_obo_failure_stub(server: &MockServer, status: u16) {
+    Mock::given(method("POST"))
+        .and(path("/oauth2/v2.0/token"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+            "error": "invalid_grant",
+            "error_description": "test-synthesized failure",
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Mount Wiremock stubs for Phase 3 Graph endpoints. Serves
+/// `/me/getMemberObjects` (returns the GUIDs in `groups`) and a single
+/// `/groups?$filter=...` stub that returns ALL stubbed groups in one
+/// response body. This matches the chunked-filter wire shape the Phase 3
+/// `list_member_groups` implementation produces (one filter request per
+/// chunk of 15 IDs). Pass an empty vec to simulate "user is in no groups".
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_graph_stub(server: &MockServer, groups: Vec<(String, String)>) {
+    let ids: Vec<String> = groups.iter().map(|(id, _)| id.clone()).collect();
+
+    Mock::given(method("POST"))
+        .and(path("/me/getMemberObjects"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": ids })))
+        .mount(server)
+        .await;
+
+    let groups_json: Vec<serde_json::Value> = groups
+        .iter()
+        .map(|(id, name)| json!({ "id": id, "displayName": name }))
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/groups"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": groups_json })))
+        .mount(server)
+        .await;
+}
+
+/// Mount the `/me/photo/$value` binary-response stub. Pass `None` to
+/// simulate user-has-no-photo (Graph returns 404).
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_photo_stub(server: &MockServer, photo_bytes: Option<Vec<u8>>) {
+    let resp = match photo_bytes {
+        Some(bytes) => ResponseTemplate::new(200)
+            .set_body_bytes(bytes)
+            .insert_header("Content-Type", "image/jpeg"),
+        None => ResponseTemplate::new(404),
+    };
+    Mock::given(method("GET"))
+        .and(path("/me/photo/$value"))
+        .respond_with(resp)
+        .mount(server)
+        .await;
 }

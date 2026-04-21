@@ -93,6 +93,13 @@ impl EntraValidator {
         })
     }
 
+    /// Read-only access to the resolved Entra config. Used by the auth
+    /// middleware to thread `group_cache_ttl_secs` into Phase 3's group-sync
+    /// helper without re-reading the TOML.
+    pub(crate) fn config(&self) -> &EntraAuthConfig {
+        &self.cfg
+    }
+
     /// Validate a raw bearer token string and produce an `AuthContext`.
     pub async fn validate(&self, bearer: &str) -> Result<AuthContext, AuthError> {
         let token_data = self

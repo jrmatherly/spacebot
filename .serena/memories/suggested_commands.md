@@ -36,6 +36,9 @@
 | `just spaceui-check-dedupe` | Audit vite dedupe list against shared spaceui/interface deps (PR #52) |
 | `just spaceui-gate` | Typecheck + build spaceui, then typecheck + build interface; includes both checks above (PR #52) |
 | `just check-adr-anchors` | Verify path:line anchors in Spacedrive integration ADRs still resolve (PR #53) |
+| `just graphify-rebuild <path> [--clean] [--snapshot]` | Opt-in — rebuild directed knowledge graph via scripts/graphify-rebuild.sh. Wraps graphify's Python API with `directed=True` (the built-in `graphify update` CLI rebuilds undirected). Requires `pipx install graphifyy`. See .scratchpad/completed/2026-04-21-graphify-research.md for full rationale. Added 2026-04-21. |
+| `just graphify-query "<question>"` | Query the existing graph (BFS traversal). Fails with a helpful error if no graph exists. Added 2026-04-21. |
+| `just graphify-clean` | Nuclear reset — drops graphify-out/ entirely. Added 2026-04-21. |
 
 ## Docker Compose Recipes (deploy/docker/)
 
