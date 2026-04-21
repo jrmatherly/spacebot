@@ -450,9 +450,16 @@ pub async fn sync_user_photo_for_principal(
 }
 
 /// Classify a Phase 3 Graph-sync error into a low-cardinality `reason` label
-/// for `auth_graph_sync_failures_total`. Walks the anyhow context chain via
-/// `downcast_ref` so wrapped errors surface their root cause. Keep the label
-/// set small (Prometheus cardinality) and stable (dashboards lock on these).
+/// for `auth_graph_sync_failures_total`. Matches the root concrete type via
+/// `anyhow::Error::downcast_ref` — it does NOT walk the `.chain()`, so
+/// callers that wrap errors with `.context("...")` above a `GraphError` or
+/// `sqlx::Error` will fall through to `"other"`. Phase 3 sync helpers
+/// propagate via `?` without intervening context frames, so the current
+/// surface matches. If Phase 4+ introduces context wraps, upgrade this to
+/// `error.chain().any(|e| e.is::<GraphError>())`.
+///
+/// Keep the label set small (Prometheus cardinality) and stable (dashboards
+/// lock on these).
 fn classify_graph_sync_error(error: &anyhow::Error) -> &'static str {
     if let Some(graph_err) = error.downcast_ref::<crate::auth::graph::GraphError>() {
         return match graph_err {
