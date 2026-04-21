@@ -306,12 +306,25 @@ pub async fn start_http_server(
             any(opencode_proxy::opencode_proxy),
         )
         .route("/api/opencode/{port}", any(opencode_proxy::opencode_proxy))
-        .route("/api/opencode/{port}/", any(opencode_proxy::opencode_proxy))
-        // Apply auth middleware to all protected routes
-        .layer(middleware::from_fn_with_state(
+        .route("/api/opencode/{port}/", any(opencode_proxy::opencode_proxy));
+
+    // Branch selection: Entra JWT (if configured) OR static-token fallback.
+    // Both branches populate request.extensions with an `AuthContext` so
+    // downstream handlers can extract it uniformly in Phase 4+.
+    let entra_configured = state.entra_auth.load().is_some();
+    let protected_routes = if entra_configured {
+        tracing::info!("auth branch: entra JWT validation");
+        protected_routes.layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::middleware::entra_auth_middleware,
+        ))
+    } else {
+        tracing::info!("auth branch: static token (or pass-through when no token set)");
+        protected_routes.layer(middleware::from_fn_with_state(
             state.clone(),
             api_auth_middleware,
-        ));
+        ))
+    };
 
     #[cfg(feature = "metrics")]
     let protected_routes = protected_routes.layer(middleware::from_fn(metrics_middleware));
@@ -346,10 +359,15 @@ pub async fn start_http_server(
 
 async fn api_auth_middleware(
     State(state): State<Arc<ApiState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     let Some(expected_token) = state.auth_token.as_deref() else {
+        // Pass-through mode: still populate a LegacyStatic AuthContext so
+        // downstream handlers can extract it uniformly (Phase 4+).
+        request
+            .extensions_mut()
+            .insert(crate::auth::AuthContext::legacy_static());
         return next.run(request).await;
     };
 
@@ -381,7 +399,14 @@ async fn api_auth_middleware(
     };
 
     match outcome {
-        AuthOutcome::Accept => next.run(request).await,
+        AuthOutcome::Accept => {
+            // Populate LegacyStatic AuthContext on the accept path so Phase 4+
+            // handlers can uniformly extract `AuthContext`.
+            request
+                .extensions_mut()
+                .insert(crate::auth::AuthContext::legacy_static());
+            next.run(request).await
+        }
         AuthOutcome::Reject(reason) => {
             let reason_label = reason.as_metric_label();
             tracing::warn!(reason = reason_label, %path, "api auth rejected");
@@ -623,6 +648,33 @@ pub mod test_support {
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     api_auth_middleware,
+                ));
+        protected.layer(cors).with_state(state)
+    }
+
+    /// Build the protected router with the Entra-JWT middleware branch
+    /// attached, for integration testing of the JWT path. Mirrors
+    /// [`build_test_router`] but selects the Entra branch. Keep in sync
+    /// with the branch-selection block in [`super::start_http_server`].
+    pub fn build_test_router_entra(state: Arc<ApiState>) -> Router {
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::mirror_request())
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+
+        let (api_routes, _api) = api_router().split_for_parts();
+        let protected =
+            Router::new()
+                .nest("/api", api_routes)
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    crate::auth::middleware::entra_auth_middleware,
                 ));
         protected.layer(cors).with_state(state)
     }

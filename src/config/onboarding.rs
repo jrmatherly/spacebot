@@ -87,9 +87,9 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
 
         if auth_method <= 1 {
             let mode = if auth_method == 0 {
-                crate::auth::AuthMode::Max
+                crate::anthropic_oauth::AuthMode::Max
             } else {
-                crate::auth::AuthMode::Console
+                crate::anthropic_oauth::AuthMode::Console
             };
             let instance_dir = Config::default_instance_dir();
             std::fs::create_dir_all(&instance_dir)?;
@@ -99,7 +99,10 @@ pub fn run_onboarding() -> anyhow::Result<Option<PathBuf>> {
                 .build()
                 .with_context(|| "failed to build tokio runtime")?;
 
-            runtime.block_on(crate::auth::login_interactive(&instance_dir, mode))?;
+            runtime.block_on(crate::anthropic_oauth::login_interactive(
+                &instance_dir,
+                mode,
+            ))?;
             Some(true)
         } else {
             None

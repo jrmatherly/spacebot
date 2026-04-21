@@ -22,6 +22,11 @@ rig = { version = "0.35", package = "rig-core", features = ["derive"] }
 # HTTP clients for LLM providers
 reqwest = { version = "0.13", features = ["json", "stream", "form", "query", "gzip"] }
 
+# Auth: Entra JWT validation with JWKS caching and OIDC discovery.
+jwt-authorizer = "0.15"
+# Required for Algorithm::RS256 (NOT re-exported by jwt-authorizer).
+jsonwebtoken = "9"
+
 # Databases
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
 lancedb = "0.27"
@@ -219,6 +224,12 @@ wiremock = "0.6"
 # declaring them here makes the test files' imports explicit.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+# Pure-Rust RSA keypair generation for Wiremock-backed Entra tests.
+# Avoids the system libssl dependency that `openssl` would require (A-07).
+# `getrandom` feature exposes `rsa::rand_core::OsRng` so tests don't need a
+# separate `rand_core = "0.6"` dep (the project's `rand = "0.10"` uses
+# rand_core 0.9 which is incompatible with rsa 0.9's RsaPrivateKey::new).
+rsa = { version = "0.9", features = ["sha2", "getrandom"] }
 
 # OS keystore (macOS Keychain for master key storage)
 [target.'cfg(target_os = "macos")'.dependencies]

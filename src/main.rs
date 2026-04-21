@@ -592,15 +592,15 @@ fn cmd_auth(config_path: Option<std::path::PathBuf>, auth_cmd: AuthCommand) -> a
         match auth_cmd {
             AuthCommand::Login { console } => {
                 let mode = if console {
-                    spacebot::auth::AuthMode::Console
+                    spacebot::anthropic_oauth::AuthMode::Console
                 } else {
-                    spacebot::auth::AuthMode::Max
+                    spacebot::anthropic_oauth::AuthMode::Max
                 };
-                spacebot::auth::login_interactive(&instance_dir, mode).await?;
+                spacebot::anthropic_oauth::login_interactive(&instance_dir, mode).await?;
                 Ok(())
             }
             AuthCommand::Status => {
-                match spacebot::auth::load_credentials(&instance_dir)? {
+                match spacebot::anthropic_oauth::load_credentials(&instance_dir)? {
                     Some(creds) => {
                         let expires_in = creds.expires_at - chrono::Utc::now().timestamp_millis();
                         let expires_min = expires_in / 60_000;
@@ -619,7 +619,7 @@ fn cmd_auth(config_path: Option<std::path::PathBuf>, auth_cmd: AuthCommand) -> a
                         );
                         eprintln!(
                             "  credentials file: {}",
-                            spacebot::auth::credentials_path(&instance_dir).display()
+                            spacebot::anthropic_oauth::credentials_path(&instance_dir).display()
                         );
                     }
                     None => {
@@ -630,7 +630,7 @@ fn cmd_auth(config_path: Option<std::path::PathBuf>, auth_cmd: AuthCommand) -> a
                 Ok(())
             }
             AuthCommand::Logout => {
-                let path = spacebot::auth::credentials_path(&instance_dir);
+                let path = spacebot::anthropic_oauth::credentials_path(&instance_dir);
                 if path.exists() {
                     std::fs::remove_file(&path)?;
                     eprintln!("Credentials removed.");
@@ -640,11 +640,11 @@ fn cmd_auth(config_path: Option<std::path::PathBuf>, auth_cmd: AuthCommand) -> a
                 Ok(())
             }
             AuthCommand::Refresh => {
-                let creds = spacebot::auth::load_credentials(&instance_dir)?
+                let creds = spacebot::anthropic_oauth::load_credentials(&instance_dir)?
                     .context("no credentials found — run `spacebot auth login` first")?;
                 eprintln!("Refreshing access token...");
                 let new_creds = creds.refresh().await.context("refresh failed")?;
-                spacebot::auth::save_credentials(&instance_dir, &new_creds)?;
+                spacebot::anthropic_oauth::save_credentials(&instance_dir, &new_creds)?;
                 let expires_min =
                     (new_creds.expires_at - chrono::Utc::now().timestamp_millis()) / 60_000;
                 eprintln!("Token refreshed (expires in {}m)", expires_min);
@@ -1563,7 +1563,7 @@ fn has_provider_credentials(
     instance_dir: &std::path::Path,
 ) -> bool {
     llm_config.has_any_key()
-        || spacebot::auth::credentials_path(instance_dir).exists()
+        || spacebot::anthropic_oauth::credentials_path(instance_dir).exists()
         || spacebot::openai_auth::credentials_path(instance_dir).exists()
 }
 
@@ -1679,6 +1679,35 @@ async fn run(
     };
 
     let _http_handle = if config.api.enabled {
+        // Build the Entra validator before starting the server so branch
+        // selection in `start_http_server` picks the right middleware.
+        if let Some(entra_cfg) = config.api.entra_auth.clone() {
+            if entra_cfg.mock_mode {
+                anyhow::bail!(
+                    "[api.auth.entra].mock_mode = true is not accepted at daemon startup. \
+                     Use integration tests (Phase 4 Task 4.7 mock validator) or disable \
+                     `mock_mode` before starting the daemon."
+                );
+            }
+            if spacebot::config::Config::needs_onboarding() {
+                tracing::warn!(
+                    "Entra auth is configured but onboarding is not complete. \
+                     Entra enforcement will be active from this boot, which may \
+                     block the first-run setup flow. If setup is stuck, remove \
+                     [api.auth.entra] temporarily, finish onboarding, then \
+                     restore it and restart."
+                );
+            }
+            tracing::info!(
+                tenant_id = %entra_cfg.tenant_id,
+                "initializing Entra JWT validator"
+            );
+            let validator = spacebot::auth::EntraValidator::new(entra_cfg)
+                .await
+                .context("initialize Entra JWT validator")?;
+            api_state.set_entra_auth(Arc::new(validator));
+        }
+
         // IPv6 addresses need brackets when combined with port: [::]:19898
         let raw_bind = config
             .api

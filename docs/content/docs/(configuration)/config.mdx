@@ -793,3 +793,34 @@ Routes platform conversations to agents. Checked in order; first match wins. Unm
 | `guild_id` | string | None | Discord guild filter |
 | `chat_id` | string | None | Telegram chat filter |
 | `channel_ids` | string[] | [] | Discord channel ID filter (includes threads in those channels) |
+
+### `[api.auth.entra]`
+
+Optional. When present with `enabled = true`, the daemon validates incoming `Authorization: Bearer <jwt>` headers as Microsoft Entra ID v2 JWTs via a cached JWKS. Replaces the static `auth_token` branch for that run. The two branches are mutually exclusive at request time.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | false | Master switch for the Entra branch |
+| `tenant_id` | string | **required** | Entra tenant GUID. Supports `env:ENTRA_TENANT_ID` |
+| `audience` | string | **required** | Expected `aud` claim. For v2 tokens this is the **client ID GUID** of the Web API registration (not the `api://...` URI). Requires `accessTokenAcceptedVersion: 2` in the manifest |
+| `allowed_scopes` | string[] | `[]` | Required scopes for delegated (user) tokens. Empty = any scope or app-only |
+| `jwks_cache_ttl_secs` | integer | 3600 | Max JWKS cache age. Microsoft recommends at most 24h |
+| `clock_skew_leeway_secs` | integer | 60 | Tolerance on `exp` and `nbf`. Must not exceed 300 |
+| `group_cache_ttl_secs` | integer | 300 | Graph group-membership cache TTL (Phase 3 consumes) |
+| `spa_client_id` | string | `""` | SPA app-registration client ID GUID. Returned via `/api/auth/config` to the browser (never a secret) |
+| `spa_scopes` | string[] | `[]` | Scopes the SPA requests during sign-in |
+| `mock_mode` | bool | false | **Dev only.** Bypass signature validation. Rejected at daemon startup. Use integration-test helpers instead |
+
+Example (K8s ConfigMap):
+
+```toml
+[api.auth.entra]
+enabled = true
+tenant_id = "env:ENTRA_TENANT_ID"
+audience = "env:ENTRA_API_AUDIENCE"
+allowed_scopes = ["api.access"]
+spa_client_id = "env:ENTRA_SPA_CLIENT_ID"
+spa_scopes = ["api://{web-api-guid}/api.access"]
+```
+
+See `docs/design-docs/entra-app-registrations.md` for app-registration setup.

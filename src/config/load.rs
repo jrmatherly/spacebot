@@ -54,6 +54,25 @@ pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     }
 }
 
+/// Resolve an `env:`/`secret:` reference or a literal, and fail-fast when a
+/// reference prefix is present but unresolvable. Use this for required-at-
+/// startup config values where the silent-literal fallback pattern elsewhere
+/// in this file would quietly produce malformed output downstream (e.g. a
+/// URL containing the literal string "env:ENTRA_TENANT_ID").
+///
+/// `resolve_env_value` returns `Some` for all literal inputs and `Some` for
+/// successfully-resolved references. It returns `None` only when a reference
+/// prefix is present but resolution failed, so a `None` result here
+/// unambiguously signals a missing env/secret.
+fn resolve_required_ref(field: &str, value: &str) -> anyhow::Result<String> {
+    match resolve_env_value(value) {
+        Some(v) => Ok(v),
+        None => anyhow::bail!(
+            "{field} references {value} but the referenced env/secret could not be resolved"
+        ),
+    }
+}
+
 /// Resolve OpenAI's `base_url` from env, falling back to the provider default.
 ///
 /// Honors `OPENAI_API_BASE` (canonical OpenAI SDK var) first, then
@@ -416,7 +435,7 @@ impl Config {
         }
 
         // OAuth credentials count as configured
-        if crate::auth::credentials_path(&instance_dir).exists()
+        if crate::anthropic_oauth::credentials_path(&instance_dir).exists()
             || crate::openai_auth::credentials_path(&instance_dir).exists()
         {
             return false;
@@ -2618,11 +2637,48 @@ impl Config {
 
         let bindings = validate_named_messaging_adapters(&messaging, bindings, strict_bindings)?;
 
+        let entra_auth = match toml.api.auth.entra.as_ref() {
+            Some(e) if e.enabled => {
+                // Resolve env:/secret: references for fields that commonly come
+                // from operator environment injection. Unresolved references
+                // fail-fast at startup rather than booting with a literal
+                // "env:..." string that would reach the auth layer as a
+                // malformed tenant ID, audience, or client ID, and surface
+                // much later as a runtime 503 with no pointer to the cause.
+                let tenant_id = resolve_required_ref("[api.auth.entra].tenant_id", &e.tenant_id)?;
+                let audience = resolve_required_ref("[api.auth.entra].audience", &e.audience)?;
+                let spa_client_id = if e.spa_client_id.is_empty() {
+                    String::new()
+                } else {
+                    resolve_required_ref("[api.auth.entra].spa_client_id", &e.spa_client_id)?
+                };
+                Some(crate::auth::EntraAuthConfig {
+                    tenant_id: std::sync::Arc::from(tenant_id.as_str()),
+                    audience: std::sync::Arc::from(audience.as_str()),
+                    allowed_scopes: e.allowed_scopes.clone(),
+                    jwks_cache_ttl_secs: e.jwks_cache_ttl_secs,
+                    clock_skew_leeway_secs: e.clock_skew_leeway_secs,
+                    group_cache_ttl_secs: e.group_cache_ttl_secs,
+                    spa_client_id: std::sync::Arc::from(spa_client_id.as_str()),
+                    spa_scopes: e
+                        .spa_scopes
+                        .iter()
+                        .map(|s| std::sync::Arc::from(s.as_str()))
+                        .collect(),
+                    mock_mode: e.mock_mode,
+                    jwks_url_override: None,
+                    issuer_override: None,
+                })
+            }
+            _ => None,
+        };
+
         let api = ApiConfig {
             enabled: toml.api.enabled,
             port: toml.api.port,
             bind: hosted_api_bind(toml.api.bind),
             auth_token: toml.api.auth_token.as_deref().and_then(resolve_env_value),
+            entra_auth,
         };
 
         let metrics = MetricsConfig {
