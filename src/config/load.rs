@@ -2645,6 +2645,7 @@ impl Config {
                     .collect(),
                 mock_mode: e.mock_mode,
                 jwks_url_override: None,
+                issuer_override: None,
             })
         });
 

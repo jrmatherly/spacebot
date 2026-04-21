@@ -44,6 +44,10 @@ pub struct EntraAuthConfig {
     /// unless `mock_mode` is also true or the config came from a test
     /// helper.
     pub jwks_url_override: Option<String>,
+    /// Test-only override for the issuer claim validator. Paired with
+    /// `jwks_url_override` so Wiremock-backed tests can assert the full
+    /// `iss` / `aud` / signature path. MUST be `None` in production.
+    pub issuer_override: Option<String>,
 }
 
 impl EntraAuthConfig {
@@ -86,6 +90,7 @@ mod tests {
             spa_scopes: vec![Arc::from("api://test/api.access")],
             mock_mode: false,
             jwks_url_override: None,
+            issuer_override: None,
         }
     }
 

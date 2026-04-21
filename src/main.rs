@@ -1689,6 +1689,15 @@ async fn run(
                      `mock_mode` before starting the daemon."
                 );
             }
+            if spacebot::config::Config::needs_onboarding() {
+                tracing::warn!(
+                    "Entra auth is configured but onboarding is not complete. \
+                     Entra enforcement will be active from this boot, which may \
+                     block the first-run setup flow. If setup is stuck, remove \
+                     [api.auth.entra] temporarily, finish onboarding, then \
+                     restore it and restart."
+                );
+            }
             tracing::info!(
                 tenant_id = %entra_cfg.tenant_id,
                 "initializing Entra JWT validator"

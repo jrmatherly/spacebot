@@ -71,7 +71,10 @@ impl EntraValidator {
         // `jsonwebtoken`; we import it directly from `jsonwebtoken` to make
         // the dependency explicit (A-05).
         let aud_refs: Vec<&str> = vec![cfg.audience.as_ref()];
-        let iss_string = cfg.issuer();
+        let iss_string = cfg
+            .issuer_override
+            .clone()
+            .unwrap_or_else(|| cfg.issuer());
         let iss_refs: Vec<&str> = vec![iss_string.as_str()];
         let validation = Validation::new()
             .aud(&aud_refs)
