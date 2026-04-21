@@ -2618,11 +2618,42 @@ impl Config {
 
         let bindings = validate_named_messaging_adapters(&messaging, bindings, strict_bindings)?;
 
+        let entra_auth = toml.api.auth.entra.as_ref().and_then(|e| {
+            if !e.enabled {
+                return None;
+            }
+            // Resolve env:/secret: references for fields that commonly come
+            // from operator environment injection. tenant_id and audience
+            // are GUIDs; allowing env resolution keeps config.toml clean in
+            // K8s ConfigMap + Secret deployments.
+            let tenant_id = resolve_env_value(&e.tenant_id).unwrap_or_else(|| e.tenant_id.clone());
+            let audience = resolve_env_value(&e.audience).unwrap_or_else(|| e.audience.clone());
+            let spa_client_id = resolve_env_value(&e.spa_client_id)
+                .unwrap_or_else(|| e.spa_client_id.clone());
+            Some(crate::auth::EntraAuthConfig {
+                tenant_id: std::sync::Arc::from(tenant_id.as_str()),
+                audience: std::sync::Arc::from(audience.as_str()),
+                allowed_scopes: e.allowed_scopes.clone(),
+                jwks_cache_ttl_secs: e.jwks_cache_ttl_secs,
+                clock_skew_leeway_secs: e.clock_skew_leeway_secs,
+                group_cache_ttl_secs: e.group_cache_ttl_secs,
+                spa_client_id: std::sync::Arc::from(spa_client_id.as_str()),
+                spa_scopes: e
+                    .spa_scopes
+                    .iter()
+                    .map(|s| std::sync::Arc::from(s.as_str()))
+                    .collect(),
+                mock_mode: e.mock_mode,
+                jwks_url_override: None,
+            })
+        });
+
         let api = ApiConfig {
             enabled: toml.api.enabled,
             port: toml.api.port,
             bind: hosted_api_bind(toml.api.bind),
             auth_token: toml.api.auth_token.as_deref().and_then(resolve_env_value),
+            entra_auth,
         };
 
         let metrics = MetricsConfig {

@@ -97,6 +97,10 @@ pub(super) struct TomlApiConfig {
     pub(super) bind: String,
     #[serde(default)]
     pub(super) auth_token: Option<String>,
+    /// Nested block: `[api.auth.entra]`. When present with `enabled = true`,
+    /// the Entra JWT middleware replaces the static-token branch.
+    #[serde(default)]
+    pub(super) auth: TomlApiAuthConfig,
 }
 
 impl Default for TomlApiConfig {
@@ -106,8 +110,46 @@ impl Default for TomlApiConfig {
             port: default_api_port(),
             bind: default_api_bind(),
             auth_token: None,
+            auth: TomlApiAuthConfig::default(),
         }
     }
+}
+
+#[derive(Deserialize, Default)]
+pub(super) struct TomlApiAuthConfig {
+    #[serde(default)]
+    pub(super) entra: Option<TomlEntraAuthConfig>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct TomlEntraAuthConfig {
+    pub(super) enabled: bool,
+    pub(super) tenant_id: String,
+    pub(super) audience: String,
+    #[serde(default)]
+    pub(super) allowed_scopes: Vec<String>,
+    #[serde(default = "default_jwks_ttl")]
+    pub(super) jwks_cache_ttl_secs: u64,
+    #[serde(default = "default_leeway")]
+    pub(super) clock_skew_leeway_secs: u64,
+    #[serde(default = "default_group_cache_ttl")]
+    pub(super) group_cache_ttl_secs: u64,
+    #[serde(default)]
+    pub(super) spa_client_id: String,
+    #[serde(default)]
+    pub(super) spa_scopes: Vec<String>,
+    #[serde(default)]
+    pub(super) mock_mode: bool,
+}
+
+fn default_jwks_ttl() -> u64 {
+    3600
+}
+fn default_leeway() -> u64 {
+    60
+}
+fn default_group_cache_ttl() -> u64 {
+    300
 }
 
 pub(super) fn default_api_enabled() -> bool {

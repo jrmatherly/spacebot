@@ -145,6 +145,9 @@ pub struct ApiConfig {
     /// Address to bind the HTTP server on.
     pub bind: String,
     pub auth_token: Option<String>,
+    /// When populated, the Entra-JWT middleware replaces the static-token
+    /// middleware at server start. Resolved from `[api.auth.entra]` TOML.
+    pub entra_auth: Option<crate::auth::EntraAuthConfig>,
 }
 
 impl Default for ApiConfig {
@@ -154,6 +157,7 @@ impl Default for ApiConfig {
             port: 19898,
             bind: "127.0.0.1".into(),
             auth_token: None,
+            entra_auth: None,
         }
     }
 }
