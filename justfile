@@ -295,3 +295,23 @@ spaceui-gate: spaceui-check-workspace spaceui-check-dedupe
 # Check that path:line anchors in Spacedrive integration ADRs still resolve.
 check-adr-anchors:
     bash scripts/check-adr-anchors.sh
+
+# Rebuild the directed knowledge graph for a path (e.g. docs/design-docs).
+# Preserves --directed topology that the built-in `graphify update` loses.
+# See scripts/graphify-rebuild.sh and .scratchpad/completed/2026-04-21-graphify-research.md.
+# --clean drops graphify-out/cache/ before building (use after .graphifyignore edits).
+# --snapshot writes GRAPH_REPORT.md.keep for manual milestone commits.
+graphify-rebuild path *flags:
+    scripts/graphify-rebuild.sh {{path}} {{flags}}
+
+# Drop all graphify outputs (nuclear — regenerate with `just graphify-rebuild`).
+graphify-clean:
+    rm -rf graphify-out/
+
+# Query an existing graph. Fails with a helpful message if no graph exists.
+graphify-query question:
+    @if [ ! -f graphify-out/graph.json ]; then \
+        echo "error: no graph found. Run 'just graphify-rebuild docs/design-docs' first." >&2; \
+        exit 1; \
+    fi
+    graphify query "{{question}}"
