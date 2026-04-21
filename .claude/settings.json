@@ -20,6 +20,26 @@
             "statusMessage": "Checking OpenAPI typegen drift"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "F=$(echo \"$CLAUDE_TOOL_INPUT\" | sed -nE 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\\1/p' | head -1); case \"$F\" in *.md|*.mdx|*.rs|*.sql) case \"$F\" in */prompts/*.md.j2|*/vendor/*|*/target/*|*/node_modules/*|*/dist/*|*/.scratchpad/plans/entraid-auth/*) exit 0 ;; esac; if [ -f \"$F\" ]; then HITS=$(grep -nE '[a-z)\\\"0-9][[:space:]]*—[[:space:]]*[a-z]|[a-z][a-zA-Z)0-9][[:space:]]*;[[:space:]]*[a-zA-Z]' \"$F\" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*(\\||[-*][[:space:]]+\\*\\*|##)' | head -3); if [ -n \"$HITS\" ]; then echo \"⚠️  Writing-guide scan (em-dash or semicolon in prose) in $F:\" >&2; echo \"$HITS\" >&2; echo \"Reference: .claude/rules/writing-guide.md. Run /writing-guide-scan for full check.\" >&2; fi; fi ;; esac",
+            "statusMessage": "Writing-guide check"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\"command\"[[:space:]]*:[[:space:]]*\"git commit'; then SIZE_GB=$(du -sk target 2>/dev/null | awk '{printf \"%d\", $1/1024/1024}'); if [ -n \"$SIZE_GB\" ] && [ \"$SIZE_GB\" -ge 40 ]; then echo \"💾 Storage nudge: target/ is ${SIZE_GB} GB (threshold 40 GB). Consider running /target-sweep-guard or 'just sweep-target' at the next natural checkpoint.\" >&2; fi; fi",
+            "statusMessage": "Storage check"
+          }
+        ]
       }
     ],
     "PreToolUse": [
