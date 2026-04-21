@@ -27,8 +27,8 @@ pub enum PrincipalType {
 }
 
 /// Extracted and validated per-request principal. Attached to request
-/// extensions by the middleware; extracted by handlers via the
-/// `AuthContext` Axum extractor.
+/// extensions by the middleware. Handlers extract via the `AuthContext`
+/// Axum extractor.
 #[derive(Debug, Clone)]
 pub struct AuthContext {
     pub principal_type: PrincipalType,

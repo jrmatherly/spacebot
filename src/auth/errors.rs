@@ -1,6 +1,7 @@
-//! Auth errors. Distinguishes 401 (no valid principal) from 403 (valid
-//! principal, insufficient permission). Authz errors land here in Phase 4;
-//! Phase 1 only uses the 401 variants plus 503 for JWKS unavailability.
+//! Auth errors. Distinguishes 401 (no valid principal), 403 (valid
+//! principal, insufficient scope or missing required role), and 503 (JWKS
+//! infrastructure unavailable). Phase 1 uses all three status families.
+//! Richer authz surfacing lands in Phase 4.
 
 use axum::http::StatusCode;
 

@@ -36,13 +36,13 @@ pub struct EntraAuthConfig {
     pub spa_scopes: Vec<Arc<str>>,
     /// Mock mode for local dev / CI. When true, tokens are "validated" by
     /// accepting any JWT with `aud`, `tid`, `oid` claims without signature
-    /// check. The mock validator itself is not shipped yet; setting this
+    /// check. The mock validator itself is not shipped yet. Setting this
     /// true is rejected at daemon startup.
     pub mock_mode: bool,
-    /// Test-only override for the computed JWKS URL. Not settable outside the
-    /// `auth` module by construction. Integration tests use
-    /// `EntraAuthConfig::new_test_with_overrides` below; the production loader
-    /// always leaves this `None`.
+    /// Test-only override for the computed JWKS URL. Not settable outside
+    /// the `auth` module by construction. Integration tests use
+    /// [`Self::new_for_test`] plus [`Self::with_test_overrides`] below.
+    /// The production loader always leaves this `None`.
     pub(crate) jwks_url_override: Option<String>,
     /// Test-only override for the issuer claim validator. Paired with
     /// `jwks_url_override`.

@@ -293,8 +293,8 @@ mod router_level {
         let tenant = MockTenant::start().await;
         let app = router_for(&tenant).await;
         // Build a Request with a non-ASCII byte in the Authorization value.
-        // `HeaderValue::from_bytes` accepts it; `.to_str()` fails at
-        // middleware time and maps to MalformedHeader.
+        // `HeaderValue::from_bytes` accepts the bytes. `.to_str()` then
+        // fails at middleware time and maps to MalformedHeader.
         let mut req = Request::builder()
             .uri("/api/status")
             .body(Body::empty())
@@ -321,19 +321,18 @@ mod router_level {
     async fn middleware_bypasses_auth_for_health_endpoint() {
         let tenant = MockTenant::start().await;
         let app = router_for(&tenant).await;
-        // `/api/health` must succeed even with no Authorization header.
-        // Exact path match: `/api/healthy` (theoretical future route) would
-        // not bypass.
+        // `/api/health` is bypassed by the middleware and routes to a real
+        // handler that returns 200. Asserting 200 (not just "not 401")
+        // catches regressions where the bypass is removed AND the handler
+        // path fails with a 5xx at the same time.
         let res = app
             .oneshot(req_with_auth("/api/health", None))
             .await
             .unwrap();
-        // `/api/health` exists in the API router as a real handler; this
-        // test asserts the bypass is applied, not the handler body.
-        assert_ne!(
+        assert_eq!(
             res.status(),
-            StatusCode::UNAUTHORIZED,
-            "health bypass must skip auth"
+            StatusCode::OK,
+            "health bypass must skip auth and reach the 200 handler"
         );
     }
 }

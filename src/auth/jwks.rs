@@ -67,7 +67,7 @@ impl EntraValidator {
         let aud_refs: Vec<&str> = vec![cfg.audience.as_ref()];
         let iss_string = cfg.issuer_override.clone().unwrap_or_else(|| cfg.issuer());
         let iss_refs: Vec<&str> = vec![iss_string.as_str()];
-        // `nbf` validation is off by default in jwt-authorizer 0.15; enable
+        // `nbf` validation is off by default in jwt-authorizer 0.15. Enable
         // it so not-yet-valid tokens are rejected (prevents tokens minted
         // with future `nbf` from being accepted ahead of schedule).
         let validation = Validation::new()

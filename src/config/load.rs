@@ -54,19 +54,22 @@ pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     }
 }
 
-/// Resolve an `env:`/`secret:` reference (or literal) and fail-fast if an
-/// `env:` or `secret:` prefix is present but unresolvable. Use this for
-/// required-at-startup config values where a literal fallback would quietly
-/// produce malformed output downstream (e.g. a URL containing the literal
-/// string "env:ENTRA_TENANT_ID").
+/// Resolve an `env:`/`secret:` reference or a literal, and fail-fast when a
+/// reference prefix is present but unresolvable. Use this for required-at-
+/// startup config values where the silent-literal fallback pattern elsewhere
+/// in this file would quietly produce malformed output downstream (e.g. a
+/// URL containing the literal string "env:ENTRA_TENANT_ID").
+///
+/// `resolve_env_value` returns `Some` for all literal inputs and `Some` for
+/// successfully-resolved references. It returns `None` only when a reference
+/// prefix is present but resolution failed, so a `None` result here
+/// unambiguously signals a missing env/secret.
 fn resolve_required_ref(field: &str, value: &str) -> anyhow::Result<String> {
-    let is_reference = value.starts_with("env:") || value.starts_with("secret:");
     match resolve_env_value(value) {
         Some(v) => Ok(v),
-        None if is_reference => anyhow::bail!(
+        None => anyhow::bail!(
             "{field} references {value} but the referenced env/secret could not be resolved"
         ),
-        None => Ok(value.to_string()),
     }
 }
 
@@ -2639,8 +2642,9 @@ impl Config {
                 // Resolve env:/secret: references for fields that commonly come
                 // from operator environment injection. Unresolved references
                 // fail-fast at startup rather than booting with a literal
-                // "env:..." string that would produce a malformed JWKS URL and
-                // surface much later as a runtime 503.
+                // "env:..." string that would reach the auth layer as a
+                // malformed tenant ID, audience, or client ID, and surface
+                // much later as a runtime 503 with no pointer to the cause.
                 let tenant_id = resolve_required_ref("[api.auth.entra].tenant_id", &e.tenant_id)?;
                 let audience = resolve_required_ref("[api.auth.entra].audience", &e.audience)?;
                 let spa_client_id = if e.spa_client_id.is_empty() {
