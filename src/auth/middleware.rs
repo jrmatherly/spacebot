@@ -205,38 +205,36 @@ pub async fn entra_auth_middleware(
             // memberships (groups_overage OR non-empty groups claim). A
             // user with a legitimately empty membership set proceeds
             // normally and never sees 202.
-            if ctx.principal_type == crate::auth::PrincipalType::User {
-                if let Some(pool) = state.instance_pool.load().as_ref().clone() {
-                    let expect_memberships = ctx.groups_overage || !ctx.groups.is_empty();
-                    if expect_memberships {
-                        let key = ctx.principal_key();
-                        let has_memberships: Option<i64> = sqlx::query_scalar(
-                            "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
-                        )
-                        .bind(&key)
-                        .fetch_optional(&pool)
-                        .await
-                        .unwrap_or(None);
-                        if has_memberships.is_none() {
-                            #[cfg(feature = "metrics")]
-                            crate::telemetry::Metrics::global()
-                                .auth_first_request_race_total
-                                .inc();
-                            tracing::debug!(
-                                principal_key = %key,
-                                "first-request race: returning 202 Accepted",
-                            );
-                            return (
-                                StatusCode::ACCEPTED,
-                                [(header::RETRY_AFTER, "2")],
-                                Json(json!({
-                                    "status": "syncing_permissions",
-                                    "retry_after_seconds": 2,
-                                })),
-                            )
-                                .into_response();
-                        }
-                    }
+            if ctx.principal_type == crate::auth::PrincipalType::User
+                && let Some(pool) = state.instance_pool.load().as_ref().clone()
+                && (ctx.groups_overage || !ctx.groups.is_empty())
+            {
+                let key = ctx.principal_key();
+                let has_memberships: Option<i64> = sqlx::query_scalar(
+                    "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
+                )
+                .bind(&key)
+                .fetch_optional(&pool)
+                .await
+                .unwrap_or(None);
+                if has_memberships.is_none() {
+                    #[cfg(feature = "metrics")]
+                    crate::telemetry::Metrics::global()
+                        .auth_first_request_race_total
+                        .inc();
+                    tracing::debug!(
+                        principal_key = %key,
+                        "first-request race: returning 202 Accepted",
+                    );
+                    return (
+                        StatusCode::ACCEPTED,
+                        [(header::RETRY_AFTER, "2")],
+                        Json(json!({
+                            "status": "syncing_permissions",
+                            "retry_after_seconds": 2,
+                        })),
+                    )
+                        .into_response();
                 }
             }
 
@@ -290,20 +288,19 @@ pub async fn sync_groups_for_principal(
     // configured TTL, treat the cached set as authoritative and don't
     // hammer Graph on every request. MIN(observed_at) is the oldest of
     // the persisted rows; if it is fresh, all of them are.
-    let oldest: Option<String> = sqlx::query_scalar(
-        "SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = ?",
-    )
-    .bind(&principal_key)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let oldest: Option<String> =
+        sqlx::query_scalar("SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = ?")
+            .bind(&principal_key)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
-    if let Some(ts) = oldest {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts) {
-            let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
-            if age < chrono::Duration::seconds(ttl_secs as i64) {
-                return Ok(());
-            }
+    if let Some(ts) = oldest
+        && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts)
+    {
+        let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+        if age < chrono::Duration::seconds(ttl_secs as i64) {
+            return Ok(());
         }
     }
 
@@ -377,12 +374,12 @@ pub async fn sync_user_photo_for_principal(
     .await?
     .flatten();
 
-    if let Some(ts) = last {
-        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts) {
-            let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
-            if age < chrono::Duration::days(7) {
-                return Ok(());
-            }
+    if let Some(ts) = last
+        && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts)
+    {
+        let age = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+        if age < chrono::Duration::days(7) {
+            return Ok(());
         }
     }
 

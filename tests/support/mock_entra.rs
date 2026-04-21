@@ -16,8 +16,14 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 pub struct MockTenant {
     pub server: MockServer,
     pub tenant_id: String,
+    // audience/signing_key/kid/jwks are used by different test crates that
+    // include this file via #[path = ...]. Each crate only uses a subset,
+    // which triggers dead-code per-crate. Blanket allow.
+    #[allow(dead_code)]
     pub audience: String,
+    #[allow(dead_code)]
     pub signing_key: EncodingKey,
+    #[allow(dead_code)]
     pub kid: String,
     #[allow(dead_code)]
     pub jwks: serde_json::Value,
@@ -95,6 +101,7 @@ impl MockTenant {
     }
 
     /// JWKS URL override to hand to `EntraAuthConfig::jwks_url_override`.
+    #[allow(dead_code)]
     pub fn jwks_url(&self) -> String {
         format!(
             "{}/{}/discovery/v2.0/keys",
@@ -105,6 +112,7 @@ impl MockTenant {
 
     /// Mint a user (delegated) token. Has `scp` claim so validator
     /// classifies the principal as `User`.
+    #[allow(dead_code)]
     pub fn mint_user_token(&self, oid: &str, roles: &[&str], groups: &[&str]) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -128,6 +136,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a bad signature (signed with a throwaway key).
+    #[allow(dead_code)]
     pub fn mint_wrong_sig_token(&self, oid: &str) -> String {
         let mut rng = OsRng;
         let other_key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
@@ -155,6 +164,7 @@ impl MockTenant {
 
     /// Mint a user token with a caller-chosen `scp` value. Used to exercise
     /// the scope-mismatch rejection path.
+    #[allow(dead_code)]
     pub fn mint_user_token_with_scope(&self, oid: &str, scp: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -176,6 +186,7 @@ impl MockTenant {
     /// Mint a service-principal (app-only) token. No `scp` claim, so the
     /// validator classifies the principal as `ServicePrincipal`. `roles`
     /// controls whether the required-role gate rejects.
+    #[allow(dead_code)]
     pub fn mint_service_principal_token(&self, oid: &str, roles: &[&str]) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -195,6 +206,7 @@ impl MockTenant {
     }
 
     /// Mint a token whose `exp` is in the past (expired).
+    #[allow(dead_code)]
     pub fn mint_expired_token(&self, oid: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -214,6 +226,7 @@ impl MockTenant {
     }
 
     /// Mint a token whose `nbf` is in the future (not-yet-valid).
+    #[allow(dead_code)]
     pub fn mint_not_yet_valid_token(&self, oid: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -233,6 +246,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a caller-chosen `aud` value.
+    #[allow(dead_code)]
     pub fn mint_token_with_aud(&self, oid: &str, aud: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({
@@ -252,6 +266,7 @@ impl MockTenant {
     }
 
     /// Mint a token with a caller-chosen `iss` value.
+    #[allow(dead_code)]
     pub fn mint_token_with_iss(&self, oid: &str, iss: &str) -> String {
         let now = chrono::Utc::now().timestamp();
         let claims = json!({

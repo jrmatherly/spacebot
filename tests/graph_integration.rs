@@ -89,13 +89,12 @@ async fn resolves_transitive_groups_on_overage() {
     .await
     .expect("sync_groups");
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM team_memberships WHERE principal_key = ?",
-    )
-    .bind(ctx.principal_key())
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM team_memberships WHERE principal_key = ?")
+            .bind(ctx.principal_key())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(count, 2, "both stub groups should be persisted");
 }
 
@@ -131,15 +130,17 @@ async fn fail_closed_when_graph_unreachable() {
         300,
     )
     .await;
-    assert!(result.is_err(), "sync should propagate error when Graph is dead");
+    assert!(
+        result.is_err(),
+        "sync should propagate error when Graph is dead"
+    );
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM team_memberships WHERE principal_key = ?",
-    )
-    .bind(ctx.principal_key())
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM team_memberships WHERE principal_key = ?")
+            .bind(ctx.principal_key())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(count, 0, "fail-closed: memberships must remain empty");
 }
 
@@ -176,7 +177,11 @@ async fn respects_cache_ttl_and_skips_graph() {
     .expect("graph client");
 
     let result = spacebot::auth::middleware::sync_groups_for_principal(
-        &pool, &graph, &ctx, "fake-token", 300,
+        &pool,
+        &graph,
+        &ctx,
+        "fake-token",
+        300,
     )
     .await;
     assert!(
@@ -207,14 +212,9 @@ async fn syncs_user_photo_on_first_fetch() {
     ))
     .expect("graph client");
 
-    spacebot::auth::middleware::sync_user_photo_for_principal(
-        &pool,
-        &graph,
-        &ctx,
-        "fake-token",
-    )
-    .await
-    .expect("photo sync");
+    spacebot::auth::middleware::sync_user_photo_for_principal(&pool, &graph, &ctx, "fake-token")
+        .await
+        .expect("photo sync");
 
     let (b64, ts): (Option<String>, Option<String>) = sqlx::query_as(
         "SELECT display_photo_b64, photo_updated_at FROM users WHERE principal_key = ?",
@@ -249,14 +249,9 @@ async fn records_absent_photo_with_timestamp() {
     ))
     .expect("graph client");
 
-    spacebot::auth::middleware::sync_user_photo_for_principal(
-        &pool,
-        &graph,
-        &ctx,
-        "fake-token",
-    )
-    .await
-    .expect("photo sync");
+    spacebot::auth::middleware::sync_user_photo_for_principal(&pool, &graph, &ctx, "fake-token")
+        .await
+        .expect("photo sync");
 
     let (b64, ts): (Option<String>, Option<String>) = sqlx::query_as(
         "SELECT display_photo_b64, photo_updated_at FROM users WHERE principal_key = ?",

@@ -212,7 +212,7 @@ impl GraphClient {
                 let body = res.text().await.unwrap_or_default();
                 tracing::warn!(
                     graph.endpoint = "photo",
-                    graph.status = status,
+                    graph.status = %status,
                     "photo fetch failed",
                 );
                 Err(GraphError::Status { status, body })

@@ -1725,9 +1725,7 @@ async fn run(
                             tenant_id: entra_cfg.tenant_id.clone(),
                             web_api_client_id: entra_cfg.audience.clone(),
                             web_api_client_secret: Arc::from(secret.expose()),
-                            graph_api_base: Arc::from(
-                                "https://graph.microsoft.com/v1.0",
-                            ),
+                            graph_api_base: Arc::from("https://graph.microsoft.com/v1.0"),
                             obo_token_endpoint: Arc::from(obo_endpoint.as_str()),
                             request_timeout_secs: 30,
                         };
@@ -1754,9 +1752,7 @@ async fn run(
                     }
                 },
                 None => {
-                    tracing::warn!(
-                        "secrets store unavailable; Graph client cannot be wired"
-                    );
+                    tracing::warn!("secrets store unavailable; Graph client cannot be wired");
                 }
             }
         }
