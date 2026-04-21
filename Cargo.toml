@@ -37,7 +37,12 @@ redb = "4.1"
 # can opt out via `--no-default-features` to skip the ~5-10 minute ort-sys
 # C++ toolchain build. `embeddings` feature is on by default; production
 # builds and CI must keep it enabled.
-fastembed = { version = "5", optional = true }
+#
+# Exact-pinned to 5.13.2. The 5.13.3 bump pulled in hf-hub 0.5.0 which
+# changed the ONNX model fetch path and silently broke 8 memory tests
+# (memory::search::*, memory::maintenance::*). Relax this to caret once
+# the hf-hub 0.5 regression lands upstream or a fix ships in fastembed.
+fastembed = { version = "=5.13.2", optional = true }
 
 # Encoding
 base64 = "0.22"

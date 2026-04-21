@@ -1,5 +1,5 @@
 -- Teams. One team per Entra security group (1:1 mapping per research Q4).
--- `external_id` holds the Entra group's object GUID — research §12 S-I4
+-- `external_id` holds the Entra group's object GUID. Research §12 S-I4
 -- mandates GUID, never display name or UPN-style SID.
 
 CREATE TABLE teams (

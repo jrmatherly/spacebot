@@ -1,7 +1,7 @@
 -- Users table. One row per Entra principal (user OR service_principal).
 -- Created lazily on first successful auth. Never deleted (soft-delete only).
 --
--- Identity key is the composite (tid, oid) — never email/upn (research §12 E-7).
+-- Identity key is the composite (tid, oid). Never email/upn (research §12 E-7).
 -- `principal_type` discriminates user vs service vs system (research §12 A-5).
 
 CREATE TABLE users (

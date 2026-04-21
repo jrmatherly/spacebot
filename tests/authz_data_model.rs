@@ -182,3 +182,103 @@ async fn raw_visibility_insert_rejects_unknown_value() {
         "CHECK constraint must reject visibility = 'global'"
     );
 }
+
+// ---------------------------------------------------------------------------
+// CHECK-constraint regression tests for the 4 enum columns tightened in
+// migrations 1-3 (users.principal_type, users.status, teams.status,
+// team_memberships.source). Each test binds a raw sqlx::query with an
+// invalid value so the CHECK is the sole failure source; matching record
+// types use bare `String` in Rust, so these CHECKs are the only guard
+// against direct-SQL paths (migrations, admin tooling, backfill scripts)
+// emitting garbage enum values. Pairs with
+// `raw_visibility_insert_rejects_unknown_value` above.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn raw_users_insert_rejects_unknown_principal_type() {
+    let pool = setup_pool().await;
+    let result = sqlx::query(
+        r#"
+        INSERT INTO users (principal_key, tenant_id, object_id, principal_type)
+        VALUES (?, ?, ?, ?)
+        "#,
+    )
+    .bind("tid-x:oid-x")
+    .bind("tid-x")
+    .bind("oid-x")
+    .bind("guest") // not in ('user', 'service_principal', 'system')
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "CHECK constraint must reject principal_type = 'guest'"
+    );
+}
+
+#[tokio::test]
+async fn raw_users_insert_rejects_unknown_status() {
+    let pool = setup_pool().await;
+    let result = sqlx::query(
+        r#"
+        INSERT INTO users (principal_key, tenant_id, object_id, principal_type, status)
+        VALUES (?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind("tid-x:oid-x")
+    .bind("tid-x")
+    .bind("oid-x")
+    .bind("user")
+    .bind("suspended") // not in ('active', 'disabled', 'deleted')
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "CHECK constraint must reject users.status = 'suspended'"
+    );
+}
+
+#[tokio::test]
+async fn raw_teams_insert_rejects_unknown_status() {
+    let pool = setup_pool().await;
+    let result = sqlx::query(
+        r#"
+        INSERT INTO teams (id, external_id, display_name, status)
+        VALUES (?, ?, ?, ?)
+        "#,
+    )
+    .bind("team-xyz")
+    .bind("grp-xyz")
+    .bind("Engineering")
+    .bind("retired") // not in ('active', 'archived')
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "CHECK constraint must reject teams.status = 'retired'"
+    );
+}
+
+#[tokio::test]
+async fn raw_team_memberships_insert_rejects_unknown_source() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-1", "oid-a");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let team = upsert_team(&pool, "grp-777", "Team 777").await.unwrap();
+    let key = ctx.principal_key();
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO team_memberships (principal_key, team_id, source)
+        VALUES (?, ?, ?)
+        "#,
+    )
+    .bind(&key)
+    .bind(&team.id)
+    .bind("manual_admin") // not in ('token_claim', 'graph_overage')
+    .execute(&pool)
+    .await;
+    assert!(
+        result.is_err(),
+        "CHECK constraint must reject team_memberships.source = 'manual_admin'"
+    );
+}

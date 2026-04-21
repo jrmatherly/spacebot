@@ -7,6 +7,20 @@
 //! instance DB cannot use FKs into per-agent tables. See
 //! `docs/design-docs/entra-backfill-strategy.md` for the sweep-based orphan
 //! policy this creates.
+//!
+//! # Error taxonomy
+//!
+//! [`upsert_user_from_auth`] returns [`RepositoryError`] because it has a
+//! genuine domain precondition (legacy-static principals are not persisted)
+//! that callers need to distinguish from sqlx failures. Match on
+//! `RepositoryError::InvalidPrincipalType` for that path.
+//!
+//! [`upsert_team`], [`set_ownership`], and [`get_ownership`] have no such
+//! precondition and return [`anyhow::Result`] with `.with_context()` frames.
+//! Callers that need sqlx-variant classification (CHECK violation vs FK
+//! violation vs transient) use `anyhow::Error::downcast_ref::<sqlx::Error>()`
+//! instead of a match. The downcast walks the context chain and recovers the
+//! original `sqlx::Error`.
 
 use anyhow::Context as _;
 use sqlx::SqlitePool;
@@ -82,8 +96,8 @@ pub async fn upsert_user_from_auth(
     Ok(row)
 }
 
-/// Upsert a team keyed by Entra group `external_id`. Called by Phase 3's
-/// reconciliation when a new group is encountered.
+/// Upsert a team keyed by Entra group `external_id`. Called by the Graph
+/// reconciliation loop when a new group is encountered.
 pub async fn upsert_team(
     pool: &SqlitePool,
     external_id: &str,
