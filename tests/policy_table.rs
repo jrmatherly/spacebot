@@ -4,7 +4,7 @@
 //! minimal principal + ownership shape, and asserts the policy decision.
 
 use spacebot::auth::context::{AuthContext, PrincipalType};
-use spacebot::auth::policy::{Access, DenyReason, check_read, check_write};
+use spacebot::auth::policy::{Access, DenyReason, check_read, check_read_with_audit, check_write};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
@@ -260,6 +260,58 @@ async fn write_requires_ownership_even_for_team_visibility() {
         matches!(write, Access::Denied(DenyReason::NotYours)),
         "team members can read but only the owner can write: got {write:?}"
     );
+}
+
+#[tokio::test]
+async fn admin_read_sets_audit_flag_on_decision() {
+    let pool = setup_pool().await;
+    let alice = user("alice", vec![ROLE_USER], vec![]);
+    let carol = user("carol", vec![ROLE_ADMIN], vec![]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (decision, admin_override) = check_read_with_audit(&pool, &carol, "memory", "m1")
+        .await
+        .unwrap();
+    assert!(matches!(decision, Access::Allowed));
+    assert!(
+        admin_override,
+        "admin reading another user's resource must flag admin_override"
+    );
+}
+
+#[tokio::test]
+async fn owner_read_does_not_set_audit_flag() {
+    let pool = setup_pool().await;
+    let alice = user("alice", vec![ROLE_USER], vec![]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (_decision, admin_override) = check_read_with_audit(&pool, &alice, "memory", "m1")
+        .await
+        .unwrap();
+    assert!(!admin_override, "owner access is not break-glass");
 }
 
 #[tokio::test]

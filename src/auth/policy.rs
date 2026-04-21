@@ -146,6 +146,40 @@ async fn decide_user_read(
     }
 }
 
+/// Variant of [`check_read`] that additionally reports whether the allow
+/// was an admin break-glass (admin reading another user's resource).
+/// Handlers wire this into the audit log: when `admin_override` is true
+/// and the decision is `Allowed`, emit an `admin_<verb>` event per the
+/// matrix at `docs/design-docs/entra-role-permission-matrix.md`.
+///
+/// Phase 4 stubs the audit side at `tracing::info!`. Phase 5 replaces
+/// that with an `AuditAppender` call against the hash-chained audit log.
+pub async fn check_read_with_audit(
+    pool: &SqlitePool,
+    ctx: &AuthContext,
+    resource_type: &str,
+    resource_id: &str,
+) -> anyhow::Result<(Access, bool)> {
+    let own = get_ownership(pool, resource_type, resource_id).await?;
+    let Some(own) = own else {
+        return Ok((Access::Denied(DenyReason::NotOwned), false));
+    };
+    let is_owner = own.owner_principal_key == ctx.principal_key();
+    let admin_override = is_admin(ctx) && !is_owner;
+
+    let decision = if is_admin(ctx) {
+        Access::Allowed
+    } else {
+        match ctx.principal_type {
+            PrincipalType::System | PrincipalType::LegacyStatic => Access::Allowed,
+            PrincipalType::User | PrincipalType::ServicePrincipal => {
+                decide_user_read(pool, ctx, &own).await?
+            }
+        }
+    };
+    Ok((decision, admin_override))
+}
+
 /// Decide write access to a resource. Stricter than read: team-visibility
 /// resources are read-shared but writable only by the owner (and admins).
 pub async fn check_write(
