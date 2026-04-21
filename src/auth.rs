@@ -10,6 +10,7 @@ pub mod errors;
 pub mod jwks;
 pub mod middleware;
 pub mod principals;
+pub mod repository;
 
 pub use config::EntraAuthConfig;
 pub use context::{AuthContext, PrincipalType};
