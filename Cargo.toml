@@ -66,6 +66,7 @@ aes-gcm = "0.11.0-rc.3"
 sha2 = "0.11"
 argon2 = "0.6.0-rc.8"
 rand = "0.10"
+subtle = "2"
 
 # UUID generation
 uuid = { version = "1.15", features = ["v4", "serde"] }
@@ -212,6 +213,12 @@ unimplemented = "deny"
 tokio-test = "0.4"
 parking_lot = "0.12"
 wiremock = "0.6"
+# Integration-test-only: `tower::ServiceExt::oneshot` drives the Axum router
+# in-process without binding a TCP listener. `http-body-util` collects the
+# response body for assertions. Both are already transitive deps via axum;
+# declaring them here makes the test files' imports explicit.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 # OS keystore (macOS Keychain for master key storage)
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -16,6 +16,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::any;
 use rust_embed::Embed;
 use serde_json::json;
+use subtle::ConstantTimeEq;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -357,21 +358,120 @@ async fn api_auth_middleware(
         return next.run(request).await;
     }
 
-    let is_authorized = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|token| token == expected_token);
+    let auth_header = request.headers().get(header::AUTHORIZATION);
+    let outcome = match auth_header {
+        None => AuthOutcome::Reject(AuthRejectReason::HeaderMissing),
+        Some(value) => match value.to_str() {
+            Err(_) => AuthOutcome::Reject(AuthRejectReason::HeaderNonAscii),
+            Ok(raw) => match raw.strip_prefix("Bearer ") {
+                None => AuthOutcome::Reject(AuthRejectReason::SchemeMissing),
+                Some(token) => {
+                    // Use `ct_eq` so a wrong token of the same length can't
+                    // leak its first-matching-byte prefix via timing
+                    // (observation #25356). Length itself is already known
+                    // to the attacker (they chose the token).
+                    if bool::from(token.as_bytes().ct_eq(expected_token.as_bytes())) {
+                        AuthOutcome::Accept
+                    } else {
+                        AuthOutcome::Reject(AuthRejectReason::TokenMismatch)
+                    }
+                }
+            },
+        },
+    };
 
-    if is_authorized {
-        next.run(request).await
-    } else {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "unauthorized"})),
-        )
-            .into_response()
+    match outcome {
+        AuthOutcome::Accept => next.run(request).await,
+        AuthOutcome::Reject(reason) => {
+            let reason_label = reason.as_metric_label();
+            tracing::warn!(reason = reason_label, %path, "api auth rejected");
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .auth_failures_total
+                .with_label_values(&["static_token", reason_label])
+                .inc();
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "unauthorized"})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Outcome of the auth-middleware check. `Reject` carries a typed reason
+/// rather than a raw string so the set of reasons is compiler-enforced:
+/// adding a variant to [`AuthRejectReason`] forces every match site to
+/// handle it, and typos are impossible.
+#[derive(Debug)]
+enum AuthOutcome {
+    Accept,
+    Reject(AuthRejectReason),
+}
+
+/// Why the static-token middleware rejected a request. Mapped to the
+/// `reason` field of the `tracing::warn` log line and the
+/// `spacebot_auth_failures_total{reason=...}` Prometheus label via
+/// [`Self::as_metric_label`]. Phase 1 will extend this with JWT-specific
+/// variants; the compiler will flag every call site that forgot to
+/// handle the new variants.
+#[derive(Debug)]
+enum AuthRejectReason {
+    HeaderMissing,
+    HeaderNonAscii,
+    SchemeMissing,
+    TokenMismatch,
+}
+
+impl AuthRejectReason {
+    /// Stable machine-readable label used in both logs and metrics. The
+    /// string values are contractual with dashboards and alert rules. Do
+    /// not change them without updating operator documentation.
+    fn as_metric_label(&self) -> &'static str {
+        match self {
+            Self::HeaderMissing => "header_missing",
+            Self::HeaderNonAscii => "header_non_ascii",
+            Self::SchemeMissing => "scheme_missing",
+            Self::TokenMismatch => "token_mismatch",
+        }
+    }
+}
+
+#[cfg(test)]
+mod auth_reject_reason_tests {
+    use super::AuthRejectReason;
+
+    /// Pins the stable-string contract for operator dashboards and alert
+    /// rules. If you're changing a label here, also update the dashboard
+    /// queries that match against it. The doc comment on
+    /// `as_metric_label` explains the contract.
+    ///
+    /// The `match` below is load-bearing: it forces exhaustiveness. Adding
+    /// a new `AuthRejectReason` variant without updating the `cases` list
+    /// AND the match arm makes this test fail to compile, preventing a
+    /// new dashboard contract from shipping without an intentional edit
+    /// here.
+    #[test]
+    fn label_strings_are_stable() {
+        let cases: &[(AuthRejectReason, &'static str)] = &[
+            (AuthRejectReason::HeaderMissing, "header_missing"),
+            (AuthRejectReason::HeaderNonAscii, "header_non_ascii"),
+            (AuthRejectReason::SchemeMissing, "scheme_missing"),
+            (AuthRejectReason::TokenMismatch, "token_mismatch"),
+        ];
+        for (variant, expected) in cases {
+            assert_eq!(variant.as_metric_label(), *expected);
+        }
+        // Exhaustiveness guard. Every variant in `AuthRejectReason` must
+        // appear both here and in the `cases` list above. If the compiler
+        // complains about a missing arm, add the new variant to both.
+        let guard = AuthRejectReason::HeaderMissing;
+        match guard {
+            AuthRejectReason::HeaderMissing
+            | AuthRejectReason::HeaderNonAscii
+            | AuthRejectReason::SchemeMissing
+            | AuthRejectReason::TokenMismatch => {}
+        }
     }
 }
 
@@ -483,4 +583,47 @@ async fn static_handler(uri: Uri) -> Response {
     }
 
     (StatusCode::NOT_FOUND, "not found").into_response()
+}
+
+#[doc(hidden)]
+pub mod test_support {
+    //! Test-only scaffolding for the auth middleware integration tests.
+    //!
+    //! Mirrors the CORS and auth-layer wiring of [`start_http_server`] but
+    //! skips the `TcpListener` binding so router assertions run in-process.
+    //! Keep this in sync with `start_http_server`. If production adds
+    //! `allow_credentials(true)` (or similar), both this helper and the
+    //! regression test at `tests/api_auth_middleware.rs` must be updated
+    //! intentionally. Do not silently diverge.
+
+    use super::{ApiState, api_auth_middleware, api_router};
+    use axum::Router;
+    use axum::http::{Method, header};
+    use std::sync::Arc;
+    use tower_http::cors::{AllowOrigin, CorsLayer};
+
+    /// Build the protected router with auth middleware AND the real CORS
+    /// layer attached, for integration testing.
+    pub fn build_test_router(state: Arc<ApiState>) -> Router {
+        let cors = CorsLayer::new()
+            .allow_origin(AllowOrigin::mirror_request())
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+
+        let (api_routes, _api) = api_router().split_for_parts();
+        let protected =
+            Router::new()
+                .nest("/api", api_routes)
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    api_auth_middleware,
+                ));
+        protected.layer(cors).with_state(state)
+    }
 }

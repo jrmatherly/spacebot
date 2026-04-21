@@ -39,3 +39,6 @@ mod workers;
 
 pub use server::{api_router, start_http_server};
 pub use state::{AgentInfo, ApiEvent, ApiState, ChannelToolCallEntry};
+
+#[doc(hidden)]
+pub use server::test_support;
