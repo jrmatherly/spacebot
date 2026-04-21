@@ -44,7 +44,7 @@ jobs:
       GF_ADMIN_USER: "admin"
       GF_ADMIN_PASSWORD: "validate"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Docker Compose version
         run: docker compose version
@@ -80,7 +80,7 @@ jobs:
       # Needed if the GHCR package is private; harmless when public.
       packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
