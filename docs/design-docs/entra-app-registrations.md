@@ -1,5 +1,7 @@
 # Entra App Registrations for Spacebot
 
+> **Status:** Spec. The Spacebot daemon validates v2 JWTs per this schema (Phase 1, PR #82, 2026-04-20). Tenant-side app-registration provisioning is operator-owned. Spacebot does not automate it. Phase 2 (PR #101, 2026-04-21) consumes the validated `AuthContext` to persist principal records. Phase 4+ will consume the roles defined below for handler-level authorization.
+
 > Source decision: research §11.2(2), §11.4, §12 E-4.
 
 ## Registrations

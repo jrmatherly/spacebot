@@ -15,7 +15,7 @@ Six packages, all published at the same version (currently `0.2.3`):
 | Package | Scope |
 |---------|-------|
 | `@spacedrive/tokens` | CSS design tokens + Tailwind v4 `@theme` directive |
-| `@spacedrive/primitives` | 45 Radix-based base UI components |
+| `@spacedrive/primitives` | 40+ Radix-based base UI components |
 | `@spacedrive/forms` | React Hook Form field wrappers |
 | `@spacedrive/icons` | File type icons + resolution utilities |
 | `@spacedrive/ai` | AI agent interaction components |

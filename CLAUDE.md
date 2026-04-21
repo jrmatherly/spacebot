@@ -73,6 +73,8 @@ If TypeScript types changed: `just check-typegen` to verify schema sync.
 - `.claude/rules/coding-discipline.md` — Surface assumptions, simplicity, surgical edits, goal-driven TDD
 - `docs/design-docs/spacedrive-integration-pairing.md` — Shared-state contract between Spacebot and Spacedrive (blocks Track A and Track B)
 - `docs/design-docs/spacedrive-tool-response-envelope.md` — Prompt-injection defense envelope for Spacedrive-returned tool bytes
+- `docs/design-docs/entra-app-registrations.md` — Entra app-registration schema (client IDs, app roles, redirect URIs, API permissions) used by the Phase 1 JWT validator
+- `docs/design-docs/entra-backfill-strategy.md` — No-auto-broadening policy for pre-existing resources under Entra auth, plus the Phase 10 sweep design for both orphan directions
 - `spacedrive/SYNC.md` — Fork provenance + reference-clone discipline for the vendored Spacedrive tree (Spacebot-owned per 2026-04-16 self-reliance decision)
 - `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
 - `AGENTS.md` — Architecture implementation guide for coding agents

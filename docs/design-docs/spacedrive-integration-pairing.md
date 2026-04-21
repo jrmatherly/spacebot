@@ -50,7 +50,7 @@ These are the ground truths from reading the code, not design-doc prose:
   - Supports two modes: plaintext (default) or AES-256-GCM encrypted with master key in OS keychain
   - This is the right home for a Spacebot-side Spacedrive auth token
 - **Config sections** live in `src/config/types.rs` (lines 22–1145). Pattern is `pub struct FooConfig { enabled: bool, ... }` with `#[serde(default)]` for backward compat.
-- **Migrations**: per-agent in `migrations/`, instance-wide in `migrations/global/` (added PR #56). Naming convention `YYYYMMDDHHMMSS_<snake_case_description>.sql`. Last instance-wide migration as of 2026-04-20: `migrations/global/20260417222250_spacedrive_pairing.sql` (the pairing migration introduced by this ADR). Migrations are immutable after apply (enforced by PreToolUse hook).
+- **Migrations**: per-agent in `migrations/`, instance-wide in `migrations/global/` (added PR #56). Naming convention `YYYYMMDDHHMMSS_<snake_case_description>.sql`. This ADR introduced `migrations/global/20260417222250_spacedrive_pairing.sql`; later instance-wide migrations land in subsequent phases. Migrations are immutable after apply (enforced by PreToolUse hook).
 - **No Spacedrive awareness** anywhere in `src/` today (`grep "spacedrive" src/ --include="*.rs" | grep -v spacedriveapp | grep -v spacedrive.com` returns 0 matches).
 
 ## Decisions

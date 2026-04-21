@@ -241,6 +241,17 @@ src/
 ├── secrets.rs          → secrets/
 │   └── store.rs        — encrypted credentials (AES-256-GCM, redb)
 │
+├── auth.rs             → auth/ (Entra ID JWT validation + authz data model)
+│   ├── errors.rs       — AuthError enum, HTTP status + metric-reason mapping
+│   ├── context.rs      — AuthContext extractor (tid, oid, roles, groups, principal_type)
+│   ├── config.rs       — EntraAuthConfig: tenant_id, client_id, scopes, roles, TTLs
+│   ├── jwks.rs         — EntraValidator: jwt-authorizer 0.15 wrapper, RS256 pinned
+│   ├── middleware.rs   — entra_auth_middleware: bearer parse, validate, upsert user
+│   ├── principals.rs   — UserRecord, TeamRecord, ResourceOwnershipRecord, Visibility enum
+│   └── repository.rs   — RepositoryError + upsert_user_from_auth, upsert_team, set/get_ownership
+│
+├── anthropic_oauth.rs  — Anthropic OAuth PKCE (formerly `src/auth.rs`; renamed to free the namespace)
+│
 ├── settings.rs         → settings/
 │   └── store.rs        — key-value settings (redb)
 │
