@@ -52,6 +52,14 @@
       "args": ["-y", "@microsoft/mcp-docs"]
     },
 
+    "sequential-thinking": {
+      "_purpose": "Structured multi-step reasoning. Tracks explicit thought chains for phase plans, architecture trade-offs, and cross-project audits — the kind of work the Entra rollout and Spacedrive integration produce continuously. Claude invokes it when a question benefits from visible step-tracking rather than inline deliberation.",
+      "_why_team_shared": "Added 2026-04-21. Not plugin-managed — ships as a standalone MCP server via @modelcontextprotocol/server-sequential-thinking. Without this entry, a fresh session on a new dev machine lacks the tool unless the dev ran `claude mcp add` manually. Team-shared prevents that drift.",
+      "_prerequisites": "None. Pure reasoning helper, no external services.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+
     "_disabled_postgres": {
       "_purpose": "Direct query/schema tools for PostgreSQL. Spacebot does NOT use Postgres (SQLite via sqlx). Kept here as a reference if a future deployment adds a Postgres-backed component (e.g., LiteLLM's key-rotation DB).",
       "_enable_by": "Rename the key to `postgres`, set DATABASE_URL, and commit.",

@@ -69,6 +69,12 @@ PROJECT-STATUS.md
 deploy/docker/.env
 deploy/docker/data/
 
+# MCP team config — copy .mcp.json.example to .mcp.json to enable.
+# Resolved .mcp.json stays local so env-substitution tokens (GITHUB_TOKEN, etc.)
+# don't leak into git. Re-enable tracking via `!.mcp.json` if the team decides
+# to commit a no-secrets variant.
+.mcp.json
+
 # Graphify (opt-in knowledge graph tool — see .scratchpad/completed/2026-04-21-graphify-research.md)
 # Ignore all graphify outputs. GRAPH_REPORT.md.keep is an intentional escape
 # hatch for milestone snapshots — copy GRAPH_REPORT.md to GRAPH_REPORT.md.keep

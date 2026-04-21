@@ -40,6 +40,16 @@
             "statusMessage": "Storage check"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/tokio-test-flavor-check.sh",
+            "statusMessage": "tokio-test flavor check"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -67,6 +77,15 @@
           {
             "type": "command",
             "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\"file_path\":\\s*\"[^\"]*(/\\.env($|\\.)|secrets\\.redb|\\.keychain-access|\\.github-token|\\.cargo/credentials)'; then echo '{\"decision\": \"block\", \"reason\": \"This file holds secrets. Edit refused. For .env values, edit .env.example and document the variable. For runtime secrets use `spacebot secrets` CLI or the OS Keychain UI. secrets.redb is the encrypted store; never hand-edit.\"}'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/litellm-master-key-guard.sh"
           }
         ]
       }
