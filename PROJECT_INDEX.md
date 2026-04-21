@@ -39,7 +39,7 @@ spacebot/
 ├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (13 integration test files)
+└── tests/                          (15 integration test files)
 ```
 
 ---
@@ -135,8 +135,8 @@ just gate-pr
 
 ## Test Coverage
 
-- 823 `#[test]` + `#[tokio::test]` annotations across src/ (graph reports 203 Test nodes)
-- 13 dedicated integration test files in tests/
+- 885 `#[test]` + `#[tokio::test]` annotations across src/
+- 15 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces check-sidecar-naming + 3 frontend invariant guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + fmt + clippy (RUSTFLAGS=-Dwarnings) + lib tests + integration test compile. Migration-safety check is defined but disabled; the enforcement logic lives at `scripts/_disabled/check-migration-safety.sh` and can be reactivated from there. Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile; does NOT propagate -Dwarnings).
 
 ---
