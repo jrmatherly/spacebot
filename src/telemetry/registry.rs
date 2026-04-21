@@ -88,6 +88,11 @@ pub struct Metrics {
     /// non-zero value indicates a startup-ordering regression.
     pub auth_upsert_skipped_total: IntCounter,
 
+    /// A-10: 202 Accepted responses emitted while the async Graph group
+    /// sync was in flight on a user's first request. Persistent high rate
+    /// here indicates Graph is unreachable, rate-limited, or throwing.
+    pub auth_first_request_race_total: IntCounter,
+
     // -- Memory audit --
     /// Memory mutation operations.
     /// Labels: agent_id, operation (save/update/delete/forget).
@@ -341,6 +346,12 @@ impl Metrics {
         let auth_upsert_skipped_total = IntCounter::new(
             "spacebot_auth_upsert_skipped_total",
             "Post-auth user-row upsert skipped (instance pool not attached)",
+        )
+        .expect("hardcoded metric descriptor");
+
+        let auth_first_request_race_total = IntCounter::new(
+            "spacebot_auth_first_request_race_total",
+            "A-10 202 Accepted responses emitted while async Graph sync was in flight",
         )
         .expect("hardcoded metric descriptor");
 
@@ -625,6 +636,9 @@ impl Metrics {
             .register(Box::new(auth_upsert_skipped_total.clone()))
             .expect("hardcoded metric");
         registry
+            .register(Box::new(auth_first_request_race_total.clone()))
+            .expect("hardcoded metric");
+        registry
             .register(Box::new(memory_updates_total.clone()))
             .expect("hardcoded metric");
         registry
@@ -737,6 +751,7 @@ impl Metrics {
             auth_failures_total,
             auth_upsert_failures_total,
             auth_upsert_skipped_total,
+            auth_first_request_race_total,
             memory_updates_total,
             dispatch_while_cold_count,
             event_receiver_lagged_events_total,

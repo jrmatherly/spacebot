@@ -196,6 +196,50 @@ pub async fn entra_auth_middleware(
                 }
             }
 
+            // A-10: first-request race. When a user has just authenticated
+            // and the async group sync hasn't persisted memberships yet,
+            // return 202 + Retry-After: 2 so the SPA retries instead of
+            // surfacing spurious 404s on team-scoped resources.
+            //
+            // Only fires when the token signals the user SHOULD have
+            // memberships (groups_overage OR non-empty groups claim). A
+            // user with a legitimately empty membership set proceeds
+            // normally and never sees 202.
+            if ctx.principal_type == crate::auth::PrincipalType::User {
+                if let Some(pool) = state.instance_pool.load().as_ref().clone() {
+                    let expect_memberships = ctx.groups_overage || !ctx.groups.is_empty();
+                    if expect_memberships {
+                        let key = ctx.principal_key();
+                        let has_memberships: Option<i64> = sqlx::query_scalar(
+                            "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
+                        )
+                        .bind(&key)
+                        .fetch_optional(&pool)
+                        .await
+                        .unwrap_or(None);
+                        if has_memberships.is_none() {
+                            #[cfg(feature = "metrics")]
+                            crate::telemetry::Metrics::global()
+                                .auth_first_request_race_total
+                                .inc();
+                            tracing::debug!(
+                                principal_key = %key,
+                                "first-request race: returning 202 Accepted",
+                            );
+                            return (
+                                StatusCode::ACCEPTED,
+                                [(header::RETRY_AFTER, "2")],
+                                Json(json!({
+                                    "status": "syncing_permissions",
+                                    "retry_after_seconds": 2,
+                                })),
+                            )
+                                .into_response();
+                        }
+                    }
+                }
+            }
+
             request.extensions_mut().insert(ctx);
             next.run(request).await
         }
