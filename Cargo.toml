@@ -31,13 +31,18 @@ jsonwebtoken = "9"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono", "uuid"] }
 lancedb = "0.27"
 lance-index = "4.0"
-redb = "4.0"
+redb = "4.1"
 
 # Vector / embedding operations. Optional so non-memory-touching dev builds
 # can opt out via `--no-default-features` to skip the ~5-10 minute ort-sys
 # C++ toolchain build. `embeddings` feature is on by default; production
 # builds and CI must keep it enabled.
-fastembed = { version = "5", optional = true }
+#
+# Exact-pinned to 5.13.2. The 5.13.3 bump pulled in hf-hub 0.5.0 which
+# changed the ONNX model fetch path and silently broke 8 memory tests
+# (memory::search::*, memory::maintenance::*). Relax this to caret once
+# the hf-hub 0.5 regression lands upstream or a fix ships in fastembed.
+fastembed = { version = "=5.13.2", optional = true }
 
 # Encoding
 base64 = "0.22"
@@ -90,7 +95,7 @@ pin-project = "1"
 
 # Schema validation
 schemars = "1.2"
-rmcp = { version = "1.1", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "1.5", features = ["client", "reqwest", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 
 # Command line (for main.rs)
 clap = { version = "4.5", features = ["derive"] }
@@ -169,7 +174,7 @@ tempfile = "3"
 # Prometheus metrics (optional, behind "metrics" feature)
 prometheus = { version = "0.14", optional = true }
 pdf-extract = "0.10.0"
-open = "5.3.3"
+open = "5.3.4"
 urlencoding = "2.1.3"
 url = "2"
 moka = "0.12.13"

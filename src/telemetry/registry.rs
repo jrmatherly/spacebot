@@ -1,7 +1,8 @@
 //! Global metrics registry and metric handle definitions.
 
 use prometheus::{
-    CounterVec, Histogram, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry,
+    CounterVec, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec,
+    Opts, Registry,
 };
 
 use std::sync::LazyLock;
@@ -76,6 +77,16 @@ pub struct Metrics {
     /// Auth-middleware rejections, counted per branch and reason.
     /// Labels: `branch` (`static_token` | `entra_jwt`), `reason` (machine-readable cause).
     pub auth_failures_total: IntCounterVec,
+
+    /// Post-auth user-row upsert failures. An auth event succeeded but the
+    /// downstream write to `users` failed. Relevant for SOC 2 audit trail
+    /// completeness. Labels: `reason` (machine-readable cause).
+    pub auth_upsert_failures_total: IntCounterVec,
+
+    /// Post-auth user-row upsert skipped because the instance pool is not
+    /// attached. Should only fire during early startup windows. A persistent
+    /// non-zero value indicates a startup-ordering regression.
+    pub auth_upsert_skipped_total: IntCounter,
 
     // -- Memory audit --
     /// Memory mutation operations.
@@ -315,6 +326,21 @@ impl Metrics {
                 "Auth-middleware rejections by branch and reason",
             ),
             &["branch", "reason"],
+        )
+        .expect("hardcoded metric descriptor");
+
+        let auth_upsert_failures_total = IntCounterVec::new(
+            Opts::new(
+                "spacebot_auth_upsert_failures_total",
+                "Post-auth user-row upsert failures by reason",
+            ),
+            &["reason"],
+        )
+        .expect("hardcoded metric descriptor");
+
+        let auth_upsert_skipped_total = IntCounter::new(
+            "spacebot_auth_upsert_skipped_total",
+            "Post-auth user-row upsert skipped (instance pool not attached)",
         )
         .expect("hardcoded metric descriptor");
 
@@ -593,6 +619,12 @@ impl Metrics {
             .register(Box::new(auth_failures_total.clone()))
             .expect("hardcoded metric");
         registry
+            .register(Box::new(auth_upsert_failures_total.clone()))
+            .expect("hardcoded metric");
+        registry
+            .register(Box::new(auth_upsert_skipped_total.clone()))
+            .expect("hardcoded metric");
+        registry
             .register(Box::new(memory_updates_total.clone()))
             .expect("hardcoded metric");
         registry
@@ -703,6 +735,8 @@ impl Metrics {
             worker_duration_seconds,
             process_errors_total,
             auth_failures_total,
+            auth_upsert_failures_total,
+            auth_upsert_skipped_total,
             memory_updates_total,
             dispatch_while_cold_count,
             event_receiver_lagged_events_total,

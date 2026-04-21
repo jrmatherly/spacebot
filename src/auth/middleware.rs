@@ -12,6 +12,7 @@ use axum::http::{StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use tracing::Instrument as _;
 
 use std::sync::Arc;
 
@@ -62,6 +63,56 @@ pub async fn entra_auth_middleware(
 
     match result {
         Ok(ctx) => {
+            // Fire-and-forget user upsert. The request itself proceeds
+            // regardless. Upsert failures are logged and counted for
+            // operational audit (SOC 2 completeness of principal records).
+            if let Some(pool) = state.instance_pool.load().as_ref().clone() {
+                let ctx_for_task = ctx.clone();
+                let principal_key = ctx.principal_key();
+                let upsert_span = tracing::info_span!(
+                    "auth.upsert_user",
+                    principal_key = %principal_key,
+                );
+                tokio::spawn(
+                    async move {
+                        if let Err(e) =
+                            crate::auth::repository::upsert_user_from_auth(&pool, &ctx_for_task)
+                                .await
+                        {
+                            let reason = match e {
+                                crate::auth::repository::RepositoryError::InvalidPrincipalType => {
+                                    "invalid_principal_type"
+                                }
+                                crate::auth::repository::RepositoryError::Sqlx(_) => "sqlx",
+                            };
+                            #[cfg(feature = "metrics")]
+                            crate::telemetry::Metrics::global()
+                                .auth_upsert_failures_total
+                                .with_label_values(&[reason])
+                                .inc();
+                            tracing::error!(
+                                reason,
+                                error = %e,
+                                "upsert_user_from_auth failed",
+                            );
+                        }
+                    }
+                    .instrument(upsert_span),
+                );
+            } else {
+                // Should only happen during early startup. A persistent
+                // non-zero counter value means `set_instance_pool` ran
+                // after the HTTP server was accepting requests.
+                #[cfg(feature = "metrics")]
+                crate::telemetry::Metrics::global()
+                    .auth_upsert_skipped_total
+                    .inc();
+                tracing::error!(
+                    principal_key = %ctx.principal_key(),
+                    "auth succeeded but instance_pool is not attached; \
+                     user row upsert skipped",
+                );
+            }
             request.extensions_mut().insert(ctx);
             next.run(request).await
         }

@@ -97,6 +97,10 @@ pub struct ApiState {
     pub project_store: ArcSwap<Option<Arc<ProjectStore>>>,
     /// Instance-level notification store for the dashboard inbox.
     pub notification_store: ArcSwap<Option<Arc<NotificationStore>>>,
+    /// Instance-level SQLite pool (spacebot.db). Populated at startup alongside
+    /// the store wrappers above so the Entra middleware can upsert user rows
+    /// on successful auth without having to route through a store.
+    pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
     /// Per-agent RuntimeConfig for reading live hot-reloaded configuration.
     pub runtime_configs: ArcSwap<HashMap<String, Arc<RuntimeConfig>>>,
     /// Per-agent MCP managers for status and reconnect APIs.
@@ -347,6 +351,7 @@ impl ApiState {
             wiki_store: ArcSwap::from_pointee(None),
             project_store: ArcSwap::from_pointee(None),
             notification_store: ArcSwap::from_pointee(None),
+            instance_pool: ArcSwap::from_pointee(None),
             runtime_configs: ArcSwap::from_pointee(HashMap::new()),
             mcp_managers: ArcSwap::from_pointee(HashMap::new()),
             sandboxes: ArcSwap::from_pointee(HashMap::new()),
@@ -909,6 +914,14 @@ impl ApiState {
     /// Set the instance-level notification store.
     pub fn set_notification_store(&self, store: Arc<NotificationStore>) {
         self.notification_store.store(Arc::new(Some(store)));
+    }
+
+    /// Set the instance-level SQLite pool. The Entra middleware uses this to
+    /// upsert the user row on successful auth. Handlers should continue to
+    /// reach the instance database via the typed stores (TaskStore, etc.)
+    /// rather than this raw pool.
+    pub fn set_instance_pool(&self, pool: sqlx::SqlitePool) {
+        self.instance_pool.store(Arc::new(Some(pool)));
     }
 
     /// Insert a notification and broadcast `NotificationCreated` via SSE.
