@@ -6,7 +6,8 @@
 mod mock_entra;
 
 use mock_entra::{
-    MockTenant, mount_graph_stub, mount_obo_stub, mount_photo_stub, obo_endpoint_url,
+    MockTenant, mount_graph_stub, mount_obo_failure_stub, mount_obo_stub, mount_photo_stub,
+    obo_endpoint_url,
 };
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::graph::{GraphClient, GraphConfig};
@@ -264,5 +265,179 @@ async fn records_absent_photo_with_timestamp() {
     assert!(
         ts.is_some(),
         "photo_updated_at should still stamp the TTL anchor",
+    );
+}
+
+/// I4: stale cache path. When the oldest persisted membership is OLDER than
+/// `ttl_secs`, the helper must re-fetch from Graph (not short-circuit).
+/// A sign-flip bug in the age comparison would silently make every call
+/// short-circuit and cache stale groups forever. This test proves the
+/// comparison direction by asserting that a stale row triggers the
+/// DELETE + re-INSERT path even with a pre-seeded membership.
+#[tokio::test]
+async fn stale_cache_triggers_refetch() {
+    let tenant = MockTenant::start().await;
+    mount_obo_stub(&tenant.server).await;
+    mount_graph_stub(
+        &tenant.server,
+        vec![("grp-fresh".into(), "Freshly Fetched".into())],
+    )
+    .await;
+
+    let pool = setup_pool().await;
+    let ctx = make_ctx(&tenant.tenant_id, "oid-stale", vec![], true);
+    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+        .await
+        .expect("upsert user");
+    // Seed a 'stale' membership that should be replaced by the sync.
+    spacebot::auth::repository::upsert_team(&pool, "grp-stale", "Stale")
+        .await
+        .expect("upsert team");
+    sqlx::query(
+        r#"
+        INSERT INTO team_memberships (principal_key, team_id, observed_at, source)
+        VALUES (?, 'team-grp-stale', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 hours'), 'token_claim')
+        "#,
+    )
+    .bind(ctx.principal_key())
+    .execute(&pool)
+    .await
+    .expect("seed stale membership");
+
+    let graph = GraphClient::new(graph_cfg(
+        &tenant.tenant_id,
+        tenant.server.uri().as_str(),
+        obo_endpoint_url(&tenant.server).as_str(),
+    ))
+    .expect("graph client");
+
+    // TTL of 60s; seeded row is 1h old -> age (~3600s) > 60s -> refetch.
+    spacebot::auth::middleware::sync_groups_for_principal(
+        &pool,
+        &graph,
+        &ctx,
+        "fake-user-token",
+        60,
+    )
+    .await
+    .expect("sync_groups on stale cache");
+
+    // After refetch, the stale row should be gone and the fresh one present.
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT team_id FROM team_memberships WHERE principal_key = ? ORDER BY team_id",
+    )
+    .bind(ctx.principal_key())
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 1, "stale row should be replaced");
+    assert_eq!(
+        rows[0].0, "team-grp-fresh",
+        "refetch should have persisted the fresh group, not the stale one",
+    );
+}
+
+/// I5: token_claim path. When `groups_overage = false` AND `ctx.groups` is
+/// non-empty, the sync helper should persist the token-provided groups
+/// WITHOUT calling Graph. Tested by pointing Graph at a dead port — if the
+/// sync path accidentally calls Graph, the test fails with a connection
+/// error.
+#[tokio::test]
+async fn token_claim_path_skips_graph() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx(
+        "tid-token-claim",
+        "oid-has-groups",
+        vec!["grp-a", "grp-b"],
+        false, // NOT overage
+    );
+    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+        .await
+        .expect("upsert user");
+
+    // Dead port for Graph: proves token-claim path never calls out.
+    let graph = GraphClient::new(graph_cfg(
+        "tid-token-claim",
+        "http://127.0.0.1:1",
+        "http://127.0.0.1:1/oauth2/v2.0/token",
+    ))
+    .expect("graph client");
+
+    spacebot::auth::middleware::sync_groups_for_principal(
+        &pool,
+        &graph,
+        &ctx,
+        "fake-user-token",
+        300,
+    )
+    .await
+    .expect("sync_groups on token_claim path should not hit Graph");
+
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT team_id, source FROM team_memberships WHERE principal_key = ? ORDER BY team_id",
+    )
+    .bind(ctx.principal_key())
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 2, "both token-claim groups should be persisted");
+    assert!(
+        rows.iter().all(|(_, source)| source == "token_claim"),
+        "source should be token_claim on this path, got {rows:?}",
+    );
+}
+
+/// S6: OBO 400 failure. When `login.microsoftonline.com` rejects the OBO
+/// assertion (e.g., invalid_grant, expired user token), the sync helper
+/// must return Err so the fire-and-forget spawn logs and the metric fires.
+/// Fail-closed: no membership rows are written.
+#[tokio::test]
+async fn obo_failure_propagates_and_persists_nothing() {
+    let tenant = MockTenant::start().await;
+    // Mount a failing OBO stub (400) and the Graph stub that would run
+    // after the OBO succeeds. The OBO failure should short-circuit before
+    // the Graph stub is ever hit.
+    mount_obo_failure_stub(&tenant.server, 400).await;
+    mount_graph_stub(
+        &tenant.server,
+        vec![("grp-x".into(), "Should Not Be Persisted".into())],
+    )
+    .await;
+
+    let pool = setup_pool().await;
+    let ctx = make_ctx(&tenant.tenant_id, "oid-obo-fail", vec![], true);
+    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+        .await
+        .expect("upsert user");
+
+    let graph = GraphClient::new(graph_cfg(
+        &tenant.tenant_id,
+        tenant.server.uri().as_str(),
+        obo_endpoint_url(&tenant.server).as_str(),
+    ))
+    .expect("graph client");
+
+    let result = spacebot::auth::middleware::sync_groups_for_principal(
+        &pool,
+        &graph,
+        &ctx,
+        "fake-user-token",
+        300,
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "sync should propagate OBO failure as Err, got {result:?}",
+    );
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM team_memberships WHERE principal_key = ?")
+            .bind(ctx.principal_key())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        count, 0,
+        "fail-closed on OBO failure: no memberships persisted"
     );
 }

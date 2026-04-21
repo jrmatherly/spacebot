@@ -335,4 +335,64 @@ mod router_level {
             "health bypass must skip auth and reach the 200 handler"
         );
     }
+
+    /// A-10 (Phase 3 Task 3.3b): when a freshly authenticated user hits the
+    /// daemon for the first time and the token's `groups` claim is
+    /// non-empty (so the middleware knows memberships SHOULD exist) but
+    /// `team_memberships` has no rows yet, the middleware returns
+    /// `202 Accepted` with `Retry-After: 2` so the SPA can retry instead
+    /// of surfacing spurious 404s from Phase 4 team-scoped resources.
+    #[tokio::test]
+    async fn returns_202_when_memberships_not_yet_synced() {
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let tenant = MockTenant::start().await;
+        let state = Arc::new(ApiState::new_for_tests(None));
+        let cfg = cfg_for(&tenant);
+        let validator = spacebot::auth::EntraValidator::new(cfg)
+            .await
+            .expect("validator init");
+        state.set_entra_auth(Arc::new(validator));
+
+        // Stand up an in-memory instance pool with the Phase 2+3 schema.
+        // The middleware reads team_memberships on this pool; without it
+        // the 202 race branch can't fire.
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::migrate!("./migrations/global")
+            .run(&pool)
+            .await
+            .expect("global migrations");
+        state.set_instance_pool(pool);
+
+        let app = build_test_router_entra(state);
+
+        // Mint a user token that claims one group. This satisfies the
+        // middleware's `expect_memberships = !ctx.groups.is_empty()` half
+        // of the 202 predicate. No row exists in team_memberships yet, so
+        // the middleware should return 202 instead of routing through.
+        let token = tenant.mint_user_token("oid-first-req", &[], &["grp-xyz"]);
+
+        let res = app
+            .oneshot(req_with_auth("/api/status", Some(&token)))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            res.status(),
+            StatusCode::ACCEPTED,
+            "first request with expected memberships but no rows should return 202",
+        );
+        let retry_after = res
+            .headers()
+            .get("retry-after")
+            .expect("Retry-After header")
+            .to_str()
+            .expect("ascii")
+            .to_string();
+        assert_eq!(retry_after, "2", "Retry-After should be 2 seconds");
+    }
 }

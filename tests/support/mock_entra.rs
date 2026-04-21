@@ -310,6 +310,20 @@ pub fn obo_endpoint_url(server: &MockServer) -> String {
     format!("{}/oauth2/v2.0/token", server.uri())
 }
 
+/// Mount an OBO stub that returns a caller-chosen HTTP status. Used by
+/// Phase 3's error-path tests (e.g. 400 invalid_grant, 401 expired assertion).
+#[allow(dead_code)] // used only by tests/graph_integration.rs
+pub async fn mount_obo_failure_stub(server: &MockServer, status: u16) {
+    Mock::given(method("POST"))
+        .and(path("/oauth2/v2.0/token"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+            "error": "invalid_grant",
+            "error_description": "test-synthesized failure",
+        })))
+        .mount(server)
+        .await;
+}
+
 /// Mount Wiremock stubs for Phase 3 Graph endpoints. Serves
 /// `/me/getMemberObjects` (returns the GUIDs in `groups`) and a single
 /// `/groups?$filter=...` stub that returns ALL stubbed groups in one
