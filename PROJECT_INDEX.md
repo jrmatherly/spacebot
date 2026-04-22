@@ -10,7 +10,7 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (223 .rs files)
+├── src/                           (227 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
@@ -31,15 +31,15 @@ spacebot/
 │   └── package.json               - React 19, Tailwind 4, React Router
 ├── packages/                       (Workspace packages under the @spacebot/* scope)
 │   └── api-client/                - OpenAPI TypeScript client (code-gen from Rust spec; consumed by interface/)
-├── docs/                           (38 .mdx files, Fumadocs + Next.js)
+├── docs/                           (40 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (53 SQL migrations: 41 flat per-agent + 12 instance-wide under global/, 2026-02 → 2026-04)
+├── migrations/                     (54 SQL migrations: 41 flat per-agent + 13 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
-├── prompts/                        (91 Jinja2 system prompt templates)
+├── prompts/                        (91 Jinja2 templates: top-level, tools/, adapters/, schedulers/, fragments/)
 ├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (17 integration test files)
+└── tests/                          (32 integration test files)
 ```
 
 ---
@@ -83,7 +83,7 @@ spacebot/
 | File | Purpose |
 |---|---|
 | **Cargo.toml** | Rust deps, features (metrics), patch directives |
-| **rust-toolchain.toml** | Rust 1.85+ version pin |
+| **rust-toolchain.toml** | Rust toolchain pin (1.94.1); edition 2024 floor is a separate fact |
 | **Dockerfile** | Multi-stage build (Rust + Node) |
 | **deploy/docker/** | Docker Compose variant (one file, six profiles: default, build, spacedrive, proxy, observability, tooling) |
 | **deploy/helm/** | Kubernetes Helm chart (bjw-s-labs/app-template wrapper for Talos) |
@@ -100,7 +100,7 @@ spacebot/
 | **Runtime** | tokio 1.44 |
 | **LLM** | rig-core 0.35 |
 | **HTTP** | axum 0.8, reqwest 0.13 |
-| **Databases** | sqlx 0.8 (SQLite), lancedb 0.27, redb 4.0 |
+| **Databases** | sqlx 0.8 (SQLite), lancedb 0.27, redb 4.1 |
 | **Embeddings** | fastembed 5 |
 | **Discord** | serenity (git next branch) |
 | **Slack** | slack-morphism 2.19 |
@@ -135,8 +135,8 @@ just gate-pr
 
 ## Test Coverage
 
-- 885 `#[test]` + `#[tokio::test]` annotations across src/
-- 15 dedicated integration test files in tests/
+- 893 `#[test]` + `#[tokio::test]` annotations across src/
+- 32 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces check-sidecar-naming + 3 frontend invariant guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + fmt + clippy (RUSTFLAGS=-Dwarnings) + lib tests + integration test compile. Migration-safety check is defined but disabled; the enforcement logic lives at `scripts/_disabled/check-migration-safety.sh` and can be reactivated from there. Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile; does NOT propagate -Dwarnings).
 
 ---
@@ -163,7 +163,7 @@ Eleven persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, 
 
 ## Design Docs
 
-`docs/design-docs/` — 47 architecture and implementation notes. Partial index (see directory for full list):
+`docs/design-docs/` — 58 architecture and implementation notes (+ 1 archived under `docs/design-docs/archive/`). Partial index (see directory for full list):
 
 | Domain | Docs |
 |---|---|
@@ -204,24 +204,22 @@ Ten rule files that govern agent behavior across Rust edits, messaging parity, A
 
 Under `openspec/changes/` — structured change proposals with specs + phased tasks.
 
-Active (implemented, awaiting archive):
+Active: none. Phase 4 Entra work landed via the `.scratchpad/plans/entraid-auth/` multi-phase plan (PR #104 + PR #105 merged on 2026-04-22), not through OpenSpec.
 
-| Active change | Summary |
-|---|---|
-| `integrate-spacedrive-track-a-config` | Track A Phase 1 — `[spacedrive]` config section, `SpacedriveIntegrationConfig` shape |
-| `integrate-spacedrive-track-a-client` | Track A Phase 2 — outbound HTTP client with `{"Query":...}` envelope, HTTPS enforcement, 10 MB response cap |
-| `integrate-spacedrive-track-a-tool-list-files` | Track A Phase 3 — `spacedrive_list_files` agent tool, prompt-injection envelope, pairing migration, secrets integration |
-
-Recently archived:
+Recently archived (`openspec/changes/archive/`):
 
 | Archived change | Summary |
 |---|---|
-| `2026-04-16-security-remediation-obsolete` | Security remediation workstream (superseded / complete) |
+| `2026-04-19-activate-api-client-package` | Activate `@spacebot/api-client` workspace package with subpath-only exports |
+| `2026-04-18-integrate-spacedrive-track-a-tool-list-files` | Track A Phase 3: `spacedrive_list_files` tool, prompt-injection envelope, pairing migration |
+| `2026-04-18-integrate-spacedrive-track-a-client` | Track A Phase 2: outbound HTTP client with `{"Query":...}` envelope, HTTPS enforcement, 10 MB response cap |
+| `2026-04-18-integrate-spacedrive-track-a-config` | Track A Phase 1: `[spacedrive]` config section, `SpacedriveIntegrationConfig` shape |
 | `2026-04-16-spacebot-dependency-remediation` | Dependency advisory remediation |
+| `2026-04-16-security-remediation-obsolete` | Security remediation workstream (superseded / complete) |
 | `2026-04-16-integrate-spacedrive` | Vendor Spacedrive into `spacedrive/` as an independent Cargo workspace (prerequisite for Track A) |
+| `2026-04-15-upgrade-dependencies` | Workspace-level dependency wave |
 | `2026-04-15-integrate-spaceui` | Adopt SpaceUI (`spaceui/`) as the frontend design system |
 | `2026-04-15-fix-rustls-webpki-audit` | Serenity `next` branch pin to resolve rustls-webpki advisories |
-| `2026-04-15-upgrade-dependencies` | Workspace-level dependency wave |
 | `2026-04-15-dependency-upgrades` | Frontend dependency wave (TypeScript 6, HeadlessUI 2, Vite 8, Storybook 10) |
 
 ---
@@ -238,5 +236,5 @@ Recently archived:
 | RUST_STYLE_GUIDE.md | Coding conventions |
 | docs/design-docs/spaceui-migration.md | Frontend migration changelog |
 | CLAUDE.md | AI assistant context |
-| docs/design-docs/ | 55 architecture + implementation notes (1 archived under `docs/design-docs/archive/`) |
+| docs/design-docs/ | 58 architecture + implementation notes (1 archived under `docs/design-docs/archive/`) |
 | openspec/ | Active change proposals + archived specs |
