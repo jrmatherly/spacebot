@@ -60,6 +60,26 @@
             "statusMessage": "Unwrap / expect scan"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/bash-typegen-drift-check.sh",
+            "statusMessage": "Typegen drift check (shell in-place edits)"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/claude-hooks/doc-code-severity-sync.sh",
+            "statusMessage": "Doc-code severity sync check"
+          }
+        ]
       }
     ],
     "PreToolUse": [
