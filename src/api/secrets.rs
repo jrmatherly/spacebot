@@ -1,7 +1,7 @@
 //! Secret management API endpoints.
 //!
 //! Provides CRUD operations, encryption lifecycle management, and auto-migration
-//! for the instance-level secret store. Secrets are global — shared across all
+//! for the instance-level secret store. Secrets are global, shared across all
 //! agents in the instance.
 
 use super::state::ApiState;
@@ -160,7 +160,7 @@ pub async fn put_secret(
     if store.state() == StoreState::Locked {
         return (
             StatusCode::LOCKED,
-            Json(serde_json::json!({"error": "secret store is locked — unlock with master key first"})),
+            Json(serde_json::json!({"error": "secret store is locked: unlock with master key first"})),
         )
             .into_response();
     }
@@ -262,7 +262,7 @@ pub async fn delete_secret(
     if store.state() == StoreState::Locked {
         return (
             StatusCode::LOCKED,
-            Json(serde_json::json!({"error": "secret store is locked — unlock with master key first"})),
+            Json(serde_json::json!({"error": "secret store is locked: unlock with master key first"})),
         )
             .into_response();
     }
@@ -356,12 +356,12 @@ pub async fn enable_encryption(State(state): State<Arc<ApiState>>) -> impl IntoR
             // Store master key in OS credential store.
             let keystore = crate::secrets::keystore::platform_keystore();
             if let Err(error) = keystore.store_key(KEYSTORE_INSTANCE_ID, &key_bytes) {
-                tracing::warn!(%error, "failed to store master key in OS credential store — user must save the displayed key");
+                tracing::warn!(%error, "failed to store master key in OS credential store: user must save the displayed key");
             }
 
             Json(EncryptResponse {
                 master_key: hex::encode(&key_bytes),
-                message: "Encryption enabled. Save this master key — you will need it to unlock \
+                message: "Encryption enabled. Save this master key: you will need it to unlock \
                           the secret manager after a reboot (Linux) or if the Keychain is reset \
                           (macOS). This is the only time the key will be shown."
                     .to_string(),
@@ -511,7 +511,7 @@ pub async fn rotate_key(State(state): State<Arc<ApiState>>) -> impl IntoResponse
 
             Json(serde_json::json!({
                 "master_key": hex::encode(&new_key),
-                "message": "Master key rotated. Save the new key — the old key no longer works."
+                "message": "Master key rotated. Save the new key; the old key no longer works."
             }))
             .into_response()
         }
@@ -562,7 +562,7 @@ pub async fn migrate_secrets(State(state): State<Arc<ApiState>>) -> impl IntoRes
     if store.state() == StoreState::Locked {
         return (
             StatusCode::LOCKED,
-            Json(serde_json::json!({"error": "secret store is locked — unlock first"})),
+            Json(serde_json::json!({"error": "secret store is locked: unlock first"})),
         )
             .into_response();
     }
@@ -595,7 +595,7 @@ pub async fn migrate_secrets(State(state): State<Arc<ApiState>>) -> impl IntoRes
     let skipped = Vec::new();
 
     // All secret migration is driven by SystemSecrets trait impls.
-    // Each config section declares its own credential fields — no hard-coded
+    // Each config section declares its own credential fields; no hard-coded
     // TOML paths needed.
     //
     // Non-adapter sections (LLM keys, search keys):

@@ -74,7 +74,7 @@ List handlers that only gate when a filter argument is present use `_auth_ctx: c
 
 ### Step 4: Inline the gate block (read handlers)
 
-Template — replace `<resource_type>`, `<resource_id>`, `<metric_label>` per file:
+Template. Replace `<resource_type>`, `<resource_id>`, `<metric_label>` per file:
 
 ```rust
 if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
@@ -133,7 +133,7 @@ if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         None, // team_id — None means Personal visibility for single-user create
         &auth_ctx.principal_key(),
         crate::auth::principals::Visibility::Personal,
-        None, // related_resource_id — usually None; portal_conversation uses this for parent
+        None, // related_resource_id: usually None; portal_conversation uses this for parent
     )
     .await
     .map_err(|error| {
@@ -186,7 +186,7 @@ At the top of `src/api/<family>.rs`:
 //! slug→UUID indirection, parent-resource handling, etc.>
 ```
 
-### Step 7: Test file — the five canonical gates
+### Step 7: Test file. The five canonical gates
 
 Create `tests/api_<family>_authz.rs`. Copy from `tests/api_tasks_authz.rs` (it has the most complete shape). Substitute `task` → `<family>` / `<resource_type>`. Required tests:
 
@@ -196,7 +196,7 @@ Create `tests/api_<family>_authz.rs`. Copy from `tests/api_tasks_authz.rs` (it h
 4. `create_<resource>_assigns_ownership` — reads ownership row back synchronously, asserts owner_principal_key and visibility
 5. `pool_none_skip_<verb>_<resource>` — `ApiState::new_test_state_with_mock_entra_no_pool()`, expect non-401 / non-403
 
-Use `ApiState::new_test_state_with_mock_entra()` + `build_test_router_entra(state)` + `mint_mock_token(&user)` throughout. No policy-module mocking — every test exercises the full middleware + policy + `resource_ownership` stack.
+Use `ApiState::new_test_state_with_mock_entra()` + `build_test_router_entra(state)` + `mint_mock_token(&user)` throughout. No policy-module mocking; every test exercises the full middleware + policy + `resource_ownership` stack.
 
 ### Step 8: Verify
 
@@ -253,7 +253,7 @@ pass under nextest.
 
 ## Relationship to other automations
 
-- `authz-gate-conformance` subagent — reviews drift between files this skill produced.
-- `integration-test-coverage-auditor` subagent — reviews which canonical tests this skill's test file covered.
-- `api-handler-add` skill — covers the utoipa + router-registration side; invoke it BEFORE this skill if the handler is brand-new (not just re-gating an existing one).
-- `pr-remediation-batch` skill — picks up if this skill's output triggers reviewer findings that group into a remediation PR.
+- `authz-gate-conformance` subagent: reviews drift between files this skill produced.
+- `integration-test-coverage-auditor` subagent: reviews which canonical tests this skill's test file covered.
+- `api-handler-add` skill: covers the utoipa + router-registration side; invoke it BEFORE this skill if the handler is brand-new (not just re-gating an existing one).
+- `pr-remediation-batch` skill: picks up if this skill's output triggers reviewer findings that group into a remediation PR.

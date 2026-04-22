@@ -25,7 +25,7 @@ Phase 4 PR 2 established a five-test canonical coverage pattern per handler file
 
 - `api_notifications_authz.rs`: no user-facing POST endpoint (`emit_notification` is server-internal). Gate 4 substitutes with a documented skip.
 - `api_cron_authz.rs`: `create_cron_assigns_ownership` runs at repository level (not HTTP) because `Scheduler::register` requires a 22-field `AgentDeps` bundle. Honest substitution, documented in the test's comment block.
-- `api_agents_authz.rs`: analogous — helper tests substitute for a full handler-POST round-trip.
+- `api_agents_authz.rs`: analogous. Helper tests substitute for a full handler-POST round-trip.
 - `api_ingest_authz.rs`: `create` path uses multipart upload; still counts as gate 4.
 - `api_attachments_authz.rs`: has 5 gates; `list_attachments` filters by channel so its Phase-5 TODO is analogous to other listing paths.
 - `send_agent_message_authz.rs` (not a handler file, but structurally similar): only 2 gates today (deny + pool-None-skip). Reviewer flagged this as a gap; positive-path + system-bypass are the canonical missing entries.

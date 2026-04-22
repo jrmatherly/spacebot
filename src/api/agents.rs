@@ -783,7 +783,7 @@ pub(super) async fn create_agent(
 ) -> (StatusCode, Json<serde_json::Value>) {
     match create_agent_internal(&state, request).await {
         Ok(result) => {
-            // A-12: `.await` set_ownership — a fire-and-forget
+            // A-12: `.await` set_ownership. A fire-and-forget
             // `tokio::spawn` here races the creator's subsequent
             // GET /api/agents/overview?agent_id=... into a 404.
             if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
@@ -877,7 +877,7 @@ pub async fn create_agent_internal(
     // Acquire the config write mutex to prevent concurrent read-modify-write races.
     let _config_guard = state.config_write_mutex.lock().await;
 
-    // Fail early if messaging manager is unavailable — before any config write,
+    // Fail early if messaging manager is unavailable, before any config write,
     // directory creation, or database init that would leave a half-created agent.
     let messaging_manager = {
         let guard = state.messaging_manager.read().await;
@@ -911,7 +911,7 @@ pub async fn create_agent_internal(
         .as_array_of_tables_mut()
         .ok_or_else(|| "agents is not an array of tables in config.toml".to_string())?;
 
-    // Revalidate uniqueness under the lock — another request may have written the
+    // Revalidate uniqueness under the lock: another request may have written the
     // same agent_id to config.toml between our first check and mutex acquisition.
     // Check against the parsed TOML document (agents_array) rather than the stale
     // in-memory cache to ensure we catch concurrent writes.
@@ -945,7 +945,7 @@ pub async fn create_agent_internal(
             format!("failed to write config.toml: {error}")
         })?;
 
-    // Release the config write mutex — remaining work doesn't touch config.toml.
+    // Release the config write mutex. Remaining work doesn't touch config.toml.
     drop(_config_guard);
 
     // Read defaults directly from the config we just wrote to disk rather than
@@ -1251,7 +1251,7 @@ pub async fn create_agent_internal(
     let channel_store = crate::conversation::ChannelStore::new(db.sqlite.clone());
     let run_logger = crate::conversation::ProcessRunLogger::new(db.sqlite.clone());
     let cortex_ctx = crate::agent::cortex_chat::CortexChatSession::create_context();
-    #[allow(deprecated)] // Cortex chat is legacy — being replaced by Channel Settings
+    #[allow(deprecated)] // Cortex chat is legacy; being replaced by Channel Settings
     let cortex_tool_server = crate::tools::create_cortex_chat_tool_server(
         deps.agent_id.clone(),
         deps.clone(),

@@ -196,7 +196,7 @@ fn parse_page_type(s: Option<&str>) -> Result<Option<WikiPageType>, StatusCode> 
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// GET /wiki — list all wiki pages
+/// GET /wiki: list all wiki pages
 #[utoipa::path(
     get,
     path = "/wiki",
@@ -225,7 +225,7 @@ pub(super) async fn list_pages(
     Ok(Json(WikiListResponse { pages, total }))
 }
 
-/// GET /wiki/search — search wiki pages
+/// GET /wiki/search: search wiki pages
 #[utoipa::path(
     get,
     path = "/wiki/search",
@@ -254,7 +254,7 @@ pub(super) async fn search_pages(
     Ok(Json(WikiListResponse { pages, total }))
 }
 
-/// POST /wiki — create a new wiki page
+/// POST /wiki: create a new wiki page
 #[utoipa::path(
     post,
     path = "/wiki",
@@ -287,7 +287,7 @@ pub(super) async fn create_page(
         .await
         .map_err(wiki_error_status)?;
 
-    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // A-12: `.await` set_ownership. A fire-and-forget `tokio::spawn` here
     // races the creator's subsequent GET /wiki/{slug} into a 404.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
@@ -320,7 +320,7 @@ pub(super) async fn create_page(
     Ok(Json(WikiPageResponse { page }))
 }
 
-/// GET /wiki/:slug — read a wiki page
+/// GET /wiki/:slug: read a wiki page
 #[utoipa::path(
     get,
     path = "/wiki/{slug}",
@@ -395,7 +395,7 @@ pub(super) async fn get_page(
     Ok(Json(WikiPageResponse { page }))
 }
 
-/// POST /wiki/:slug/edit — apply a partial edit
+/// POST /wiki/:slug/edit: apply a partial edit
 #[utoipa::path(
     post,
     path = "/wiki/{slug}/edit",
@@ -470,7 +470,7 @@ pub(super) async fn edit_page(
     Ok(Json(WikiPageResponse { page }))
 }
 
-/// GET /wiki/:slug/history — list version history
+/// GET /wiki/:slug/history: list version history
 #[utoipa::path(
     get,
     path = "/wiki/{slug}/history",
@@ -545,7 +545,7 @@ pub(super) async fn get_history(
     Ok(Json(WikiHistoryResponse { versions }))
 }
 
-/// POST /wiki/:slug/restore — restore to a historical version
+/// POST /wiki/:slug/restore: restore to a historical version
 #[utoipa::path(
     post,
     path = "/wiki/{slug}/restore",
@@ -615,7 +615,7 @@ pub(super) async fn restore_version(
     Ok(Json(WikiPageResponse { page }))
 }
 
-/// DELETE /wiki/:slug — archive a page
+/// DELETE /wiki/:slug: archive a page
 #[utoipa::path(
     delete,
     path = "/wiki/{slug}",

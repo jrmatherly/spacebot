@@ -11,7 +11,7 @@ disable-model-invocation: true
 Invoke when:
 
 - A PR is open and review findings are aggregated in a scratchpad document (C1/C2... / I1/I2... / M1... style bucket structure)
-- The findings span multiple concern types (fix + test + docs) — each type becomes its own commit
+- The findings span multiple concern types (fix + test + docs): each type becomes its own commit
 - You want mechanical commit grouping + verification discipline rather than one big "address feedback" dump
 - Following the Phase 4 PR 2 pattern where each review-item ID (C1, I4, T1, W1, etc.) maps to a named remediation
 
@@ -37,7 +37,7 @@ Three commits is typical. Sometimes more (fix-critical + fix-important separate;
 
 ## Canonical reference
 
-Phase 4 PR 2 remediation (PR #105 — branch `feat/entra-phase-4-pr-2-handler-rollout`). Relevant commits:
+Phase 4 PR 2 remediation (PR #105, branch `feat/entra-phase-4-pr-2-handler-rollout`). Relevant commits:
 
 - `4696ca9` — "refactor(auth): address T4.5 code-quality review findings (I1/I2/I3)"
 - `6271428` — "refactor(auth): address T4.6+T4.6b code-quality review findings (I1, M2)"
@@ -75,7 +75,7 @@ For each concern type, one commit. Within a commit, group by subsystem when find
 **When to split a commit:**
 
 - A single fix is load-bearing enough to stand alone (e.g., a Critical security fix). It gets its own commit even if other Important fixes also change behavior.
-- A fix touches a heavy subsystem (auth, migrations) — isolates the blast radius in git history.
+- A fix touches a heavy subsystem (auth, migrations): isolates the blast radius in git history.
 
 **When to merge commits:**
 
@@ -89,8 +89,8 @@ For each commit, in order:
 2. Run the narrow verification for the concern type:
    - **fix commits:** `cargo check --lib` → `cargo nextest run --test <affected-test-file>` (the file whose coverage would break if the fix is wrong)
    - **test commits:** `cargo nextest run --test <new-test-file>` (asserting green)
-   - **docs commits:** `cargo fmt --all -- --check` + `grep -nE '[a-z)"0-9]\s*—\s*[a-z]' <edited-files>` (for writing-guide compliance) — also `just check-typegen` if a doc edit touched utoipa annotations
-3. Stage ONLY the files for this commit. Use explicit `git add <paths>` — never `git add -A` here, since parallel subagents' drift or prior-commit leftovers can sneak into the commit otherwise.
+   - **docs commits:** `cargo fmt --all -- --check` + `grep -nE '[a-z)"0-9]\s*—\s*[a-z]' <edited-files>` (for writing-guide compliance); also `just check-typegen` if a doc edit touched utoipa annotations
+3. Stage ONLY the files for this commit. Use explicit `git add <paths>`; never `git add -A` here, since parallel subagents' drift or prior-commit leftovers can sneak into the commit otherwise.
 4. Write the commit message with review-item IDs cited.
 
 **Do NOT run `just gate-pr` between commits.** Reserve it for pre-push per INDEX § Cargo discipline. Per-commit invocation is 3-5× wasted work.
@@ -102,9 +102,9 @@ Use this shape for every remediation commit:
 ```
 <type>(<scope>): <one-line summary> (<item-IDs>)
 
-<body paragraph 1 — name each item ID and the one-line fix>
+<body paragraph 1: name each item ID and the one-line fix>
 
-<body paragraph 2 — optional: cross-reference any deferred items this
+<body paragraph 2 (optional): cross-reference any deferred items this
 does NOT address, so reviewers know what's intentionally left for
 Phase N+1>
 
@@ -152,11 +152,11 @@ Edit the aggregated findings doc to mark addressed items as ✅. If a finding is
 ## Relationship to other automations
 
 - `/pr-review-toolkit:review-pr` — produces the findings this skill consumes.
-- `authz-gate-conformance` / `integration-test-coverage-auditor` subagents — structural audits that produce their own finding sets; those findings plug into this skill's batch loop.
-- `pr-gates` skill — the pre-push gate this skill's Step 5 invokes.
-- `session-sync` skill — runs at the END of a session; this skill runs at the END of a REVIEW CYCLE. They compose.
-- `writing-guide-scan` skill — invoke as part of Step 3 verification when a docs commit is in-flight, to catch em-dash violations before the commit.
+- `authz-gate-conformance` / `integration-test-coverage-auditor` subagents: structural audits that produce their own finding sets; those findings plug into this skill's batch loop.
+- `pr-gates` skill: the pre-push gate this skill's Step 5 invokes.
+- `session-sync` skill: runs at the END of a session; this skill runs at the END of a REVIEW CYCLE. They compose.
+- `writing-guide-scan` skill: invoke as part of Step 3 verification when a docs commit is in-flight, to catch em-dash violations before the commit.
 
 ## Relationship to the 2026-04-22 streamlining audit
 
-The 2026-04-22 audit surfaced R1 (nextest default — now flipped), R5 (parallel-safe dispatch), R6 (fill-verification-gaps). This skill's Step 3 verification uses nextest by default (R1 compliant), Step 3 "group findings" honors the parallel-safe boundaries for disjoint-file fixes (R5), and Step 3's narrow-verification-between-commits is the R6 discipline applied to review-remediation cycles instead of feature-development cycles.
+The 2026-04-22 audit surfaced R1 (nextest default, now flipped), R5 (parallel-safe dispatch), R6 (fill-verification-gaps). This skill's Step 3 verification uses nextest by default (R1 compliant), Step 3 "group findings" honors the parallel-safe boundaries for disjoint-file fixes (R5), and Step 3's narrow-verification-between-commits is the R6 discipline applied to review-remediation cycles instead of feature-development cycles.

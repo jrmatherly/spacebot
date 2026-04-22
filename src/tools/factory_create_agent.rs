@@ -71,11 +71,11 @@ pub struct FactoryCreateAgentArgs {
     /// Short role description (shown in topology and status).
     #[serde(default)]
     pub role: Option<String>,
-    /// Content for SOUL.md — personality, voice, values, boundaries.
+    /// Content for SOUL.md: personality, voice, values, boundaries.
     pub soul_content: String,
-    /// Content for IDENTITY.md — what the agent is, what it does, scope.
+    /// Content for IDENTITY.md: what the agent is, what it does, scope.
     pub identity_content: String,
-    /// Content for ROLE.md — behavioral rules, delegation, escalation.
+    /// Content for ROLE.md: behavioral rules, delegation, escalation.
     pub role_content: String,
     /// Links to create between the new agent and existing agents/humans.
     #[serde(default)]
@@ -278,7 +278,7 @@ impl Tool for FactoryCreateAgentTool {
         } else {
             tracing::warn!(
                 agent_id = %agent_id,
-                "runtime config not found for newly created agent — identity reload skipped"
+                "runtime config not found for newly created agent; identity reload skipped"
             );
         }
 
@@ -340,7 +340,7 @@ impl Tool for FactoryCreateAgentTool {
                 }
             }
 
-            // Update in-memory state (under the same logical transaction — the
+            // Update in-memory state (under the same logical transaction: the
             // config write mutex in write_link_to_config ensures no concurrent
             // duplicate can slip through between check and write).
             let new_link = AgentLink {
@@ -367,7 +367,7 @@ impl Tool for FactoryCreateAgentTool {
         let mut message = create_result.message;
         if !identity_errors.is_empty() {
             message.push_str(&format!(
-                " WARNING: {} identity file(s) failed to write — the agent is running with scaffold defaults.",
+                " WARNING: {} identity file(s) failed to write. The agent is running with scaffold defaults.",
                 identity_errors.len()
             ));
         }

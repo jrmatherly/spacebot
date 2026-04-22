@@ -341,7 +341,7 @@ pub enum ApiEvent {
     },
     /// A new notification was created and persisted.
     NotificationCreated { notification: Notification },
-    /// A notification was updated (read or dismissed) — for cross-tab sync.
+    /// A notification was updated (read or dismissed), for cross-tab sync.
     NotificationUpdated {
         id: String,
         read: bool,

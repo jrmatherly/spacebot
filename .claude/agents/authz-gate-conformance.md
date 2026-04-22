@@ -1,6 +1,6 @@
 ---
 name: authz-gate-conformance
-description: Walk every handler file under `src/api/` that gates with `check_read_with_audit` or `check_write`, extract each gate block, and report byte-drift between them. Use proactively on Phase 5+ PRs that touch handler files, or on any edit inside `src/api/*.rs` that is expected to preserve the N1 inline-at-each-call-site pattern established by Phase 4 PR 2. Fires at PR time — this is the structural check that catches what the test-coverage reviewer caught at semantic-review time.
+description: Walk every handler file under `src/api/` that gates with `check_read_with_audit` or `check_write`, extract each gate block, and report byte-drift between them. Use proactively on Phase 5+ PRs that touch handler files, or on any edit inside `src/api/*.rs` that is expected to preserve the N1 inline-at-each-call-site pattern established by Phase 4 PR 2. Fires at PR time: this is the structural check that catches what the test-coverage reviewer caught at semantic-review time.
 tools:
   - Read
   - Grep
@@ -56,7 +56,7 @@ For each block, record:
 - **Extractor order violation** — `AuthContext` extractor must sit between `State` and `Path/Query/Json`. Axum rejects at startup if sibling handlers in the same Router have mismatched orderings.
 
 ### Important drift
-- **Tracing field reordering** between files — if one file's warn says `actor, resource_type, resource_id` and another says `resource_type, resource_id, actor`, flag it. The fields can stay in whatever order the human picks, but consistency across files is part of the N1 auditability claim.
+- **Tracing field reordering** between files: if one file's warn says `actor, resource_type, resource_id` and another says `resource_type, resource_id, actor`, flag it. The fields can stay in whatever order the human picks, but consistency across files is part of the N1 auditability claim.
 - **Pool-None warn message divergence** — the exact string `"authz skipped: instance_pool not attached (boot window or startup-ordering bug)"` is canonical. Any rewording in a new file is drift.
 - **admin_override log-level drift** — read paths log at `info`, never `debug` or `warn`. The PR-2 reviewer praised this consistency; catch future regressions.
 - **Missing pool-None fallback** — if any handler has the `if let Some(pool)` branch without the `else { tracing::warn!(...); counter.inc(); }` branch, the fail-open path is invisible.

@@ -3,11 +3,13 @@
 //! All four read endpoints (`list_memories`, `search_memories`, `memory_graph`,
 //! `memory_graph_neighbors`) consult `check_read_with_audit` with
 //! `resource_type = "agent"` before touching the vector store or graph
-//! index. Access rides the agent's ownership row, not a per-memory row,
-//! because memories belong to their agent and the ownership model keys
-//! on agent identity.
+//! index. Access keys on the agent's `resource_ownership` row (looked up
+//! by `(resource_type="agent", resource_id=agent_id)`), not a per-memory
+//! row. Memories belong to their agent, so agent-level ownership is the
+//! correct authorization anchor; a per-memory row would be a write-time
+//! fanout cost for a read-only semantic.
 //!
-//! The ~45-line gate block is **inlined at each call site on purpose**
+//! The ~45-line gate block is inlined at each call site on purpose
 //! (Phase 4 PR 2 decision N1 in
 //! `.scratchpad/plans/entraid-auth/phase-4-authz-helpers.md`). A helper
 //! would save writing but hurt grep-by-handler visibility during route
@@ -16,11 +18,11 @@
 //! any one handler sees the whole enforcement story without jumping.
 //!
 //! The metric label is always `"memories"` (the file's resource family),
-//! never a per-handler sub-label — this keeps
+//! never a per-handler sub-label. This keeps
 //! `spacebot_authz_skipped_total` cardinality flat. Pool-None is treated
-//! as a boot-window signal (always-on `tracing::warn!` + feature-gated
-//! counter increment); a persistent non-zero rate after startup is a
-//! startup-ordering regression worth paging.
+//! as a boot-window signal (always-on `tracing::error!` plus
+//! feature-gated counter increment); a persistent non-zero rate after
+//! startup is a startup-ordering regression worth paging.
 //!
 //! Phase 5 replaces the `tracing::info!` admin-override path with an
 //! `AuditAppender::append` call against the hash-chained audit log.
@@ -183,8 +185,8 @@ pub(super) async fn list_memories(
     // before `set_instance_pool` has run), the check is a no-op. The
     // always-on signal is the `tracing::warn!` below; the feature-gated
     // signal is `spacebot_authz_skipped_total{handler="memories"}` (only
-    // compiled when the `metrics` feature is enabled — default builds
-    // skip the counter and rely on the warn log only). A persistent
+    // compiled when the `metrics` feature is enabled; default builds
+    // skip the counter and rely on the error log only). A persistent
     // non-zero warn rate (or counter rate) after startup indicates a
     // startup-ordering regression where the HTTP server is accepting
     // requests before the Phase 2 data model is attached.
@@ -288,8 +290,8 @@ pub(super) async fn search_memories(
     // before `set_instance_pool` has run), the check is a no-op. The
     // always-on signal is the `tracing::warn!` below; the feature-gated
     // signal is `spacebot_authz_skipped_total{handler="memories"}` (only
-    // compiled when the `metrics` feature is enabled — default builds
-    // skip the counter and rely on the warn log only). A persistent
+    // compiled when the `metrics` feature is enabled; default builds
+    // skip the counter and rely on the error log only). A persistent
     // non-zero warn rate (or counter rate) after startup indicates a
     // startup-ordering regression where the HTTP server is accepting
     // requests before the Phase 2 data model is attached.
@@ -391,8 +393,8 @@ pub(super) async fn memory_graph(
     // before `set_instance_pool` has run), the check is a no-op. The
     // always-on signal is the `tracing::warn!` below; the feature-gated
     // signal is `spacebot_authz_skipped_total{handler="memories"}` (only
-    // compiled when the `metrics` feature is enabled — default builds
-    // skip the counter and rely on the warn log only). A persistent
+    // compiled when the `metrics` feature is enabled; default builds
+    // skip the counter and rely on the error log only). A persistent
     // non-zero warn rate (or counter rate) after startup indicates a
     // startup-ordering regression where the HTTP server is accepting
     // requests before the Phase 2 data model is attached.
@@ -510,8 +512,8 @@ pub(super) async fn memory_graph_neighbors(
     // before `set_instance_pool` has run), the check is a no-op. The
     // always-on signal is the `tracing::warn!` below; the feature-gated
     // signal is `spacebot_authz_skipped_total{handler="memories"}` (only
-    // compiled when the `metrics` feature is enabled — default builds
-    // skip the counter and rely on the warn log only). A persistent
+    // compiled when the `metrics` feature is enabled; default builds
+    // skip the counter and rely on the error log only). A persistent
     // non-zero warn rate (or counter rate) after startup indicates a
     // startup-ordering regression where the HTTP server is accepting
     // requests before the Phase 2 data model is attached.

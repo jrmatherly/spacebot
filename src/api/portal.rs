@@ -204,7 +204,7 @@ pub(super) async fn portal_send(
     //   * row present → existing conversation → `check_write`
     //   * row absent → brand-new session → `.await set_ownership` with
     //     `Visibility::Personal` AFTER `store.ensure` creates the row.
-    //       Personal (never Org/Team) — portal chats are private user
+    //       Personal (never Org/Team): portal chats are private user
     //       data per phase-4 plan §12 A-2. Flipping this default is a
     //       tenant-wide data leak.
     //
@@ -329,7 +329,7 @@ pub(super) async fn portal_send(
             Vec::with_capacity(request.attachment_ids.len());
         for attachment_id in &request.attachment_ids {
             // Filter by channel_id to prevent cross-conversation attachment
-            // references — a user in conversation A should not be able to
+            // references: a user in conversation A should not be able to
             // reference an attachment uploaded in conversation B.
             let row = sqlx::query(
                 "SELECT id, original_filename, saved_filename, mime_type, size_bytes \
@@ -447,7 +447,7 @@ pub(super) async fn portal_history(
     // history keys on the session_id (A-09 bare UUID). The `"portal"`
     // metric label matches the file resource family so
     // `spacebot_authz_skipped_total` cardinality stays flat. Pool-None is
-    // the boot-window / startup-race case — always-on `tracing::warn!`
+    // the boot-window / startup-race case: always-on `tracing::error!`
     // plus a feature-gated counter.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) = crate::auth::check_read_with_audit(
@@ -870,7 +870,7 @@ pub(super) async fn conversation_defaults(
     Query(query): Query<ConversationDefaultsQuery>,
 ) -> Result<Json<ConversationDefaultsResponse>, StatusCode> {
     // Phase 4 authz gate: intentionally none. This is a catalog/config
-    // endpoint — it returns an agent's default conversation settings and
+    // endpoint. It returns an agent's default conversation settings and
     // the configured model list, neither of which expose per-user
     // conversation data. Gating here would require a caller-policy
     // contract the endpoint doesn't need; `existence of the agent` is

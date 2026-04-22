@@ -525,7 +525,7 @@ pub(super) async fn get_providers(
                 .and_then(|base_url| base_url.as_str())
                 .is_some_and(|url| !url.trim().is_empty()),
             // LiteLLM: the virtual api-key field is set, OR either TOML
-            // form names a litellm provider — table form
+            // form names a litellm provider; table form
             // [llm.providers.litellm] or top-level [[providers]] with
             // name = "litellm".
             has_value("litellm_api_key", "LITELLM_API_KEY")
@@ -1253,7 +1253,7 @@ async fn update_litellm_provider(
     })?;
 
     // Determine the API key: empty input on re-save reuses existing
-    // (same pattern as Azure — prevents accidentally wiping a secret:
+    // (same pattern as Azure: prevents accidentally wiping a secret
     // reference value that the UI can't safely prefill).
     let api_key = if request.api_key.trim().is_empty() {
         match doc
@@ -2055,7 +2055,7 @@ mod tests {
     }
 
     /// The LiteLLM branch validates base_url before any handler work. A pure-
-    /// function shape test guards the predicate — a full handler test requires
+    /// function shape test guards the predicate. A full handler test requires
     /// an ApiState harness we do not have at this layer.
     #[test]
     fn litellm_base_url_validator_rejects_empty_and_non_http_urls() {

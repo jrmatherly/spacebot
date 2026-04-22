@@ -3,7 +3,7 @@
 //! All per-notification write endpoints (`mark_read`, `dismiss_notification`)
 //! consult `check_write` with `resource_type = "notification"` before
 //! mutating the notification row. Access keys on the notification's UUID
-//! `id` directly (A-09: bare UUID, no slug→UUID indirection — the URL
+//! `id` directly (A-09: bare UUID, no slug→UUID indirection; the URL
 //! path already carries the UUID), so there is no fetch-before-gate
 //! step; a denied write collapses with the `store.mark_read(...) ==
 //! false` 404 to the same client-visible shape.

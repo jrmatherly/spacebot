@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 /// Three resolution modes:
 /// - `secret:NAME` — look up from the secrets store (if available).
 /// - `env:VAR_NAME` — read from system environment variable.
-/// - Anything else — literal value.
+/// - Anything else: literal value.
 pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     if let Some(alias) = value.strip_prefix("secret:") {
         let guard = RESOLVE_SECRETS_STORE.load();
@@ -81,7 +81,7 @@ fn resolve_required_ref(field: &str, value: &str) -> anyhow::Result<String> {
 /// `from_toml_inner` populator sites.
 ///
 /// User TOML still wins over env via the existing `or_insert_with` pattern
-/// in the caller — this helper only controls the default when no TOML block
+/// in the caller. This helper only controls the default when no TOML block
 /// exists.
 fn openai_base_url() -> String {
     std::env::var("OPENAI_API_BASE")
@@ -2118,7 +2118,7 @@ impl Config {
                         if instance.enabled && token.is_none() {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "discord instance is enabled but token is missing/unresolvable — disabling"
+                                "discord instance is enabled but token is missing/unresolvable; disabling"
                             );
                         }
                         DiscordInstanceConfig {
@@ -2159,7 +2159,7 @@ impl Config {
                         if instance.enabled && (bot_token.is_none() || app_token.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "slack instance is enabled but tokens are missing/unresolvable — disabling"
+                                "slack instance is enabled but tokens are missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = bot_token.is_some() && app_token.is_some();
@@ -2219,7 +2219,7 @@ impl Config {
                         if instance.enabled && token.is_none() {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "telegram instance is enabled but token is missing/unresolvable — disabling"
+                                "telegram instance is enabled but token is missing/unresolvable; disabling"
                             );
                         }
                         TelegramInstanceConfig {
@@ -2268,7 +2268,7 @@ impl Config {
                         if instance.enabled && !has_credentials {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "email instance is enabled but credentials are missing/unresolvable — disabling"
+                                "email instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
 
@@ -2408,7 +2408,7 @@ impl Config {
                         if instance.enabled && (username.is_none() || oauth_token.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "twitch instance is enabled but credentials are missing/unresolvable — disabling"
+                                "twitch instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = username.is_some() && oauth_token.is_some();
@@ -2483,7 +2483,7 @@ impl Config {
                         if instance.enabled && (http_url.is_none() || account.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "signal instance is enabled but http_url or account is missing/unresolvable — disabling"
+                                "signal instance is enabled but http_url or account is missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = http_url.is_some() && account.is_some();
@@ -2533,7 +2533,7 @@ impl Config {
                         if instance.enabled && !has_credentials {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "mattermost instance is enabled but credentials are missing/unresolvable — disabling"
+                                "mattermost instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
                         MattermostInstanceConfig {

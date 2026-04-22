@@ -52,7 +52,7 @@ pub(super) struct MutationResponse {
     pub message: String,
 }
 
-/// GET /api/mcp/servers — list all configured MCP servers from config.toml.
+/// GET /api/mcp/servers: list all configured MCP servers from config.toml.
 #[utoipa::path(
     get,
     path = "/mcp/servers",
@@ -116,7 +116,7 @@ pub(super) async fn list_mcp_servers(
     Ok(Json(servers))
 }
 
-/// POST /api/mcp/servers — add a new MCP server definition to config.toml.
+/// POST /api/mcp/servers: add a new MCP server definition to config.toml.
 #[utoipa::path(
     post,
     path = "/mcp/servers",
@@ -224,7 +224,7 @@ pub(super) async fn create_mcp_server(
     }))
 }
 
-/// PUT /api/mcp/servers — update an existing MCP server definition.
+/// PUT /api/mcp/servers: update an existing MCP server definition.
 #[utoipa::path(
     put,
     path = "/mcp/servers",
@@ -314,7 +314,7 @@ pub(super) async fn update_mcp_server(
     }))
 }
 
-/// DELETE /api/mcp/servers/{name} — remove a server definition from config.toml.
+/// DELETE /api/mcp/servers/{name}: remove a server definition from config.toml.
 #[utoipa::path(
     delete,
     path = "/mcp/servers/{name}",
@@ -388,7 +388,7 @@ pub(super) async fn delete_mcp_server(
     }))
 }
 
-/// GET /api/mcp/status — per-agent MCP connection status.
+/// GET /api/mcp/status: per-agent MCP connection status.
 #[utoipa::path(
     get,
     path = "/mcp/status",
@@ -427,7 +427,7 @@ pub(super) async fn mcp_status(State(state): State<Arc<ApiState>>) -> Json<Vec<M
     Json(result)
 }
 
-/// POST /api/mcp/servers/{name}/reconnect — force-reconnect a specific server.
+/// POST /api/mcp/servers/{name}/reconnect: force-reconnect a specific server.
 #[utoipa::path(
     post,
     path = "/mcp/servers/{name}/reconnect",

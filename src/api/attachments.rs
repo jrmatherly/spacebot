@@ -13,7 +13,7 @@
 //! succeeds (A-12: a fire-and-forget `tokio::spawn` races the uploader's
 //! immediate GET into a 404).
 //!
-//! Attachments carry parent-resource relationships — a `saved_attachment`
+//! Attachments carry parent-resource relationships: a `saved_attachment`
 //! row can reference a `message_id` (portal history), a task, or a
 //! memory. Authz here keys on the attachment's own ownership row, NOT
 //! the parent. Only the per-attachment `resource_ownership` entry is
@@ -78,7 +78,7 @@ pub(super) struct AttachmentServeQuery {
     #[serde(default)]
     download: bool,
     /// When true, serve a thumbnail-sized version (for display in the UI).
-    /// Currently serves the full file — thumbnail generation is a future enhancement.
+    /// Currently serves the full file; thumbnail generation is a future enhancement.
     #[serde(default)]
     #[allow(dead_code)]
     thumbnail: bool,
@@ -220,7 +220,7 @@ pub(super) async fn upload_attachment(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // A-12: `.await` set_ownership. A fire-and-forget `tokio::spawn` here
     // races the uploader's immediate GET /attachments/{id} into a 404.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
@@ -295,7 +295,7 @@ pub(super) async fn serve_attachment(
     // Phase 4 authz gate: keys on the attachment's own ownership row
     // (resource_type = "saved_attachment", resource_id = attachment_id)
     // per A-09 bare-UUID. Parent relationships (message_id, task,
-    // memory) are NOT consulted here — the per-attachment ownership
+    // memory) are NOT consulted here; the per-attachment ownership
     // entry is the source of truth. The gate runs BEFORE the disk read
     // so a non-owner never sees whether the file exists on disk.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {

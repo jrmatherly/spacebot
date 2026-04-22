@@ -3,7 +3,7 @@
 //! When called, creates a task in the target agent's task store (skipping
 //! `pending_approval` for agent-delegated tasks) and logs a system message
 //! in the link channel between the two agents. The calling agent's turn ends
-//! immediately — the result will be delivered when the target agent's cortex
+//! immediately. The result will be delivered when the target agent's cortex
 //! picks up and completes the task.
 
 use crate::conversation::history::ConversationLogger;
@@ -36,9 +36,12 @@ pub struct SendAgentMessageTool {
     /// Per-agent conversation logger for writing link channel audit records.
     conversation_logger: ConversationLogger,
     /// Instance-wide SQLite pool for resource_ownership + team_memberships
-    /// lookups in `can_link_channel`. `None` until Phase 4 wires it via
-    /// the construction site; when `None`, the policy check is skipped with
-    /// a `tracing::warn!` + `spacebot_authz_skipped_total{handler="send_agent_message"}`
+    /// lookups in `can_link_channel`. Wired by Phase 4 PR 2 via the
+    /// construction site; the `Option` remains because adapter paths and
+    /// static-token flows still build this tool without a pool (boot
+    /// window, tests, pre-Entra fallback). When `None`, the policy check
+    /// is skipped with a `tracing::error!` +
+    /// `spacebot_authz_skipped_total{handler="send_agent_message"}`
     /// increment so the gap is operationally visible.
     instance_pool: Option<sqlx::SqlitePool>,
     /// Per-turn skip flag. When set after delegation, the channel turn ends immediately.

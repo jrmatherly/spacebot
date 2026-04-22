@@ -21,7 +21,7 @@
 //! is load-bearing (A-12): a `tokio::spawn` here races a subsequent
 //! `GET /agents/projects/{id}` from the creator into a 404, breaking
 //! the create-then-open UX. The background repo/worktree scan is
-//! still spawned as today — ownership precedes the spawn so the
+//! still spawned as today; ownership precedes the spawn so the
 //! discovered resources become visible immediately.
 //!
 //! `list_projects` and `reorder_projects` carry a Phase-5 TODO. Listing
@@ -207,7 +207,7 @@ fn default_true() -> bool {
 }
 
 /// Refresh the sandbox allowlist with project root paths after a project
-/// create, delete, or scan. Best-effort — logs and continues on error.
+/// create, delete, or scan. Best-effort: logs and continues on error.
 async fn refresh_sandbox(state: &ApiState) {
     let store_guard = state.project_store.load();
     let Some(store) = store_guard.as_ref().as_ref() else {
@@ -314,7 +314,7 @@ async fn discover_and_register_worktrees(
 /// Compute and cache disk usage for all repos and worktrees in a project.
 ///
 /// Runs `dir_size` for each repo and worktree directory and writes the result
-/// back to the database. Best-effort — skips entries whose directories are
+/// back to the database. Best-effort: skips entries whose directories are
 /// missing or unreadable.
 async fn compute_and_cache_disk_usage(
     store: &Arc<crate::projects::ProjectStore>,
@@ -351,7 +351,7 @@ async fn compute_and_cache_disk_usage(
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// PUT /agents/projects/reorder — update the sort order of all projects.
+/// PUT /agents/projects/reorder: update the sort order of all projects.
 #[utoipa::path(
     put,
     path = "/agents/projects/reorder",
@@ -384,7 +384,7 @@ pub(super) async fn reorder_projects(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// GET /agents/projects — list projects.
+/// GET /agents/projects: list projects.
 #[utoipa::path(
     get,
     path = "/agents/projects",
@@ -420,7 +420,7 @@ pub(super) async fn list_projects(
     Ok(Json(ProjectListResponse { projects }))
 }
 
-/// POST /agents/projects — create a new project.
+/// POST /agents/projects: create a new project.
 #[utoipa::path(
     post,
     path = "/agents/projects",
@@ -456,7 +456,7 @@ pub(super) async fn create_project(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // A-12: `.await` set_ownership. A fire-and-forget `tokio::spawn` here
     // races the creator's subsequent GET /agents/projects/{id} into a 404.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
@@ -553,7 +553,7 @@ pub(super) async fn create_project(
     Ok(Json(ProjectResponse { project: full }))
 }
 
-/// GET /agents/projects/{id} — get a project with repos and worktrees.
+/// GET /agents/projects/{id}: get a project with repos and worktrees.
 #[utoipa::path(
     get,
     path = "/agents/projects/{id}",
@@ -627,7 +627,7 @@ pub(super) async fn get_project(
     Ok(Json(ProjectResponse { project }))
 }
 
-/// PUT /agents/projects/{id} — update a project.
+/// PUT /agents/projects/{id}: update a project.
 #[utoipa::path(
     put,
     path = "/agents/projects/{id}",
@@ -714,7 +714,7 @@ pub(super) async fn update_project(
     Ok(Json(ProjectResponse { project: full }))
 }
 
-/// DELETE /agents/projects/{id} — delete a project (DB records only).
+/// DELETE /agents/projects/{id}: delete a project (DB records only).
 #[utoipa::path(
     delete,
     path = "/agents/projects/{id}",
@@ -782,7 +782,7 @@ pub(super) async fn delete_project(
     }))
 }
 
-/// POST /agents/projects/{id}/scan — re-scan project root for repos and worktrees.
+/// POST /agents/projects/{id}/scan: re-scan project root for repos and worktrees.
 #[utoipa::path(
     post,
     path = "/agents/projects/{id}/scan",
@@ -848,7 +848,7 @@ pub(super) async fn scan_project(
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
 
-    // Discover repos — register new ones and refresh current_branch on existing.
+    // Discover repos: register new ones and refresh current_branch on existing.
     match crate::projects::git::discover_repos(&root).await {
         Ok(discovered) => {
             for repo in discovered {
@@ -916,7 +916,7 @@ pub(super) async fn scan_project(
     Ok(Json(ProjectResponse { project: full }))
 }
 
-/// POST /agents/projects/{id}/repos — add a repo to a project.
+/// POST /agents/projects/{id}/repos: add a repo to a project.
 #[utoipa::path(
     post,
     path = "/agents/projects/{id}/repos",
@@ -980,7 +980,7 @@ pub(super) async fn create_repo(
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Sanitize the path — must be relative, no traversal components.
+    // Sanitize the path: must be relative, no traversal components.
     let path = sanitize_relative_path(&request.path)?;
 
     let repo = store
@@ -1002,7 +1002,7 @@ pub(super) async fn create_repo(
     Ok(Json(RepoResponse { repo }))
 }
 
-/// DELETE /agents/projects/{project_id}/repos/{repo_id} — remove a repo.
+/// DELETE /agents/projects/{project_id}/repos/{repo_id}: remove a repo.
 #[utoipa::path(
     delete,
     path = "/agents/projects/{project_id}/repos/{repo_id}",
@@ -1083,7 +1083,7 @@ pub(super) async fn delete_repo(
     }))
 }
 
-/// POST /agents/projects/{id}/worktrees — create a worktree.
+/// POST /agents/projects/{id}/worktrees: create a worktree.
 #[utoipa::path(
     post,
     path = "/agents/projects/{id}/worktrees",
@@ -1165,7 +1165,7 @@ pub(super) async fn create_worktree(
     let repo_abs_path = root.join(&repo.path);
     let is_single_repo = repo.path == ".";
 
-    // Determine worktree name and path — sanitize to prevent traversal.
+    // Determine worktree name and path. Sanitize to prevent traversal.
     let worktree_name = request
         .worktree_name
         .unwrap_or_else(|| request.branch.replace('/', "-"));
@@ -1216,7 +1216,7 @@ pub(super) async fn create_worktree(
     Ok(Json(WorktreeResponse { worktree }))
 }
 
-/// DELETE /agents/projects/{project_id}/worktrees/{worktree_id} — remove a worktree.
+/// DELETE /agents/projects/{project_id}/worktrees/{worktree_id}: remove a worktree.
 #[utoipa::path(
     delete,
     path = "/agents/projects/{project_id}/worktrees/{worktree_id}",
@@ -1332,7 +1332,7 @@ pub(super) async fn delete_worktree(
     }))
 }
 
-/// GET /agents/projects/{id}/disk-usage — calculate disk usage for a project.
+/// GET /agents/projects/{id}/disk-usage: calculate disk usage for a project.
 #[utoipa::path(
     get,
     path = "/agents/projects/{id}/disk-usage",
@@ -1422,7 +1422,7 @@ pub(super) async fn disk_usage(
             Ok(m) => m,
             Err(_) => continue,
         };
-        // Skip symlinks entirely — don't follow them to avoid escaping the project root.
+        // Skip symlinks entirely. Don't follow them to avoid escaping the project root.
         if metadata.is_symlink() {
             continue;
         }
@@ -1449,7 +1449,7 @@ pub(super) async fn disk_usage(
     }))
 }
 
-/// GET /agents/projects/{id}/logo — serve the detected project logo.
+/// GET /agents/projects/{id}/logo: serve the detected project logo.
 #[utoipa::path(
     get,
     path = "/agents/projects/{id}/logo",
@@ -1550,7 +1550,7 @@ pub(super) async fn serve_logo(
     Ok(([(header::CONTENT_TYPE, content_type)], data))
 }
 
-/// Recursively calculate directory size. Best-effort — skips entries it can't
+/// Recursively calculate directory size. Best-effort: skips entries it can't
 /// read. Uses `symlink_metadata` to avoid following symlinks (prevents infinite
 /// recursion and escaping project root).
 async fn dir_size(path: &std::path::Path) -> u64 {

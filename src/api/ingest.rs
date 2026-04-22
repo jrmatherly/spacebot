@@ -325,7 +325,7 @@ pub(super) async fn upload_ingest_file(
                 .await;
             }
 
-            // A-12: `.await` set_ownership AFTER the insert — a
+            // A-12: `.await` set_ownership AFTER the insert. A
             // fire-and-forget `tokio::spawn` here races the creator's
             // subsequent DELETE /agents/ingest/files?content_hash=... into
             // a NotOwned 404. Skipped silently when the instance_pool is

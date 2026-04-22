@@ -428,7 +428,7 @@ pub(super) async fn create_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // A-12: `.await` set_ownership. A fire-and-forget `tokio::spawn` here
     // races the creator's subsequent GET /tasks/{number} into a 404.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
@@ -813,7 +813,7 @@ pub(super) async fn execute_task(
         return Ok(Json(TaskResponse { task: current }));
     }
 
-    // Reject pending_approval tasks — they must be approved first.
+    // Reject pending_approval tasks: they must be approved first.
     if current.status == crate::tasks::TaskStatus::PendingApproval {
         return Err(StatusCode::CONFLICT);
     }

@@ -1,4 +1,4 @@
-//! Instance-wide activity endpoint — aggregates process counts and token
+//! Instance-wide activity endpoint. Aggregates process counts and token
 //! usage across all agents, grouped by day.
 
 use super::state::ApiState;
@@ -316,12 +316,12 @@ pub(super) async fn get_activity(
     daily.sort_by(|a, b| a.date.cmp(&b.date));
 
     let mut totals = ActivityTotals::default();
-    // Track unique channels per day for totals — we want the max distinct, but
-    // since each day already has distinct channels counted, total is the sum of
-    // unique channels across all days (or we could do max — the plan says total
-    // distinct, so we'll track a running set... but we don't have the raw IDs
-    // at this point). Use simple sum for now — the total will reflect cumulative
-    // channel activity.
+    // Track unique channels per day for totals. We want the max distinct,
+    // but since each day already has distinct channels counted, total is
+    // the sum of unique channels across all days (or we could do max; the
+    // plan says total distinct, so we'd track a running set, but we don't
+    // have the raw IDs at this point). Use simple sum for now. The total
+    // will reflect cumulative channel activity.
     for day in &daily {
         totals.messages += day.messages;
         totals.branches += day.branches;
