@@ -79,7 +79,7 @@ rand = "0.10"
 subtle = "2"
 
 # UUID generation
-uuid = { version = "1.15", features = ["v4", "serde"] }
+uuid = { version = "1.15", features = ["v4", "v7", "serde"] }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
