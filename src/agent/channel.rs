@@ -803,16 +803,27 @@ impl Channel {
         let tool_server = ToolServer::new().run();
 
         // Construct the send_agent_message tool if this agent has links.
+        // `instance_pool` is extracted from `ApiState` (mirrors the load
+        // pattern at src/api/memories.rs:163); `auth_context` defaults to
+        // the deps' boot-time value (LegacyStatic). The real per-turn
+        // principal is applied at the turn dispatch point via
+        // `with_auth_context`.
         let send_agent_message_tool = {
             let has_links =
                 !crate::links::links_for_agent(&deps.links.load(), &deps.agent_id).is_empty();
             if has_links {
+                let instance_pool = deps
+                    .api_state
+                    .as_ref()
+                    .and_then(|s| s.instance_pool.load().as_ref().as_ref().cloned());
                 Some(crate::tools::SendAgentMessageTool::new(
                     deps.agent_id.clone(),
                     deps.links.clone(),
                     deps.agent_names.clone(),
                     deps.task_store.clone(),
                     ConversationLogger::new(deps.sqlite_pool.clone()),
+                    instance_pool,
+                    deps.auth_context().clone(),
                 ))
             } else {
                 None
@@ -2714,11 +2725,15 @@ impl Channel {
         let allow_direct_reply = !self.suppress_plaintext_fallback();
 
         // Set the originating channel on the delegation tool so task completion
-        // notifications route back to this conversation.
-        let send_agent_message_tool = self
-            .send_agent_message_tool
-            .clone()
-            .map(|tool| tool.with_originating_channel(conversation_id.to_string()));
+        // notifications route back to this conversation. Also install the
+        // per-turn `AuthContext` so `can_link_channel` enforces against the
+        // real originator (written by `install_turn_deps` earlier in this
+        // turn) rather than the boot-time `LegacyStatic` default captured
+        // at `Channel::new` construction.
+        let send_agent_message_tool = self.send_agent_message_tool.clone().map(|tool| {
+            tool.with_originating_channel(conversation_id.to_string())
+                .with_auth_context(self.state.deps.auth_context().clone())
+        });
 
         let current_inbound = self
             .current_inbound

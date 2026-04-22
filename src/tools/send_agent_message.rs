@@ -41,12 +41,26 @@ pub struct SendAgentMessageTool {
     /// Set per-turn so task completion notifications route back to the right place.
     originating_channel: Option<String>,
     working_memory: Option<Arc<crate::memory::WorkingMemoryStore>>,
+    /// Instance-wide SQLite pool for resource_ownership + team_memberships
+    /// lookups in `can_link_channel`. `None` until Phase 4 wires it via
+    /// the construction site; when `None`, the policy check is skipped with
+    /// a `tracing::warn!` + `spacebot_authz_skipped_total{handler="send_agent_message"}`
+    /// increment so the gap is operationally visible.
+    instance_pool: Option<sqlx::SqlitePool>,
+    /// Per-turn originating principal. Installed at the per-turn
+    /// `with_auth_context` chain in `Channel::run_agent_turn` from the
+    /// Channel's turn-local `AgentDeps.auth_context` (written by
+    /// `install_turn_deps` at turn start). Default `LegacyStatic`
+    /// preserves pre-Entra behavior for adapter paths and static-token flows.
+    auth_context: crate::auth::context::AuthContext,
 }
 
 impl std::fmt::Debug for SendAgentMessageTool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SendAgentMessageTool")
             .field("agent_id", &self.agent_id)
+            .field("instance_pool_is_some", &self.instance_pool.is_some())
+            .field("auth_context", &self.auth_context.principal_key())
             .finish_non_exhaustive()
     }
 }
@@ -58,6 +72,8 @@ impl SendAgentMessageTool {
         agent_names: Arc<HashMap<String, String>>,
         task_store: Arc<TaskStore>,
         conversation_logger: ConversationLogger,
+        instance_pool: Option<sqlx::SqlitePool>,
+        auth_context: crate::auth::context::AuthContext,
     ) -> Self {
         Self {
             agent_id,
@@ -68,6 +84,8 @@ impl SendAgentMessageTool {
             skip_flag: None,
             originating_channel: None,
             working_memory: None,
+            instance_pool,
+            auth_context,
         }
     }
 
@@ -86,6 +104,15 @@ impl SendAgentMessageTool {
 
     pub fn with_working_memory(mut self, store: Arc<crate::memory::WorkingMemoryStore>) -> Self {
         self.working_memory = Some(store);
+        self
+    }
+
+    /// Override the originating principal for this turn. Called from
+    /// `Channel::run_agent_turn` after `install_turn_deps` has written the
+    /// per-turn `AgentDeps.auth_context`, so the policy check at `call()`
+    /// sees the real actor rather than the boot-time `LegacyStatic` default.
+    pub fn with_auth_context(mut self, ctx: crate::auth::context::AuthContext) -> Self {
+        self.auth_context = ctx;
         self
     }
 
@@ -177,11 +204,51 @@ impl Tool for SendAgentMessageTool {
             ))
         })?;
 
-        // TODO(phase-4 PR 2): call crate::auth::can_link_channel(&pool, ctx,
-        // &self.agent_id, &target_agent_id).await before the link lookup.
-        // Requires threading the instance_pool + per-turn AuthContext into
-        // SendAgentMessageTool (currently neither is available here).
-        // The helper + its 4 tests landed with the policy module in PR 1.
+        // Cross-agent link policy: when the instance_pool is attached
+        // (Phase 4+), check that the originating principal is allowed to
+        // delegate from self.agent_id to target_agent_id. Bare UUIDs per
+        // A-09, never prefix with `{agent}:`.
+        if let Some(pool) = &self.instance_pool {
+            let allowed = crate::auth::can_link_channel(
+                pool,
+                &self.auth_context,
+                self.agent_id.as_ref(),
+                target_agent_id.as_str(),
+            )
+            .await
+            .map_err(|error| {
+                SendAgentMessageError(format!("link policy check failed: {error}"))
+            })?;
+
+            if !allowed {
+                tracing::warn!(
+                    actor = %self.auth_context.principal_key(),
+                    from = %self.agent_id,
+                    to = %target_agent_id,
+                    "cross-agent link denied by policy"
+                );
+                return Err(SendAgentMessageError(format!(
+                    "cross-agent link to '{}' denied by policy",
+                    args.target
+                )));
+            }
+        } else {
+            // Pool absent (pre-Phase-4 boot window or misconfiguration).
+            // The always-on tracing::warn! surfaces the gap; the
+            // feature-gated counter provides a quantitative signal under
+            // /metrics. Mirrors the pattern in src/api/memories.rs:163.
+            tracing::warn!(
+                tool = "send_agent_message",
+                from = %self.agent_id,
+                to = %target_agent_id,
+                "instance_pool is None; skipping can_link_channel (pre-Entra fallback)"
+            );
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["send_agent_message"])
+                .inc();
+        }
 
         // Look up the link between sending agent and target
         let links = self.links.load();
