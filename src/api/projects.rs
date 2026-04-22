@@ -1,4 +1,44 @@
-//! REST API handlers for project, repo, and worktree management.
+//! Project HTTP handlers + shared Phase-4 authz gate.
+//!
+//! All read + write endpoints consult `check_read_with_audit` /
+//! `check_write` with `resource_type = "project"` before touching the
+//! project store. Access keys on the project's UUID `id` (A-09: bare
+//! UUID). Projects carry a `root_path` (a filesystem path) and a
+//! human-readable `name`; these are display metadata, not authz keys.
+//! The path param `{id}` in these routes IS the UUID, so no
+//! fetch-before-gate indirection is needed on per-project handlers.
+//!
+//! Child resources (repos, worktrees) are scoped under a project and
+//! share its ownership row: `create_repo`, `delete_repo`,
+//! `create_worktree`, and `delete_worktree` gate on the parent
+//! `project_id` with `check_write`, not on a per-repo / per-worktree
+//! row. This matches the storage model (`project_repos` and
+//! `project_worktrees` both FK to `projects.id`) and avoids multiplying
+//! ownership rows for derived entities.
+//!
+//! `create_project` skips the pre-check (nothing exists yet) and
+//! `.await`s `set_ownership` AFTER the insert succeeds. The `.await`
+//! is load-bearing (A-12): a `tokio::spawn` here races a subsequent
+//! `GET /agents/projects/{id}` from the creator into a 404, breaking
+//! the create-then-open UX. The background repo/worktree scan is
+//! still spawned as today — ownership precedes the spawn so the
+//! discovered resources become visible immediately.
+//!
+//! `list_projects` and `reorder_projects` carry a Phase-5 TODO. Listing
+//! without a filter returns every project the instance holds; the fix
+//! is per-row `check_read` once the audit log lands. Reorder is a
+//! bulk write across an array of IDs; N+1 `check_write` calls during
+//! drag-drop would be chatty, so it also waits for Phase-5's bulk
+//! variant.
+//!
+//! The ~45-line inline gate block mirrors `src/api/memories.rs`,
+//! `src/api/tasks.rs`, `src/api/agents.rs`, `src/api/cron.rs`, and
+//! `src/api/portal.rs` per Phase 4 PR 2 decision N1: single-file
+//! grep-visibility beats DRY. Pool-None is always-on `tracing::warn!`
+//! plus feature-gated
+//! `spacebot_authz_skipped_total{handler="projects"}`. The metric
+//! label is the file resource family (`"projects"`), never a
+//! per-handler sub-label, to keep cardinality flat.
 
 use super::state::ApiState;
 
@@ -324,8 +364,12 @@ async fn compute_and_cache_disk_usage(
 )]
 pub(super) async fn reorder_projects(
     State(state): State<Arc<ApiState>>,
+    _auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<ReorderProjectsRequest>,
 ) -> Result<StatusCode, StatusCode> {
+    // TODO(phase-5): gate bulk reorder with per-id `check_write`. Current
+    // path writes `sort_order` across an array of IDs; N+1 authz calls are
+    // chatty for drag-drop UX and need a bulk variant of `check_write`.
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -355,8 +399,14 @@ pub(super) async fn reorder_projects(
 )]
 pub(super) async fn list_projects(
     State(state): State<Arc<ApiState>>,
+    _auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<ProjectListQuery>,
 ) -> Result<Json<ProjectListResponse>, StatusCode> {
+    // TODO(phase-5): gate the unfiltered listing path. Currently returns
+    // every project the instance holds to any authenticated caller. The
+    // correct fix is per-row `check_read` once the audit log lands and
+    // can absorb the N+1 audit emission cost; in the interim an
+    // admin-only guard would be an acceptable tightening.
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -383,6 +433,7 @@ pub(super) async fn list_projects(
 )]
 pub(super) async fn create_project(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreateProjectRequest>,
 ) -> Result<Json<ProjectResponse>, StatusCode> {
     let store_guard = state.project_store.load();
@@ -404,6 +455,36 @@ pub(super) async fn create_project(
             tracing::error!(%error, "failed to create project");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // races the creator's subsequent GET /agents/projects/{id} into a 404.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::auth::repository::set_ownership(
+            &pool,
+            "project",
+            &project.id,
+            None,
+            &auth_ctx.principal_key(),
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, project_id = %project.id, "failed to register project ownership");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    } else {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+    }
 
     // Refresh sandbox allowlist with new project path.
     refresh_sandbox(&state).await;
@@ -487,8 +568,50 @@ pub(super) async fn create_project(
 )]
 pub(super) async fn get_project(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
 ) -> Result<Json<ProjectResponse>, StatusCode> {
+    // A-09: URL path `{id}` is already the bare project UUID; the
+    // ownership row keys on the same value. No fetch-before-gate
+    // indirection is required here.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "project",
+                        resource_id = %project_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "project",
+                resource_id = %project_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -520,9 +643,39 @@ pub(super) async fn get_project(
 )]
 pub(super) async fn update_project(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
     Json(request): Json<UpdateProjectRequest>,
 ) -> Result<Json<ProjectResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -576,8 +729,38 @@ pub(super) async fn update_project(
 )]
 pub(super) async fn delete_project(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
 ) -> Result<Json<ActionResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -614,8 +797,40 @@ pub(super) async fn delete_project(
 )]
 pub(super) async fn scan_project(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
 ) -> Result<Json<ProjectResponse>, StatusCode> {
+    // scan_project mutates on-disk discovery + DB rows (repo current_branch,
+    // worktree registrations, disk usage, logo path). Gate as a write.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -717,9 +932,41 @@ pub(super) async fn scan_project(
 )]
 pub(super) async fn create_repo(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
     Json(request): Json<CreateRepoRequest>,
 ) -> Result<Json<RepoResponse>, StatusCode> {
+    // Repos are child resources under a project and share its ownership
+    // row. Gate on the parent `project_id` with `check_write`.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -771,8 +1018,40 @@ pub(super) async fn create_repo(
 )]
 pub(super) async fn delete_repo(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path((project_id, repo_id)): Path<(String, String)>,
 ) -> Result<Json<ActionResponse>, StatusCode> {
+    // Repos are child resources under a project and share its ownership
+    // row. Gate on the parent `project_id` with `check_write`.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -820,9 +1099,41 @@ pub(super) async fn delete_repo(
 )]
 pub(super) async fn create_worktree(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
     Json(request): Json<CreateWorktreeRequest>,
 ) -> Result<Json<WorktreeResponse>, StatusCode> {
+    // Worktrees are child resources under a project and share its
+    // ownership row. Gate on the parent `project_id` with `check_write`.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -921,8 +1232,40 @@ pub(super) async fn create_worktree(
 )]
 pub(super) async fn delete_worktree(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path((project_id, worktree_id)): Path<(String, String)>,
 ) -> Result<Json<ActionResponse>, StatusCode> {
+    // Worktrees are child resources under a project and share its
+    // ownership row. Gate on the parent `project_id` with `check_write`.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "project",
+                    resource_id = %project_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -1004,8 +1347,47 @@ pub(super) async fn delete_worktree(
 )]
 pub(super) async fn disk_usage(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
 ) -> Result<Json<DiskUsageResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "project",
+                        resource_id = %project_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "project",
+                resource_id = %project_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -1082,8 +1464,47 @@ pub(super) async fn disk_usage(
 )]
 pub(super) async fn serve_logo(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(project_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "project",
+                        resource_id = %project_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "project",
+                resource_id = %project_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["projects"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
