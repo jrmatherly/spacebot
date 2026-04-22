@@ -4,7 +4,8 @@
 //! whether `ApiState.entra_auth` is populated.
 
 use crate::api::ApiState;
-use crate::auth::{AuthError, EntraValidator};
+use crate::auth::AuthError;
+use crate::auth::jwks::DynJwtValidator;
 
 use axum::Json;
 use axum::extract::{Request, State};
@@ -28,7 +29,7 @@ pub async fn entra_auth_middleware(
     }
 
     let guard = state.entra_auth.load();
-    let validator: &EntraValidator = match guard.as_ref() {
+    let validator: &dyn DynJwtValidator = match guard.as_ref() {
         Some(v) => v.as_ref(),
         None => {
             tracing::error!("entra_auth_middleware attached but validator absent");
@@ -62,7 +63,7 @@ pub async fn entra_auth_middleware(
     let bearer_token: Option<String> = bearer_result.as_ref().ok().cloned();
 
     let result = match bearer_result {
-        Ok(token) => validator.validate(&token).await,
+        Ok(token) => validator.validate_dyn(&token).await,
         Err(err) => Err(err),
     };
 
@@ -132,13 +133,47 @@ pub async fn entra_auth_middleware(
             if let Some(graph) = graph_guard.as_ref().as_ref().map(Arc::clone) {
                 let pool_opt = state.instance_pool.load().as_ref().clone();
                 if let (Some(pool), Some(user_token)) = (pool_opt, bearer_token.clone()) {
-                    let ttl_secs = state
-                        .entra_auth
-                        .load()
-                        .as_ref()
-                        .as_ref()
-                        .map(|v| v.config().group_cache_ttl_secs)
-                        .unwrap_or(300);
+                    // `entra_config` holds the resolved Entra config separately
+                    // from the validator trait object, so this lookup doesn't
+                    // depend on whether the installed validator is the real
+                    // `EntraValidator` or a `MockValidator`. Mocks leave this
+                    // None and the middleware falls back to the 300s default.
+                    //
+                    // If `entra_config` is None but `entra_auth` was verified
+                    // above (validator.validate_dyn succeeded), we hit a
+                    // startup-ordering bug: `set_entra_auth` ran but
+                    // `set_entra_auth_config` did not. Production deploys
+                    // should never see this; a `tracing::warn!` surfaces the
+                    // divergence so an operator who configured a 3600s TTL
+                    // and is seeing 300s Graph traffic can trace it here.
+                    let ttl_secs = match state.entra_config.load().as_ref().as_ref() {
+                        Some(cfg) => cfg.group_cache_ttl_secs,
+                        None => {
+                            // One-shot warn: mock-validator paths (every
+                            // integration test) leave entra_config None by
+                            // design and would otherwise emit one warn per
+                            // request, washing out signal. Production paths
+                            // see the warn once at first-request-after-boot
+                            // if set_entra_auth ran but set_entra_auth_config
+                            // did not, which is the operator signal we want.
+                            use std::sync::atomic::Ordering;
+                            let first = state
+                                .entra_config_missing_warned
+                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                                .is_ok();
+                            if first {
+                                tracing::warn!(
+                                    principal_key = %ctx.principal_key(),
+                                    "entra_config not attached; falling back to 300s \
+                                     group-cache TTL. Mock validator paths hit this \
+                                     branch by design (one-shot); production Entra \
+                                     paths hitting it indicate a set_entra_auth_config \
+                                     ordering bug"
+                                );
+                            }
+                            300
+                        }
+                    };
 
                     // Pre-compute principal_key once so both spawns carry it
                     // inline on their `warn!` sites. Tracing spans already

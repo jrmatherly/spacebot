@@ -134,6 +134,7 @@ async fn bootstrap_deps() -> anyhow::Result<spacebot::AgentDeps> {
         ),
         api_state: None,
         wiki_store: None,
+        auth_context: spacebot::auth::AuthContext::legacy_static(),
     })
 }
 

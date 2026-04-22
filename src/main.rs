@@ -1707,6 +1707,10 @@ async fn run(
                 .await
                 .context("initialize Entra JWT validator")?;
             api_state.set_entra_auth(Arc::new(validator));
+            // Store the resolved config alongside the validator so the
+            // middleware can read `group_cache_ttl_secs` for Phase 3's
+            // group-sync spawn without coupling to a specific validator type.
+            api_state.set_entra_auth_config(entra_cfg.clone());
 
             // Phase 3: Microsoft Graph client for group resolution and
             // user photo fetch via OBO. Optional. If the secrets store is
@@ -3095,6 +3099,7 @@ async fn initialize_agents(
             working_memory,
             api_state: Some(api_state.clone()),
             wiki_store: Some(global_wiki_store.clone()),
+            auth_context: spacebot::auth::AuthContext::legacy_static(),
         };
 
         let agent = spacebot::Agent {

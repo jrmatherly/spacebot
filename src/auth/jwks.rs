@@ -1,6 +1,13 @@
 //! Thin wrapper around `jwt-authorizer` providing Entra-specific claim
 //! extraction. The crate handles JWKS caching, OIDC discovery, and signature
 //! verification. We layer on the Spacebot-specific validation rules.
+//!
+//! The [`JwtValidator`] trait abstracts over token validators so integration
+//! tests can substitute a mock without running a real JWKS endpoint. The
+//! companion [`DynJwtValidator`] trait (object-safe via `Pin<Box<dyn
+//! Future>>`) is what `ApiState` holds, because `impl Future` in return
+//! position is not object-safe. See `rust-patterns.md` § "Trait Design"
+//! for the RPITIT + Dyn-companion pattern.
 
 use crate::auth::config::EntraAuthConfig;
 use crate::auth::context::{AuthContext, PrincipalType};
@@ -10,11 +17,45 @@ use jsonwebtoken::Algorithm;
 use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
 use serde::Deserialize;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+
+/// Validate an Entra-issued bearer token. Production uses [`EntraValidator`];
+/// integration tests swap in `auth::testing::MockValidator` (Task 4.7).
+///
+/// Implementations return a fully-populated [`AuthContext`] on success and
+/// an [`AuthError`] on failure. The enum's variants map to HTTP status codes
+/// via [`AuthError::status`].
+pub trait JwtValidator: Send + Sync {
+    fn validate(&self, bearer: &str)
+    -> impl Future<Output = Result<AuthContext, AuthError>> + Send;
+}
+
+/// Dyn-compatible companion to [`JwtValidator`]. Blanket impl forwards every
+/// `JwtValidator` to a `Box<dyn Future>` return so `Arc<dyn DynJwtValidator>`
+/// is object-safe. `ApiState.entra_auth` holds this variant.
+pub trait DynJwtValidator: Send + Sync {
+    fn validate_dyn<'a>(
+        &'a self,
+        bearer: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthContext, AuthError>> + Send + 'a>>;
+}
+
+impl<T: JwtValidator + ?Sized> DynJwtValidator for T {
+    fn validate_dyn<'a>(
+        &'a self,
+        bearer: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<AuthContext, AuthError>> + Send + 'a>> {
+        Box::pin(<Self as JwtValidator>::validate(self, bearer))
+    }
+}
 
 /// Claims extracted from Entra v2 tokens. Unused claims are ignored.
 /// `_claim_names` / `_claim_sources` appear on groups-overage tokens. We
-/// capture their presence here and leave lookup to Phase 3.
+/// capture their presence here; Phase 3 resolves overage via
+/// `GraphClient::list_member_groups` (see
+/// `src/auth/middleware.rs::sync_groups_for_principal`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct EntraClaims {
     /// Tenant ID.
@@ -93,14 +134,10 @@ impl EntraValidator {
         })
     }
 
-    /// Read-only access to the resolved Entra config. Used by the auth
-    /// middleware to thread `group_cache_ttl_secs` into Phase 3's group-sync
-    /// helper without re-reading the TOML.
-    pub(crate) fn config(&self) -> &EntraAuthConfig {
-        &self.cfg
-    }
-
     /// Validate a raw bearer token string and produce an `AuthContext`.
+    ///
+    /// Also reachable via the [`JwtValidator`] trait so `ApiState.entra_auth`
+    /// can hold any validator that implements it (mock or real).
     pub async fn validate(&self, bearer: &str) -> Result<AuthContext, AuthError> {
         let token_data = self
             .inner
@@ -163,6 +200,18 @@ impl EntraValidator {
     }
 }
 
+impl JwtValidator for EntraValidator {
+    fn validate(
+        &self,
+        bearer: &str,
+    ) -> impl Future<Output = Result<AuthContext, AuthError>> + Send {
+        // Delegate to the inherent method so callers using the concrete
+        // type continue to work. The compiler erases this into the same
+        // `impl Future` as `async fn validate(...)` above.
+        Self::validate(self, bearer)
+    }
+}
+
 fn map_authorizer_err(e: jwt_authorizer::error::AuthError) -> AuthError {
     use jsonwebtoken::errors::ErrorKind;
     use jwt_authorizer::error::AuthError as JE;
@@ -192,5 +241,57 @@ fn map_authorizer_err(e: jwt_authorizer::error::AuthError) -> AuthError {
         // 401 would be an audit finding ("misconfig surfaced as user auth
         // failure").
         JE::NoAuthorizer() | JE::NoAuthorizerLayer() => AuthError::JwksUnreachable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::context::PrincipalType;
+    use crate::auth::testing::{MockValidator, mint_mock_token};
+
+    /// Regression guard for the `JwtValidator` / `DynJwtValidator` split.
+    /// Asserts that `Arc<MockValidator>` unsize-coerces to
+    /// `Arc<dyn DynJwtValidator>` via the blanket impl at
+    /// `impl<T: JwtValidator + ?Sized> DynJwtValidator for T`, and that
+    /// `validate_dyn` routes back to `JwtValidator::validate` identically
+    /// to calling the concrete type directly.
+    ///
+    /// Production wires exactly this path at `src/main.rs` via
+    /// `set_entra_auth(Arc::new(validator))`: the compiler does the
+    /// coercion implicitly, and the middleware calls `.validate_dyn(...)`.
+    /// Without this test, a regression in the blanket impl (e.g. a future
+    /// `impl<T: SomeBound> JwtValidator for T` that breaks object safety)
+    /// would only surface at production token-validation time.
+    #[tokio::test]
+    async fn dyn_jwt_validator_routes_through_blanket_impl() {
+        use std::sync::Arc;
+
+        let ctx = AuthContext {
+            principal_type: PrincipalType::User,
+            tid: Arc::from("t1"),
+            oid: Arc::from("alice"),
+            roles: vec![],
+            groups: vec![],
+            groups_overage: false,
+            display_email: None,
+            display_name: None,
+        };
+        let token = mint_mock_token(&ctx);
+
+        // The coercion step this test exists to guard: concrete
+        // Arc<MockValidator> -> Arc<dyn DynJwtValidator>.
+        let concrete: Arc<MockValidator> = Arc::new(MockValidator::new());
+        let erased: Arc<dyn DynJwtValidator> = concrete.clone();
+
+        // Two independent validate calls: one through the concrete
+        // inherent method, one through the dyn-erased trait object.
+        // They must return identical AuthContext values.
+        let direct = concrete.validate(&token).await.unwrap();
+        let via_dyn = erased.validate_dyn(&token).await.unwrap();
+
+        assert_eq!(direct.oid.as_ref(), via_dyn.oid.as_ref());
+        assert_eq!(direct.tid.as_ref(), via_dyn.tid.as_ref());
+        assert_eq!(direct.principal_type, via_dyn.principal_type);
     }
 }

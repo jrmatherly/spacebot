@@ -438,6 +438,12 @@ pub struct AgentDeps {
     pub api_state: Option<Arc<api::ApiState>>,
     /// Instance-wide wiki store.
     pub wiki_store: Option<Arc<wiki::WikiStore>>,
+    /// Originating principal's auth context, propagated from the Channel's
+    /// turn-dispatch into every spawned Branch/Worker so tool-initiated API
+    /// calls carry the originator's identity. Defaults to `LegacyStatic`
+    /// for the boot window and the static-token path that predates Entra.
+    /// Phase 4 (`src/auth/policy.rs`) is the first consumer.
+    pub auth_context: auth::context::AuthContext,
 }
 
 impl AgentDeps {
@@ -451,6 +457,34 @@ impl AgentDeps {
     /// Load the current routing config snapshot.
     pub fn routing(&self) -> arc_swap::Guard<Arc<llm::RoutingConfig>> {
         self.runtime_config.routing.load()
+    }
+
+    /// Read the originating principal's auth context. Populated by the
+    /// Channel's turn-dispatch; defaults to `LegacyStatic` until then.
+    pub fn auth_context(&self) -> &auth::context::AuthContext {
+        &self.auth_context
+    }
+
+    /// Produce a turn-local clone with a specific auth context. PR 1
+    /// (Phase 4) ships the builder with no live call site; PR 2 wires the
+    /// Channel-side caller so each turn's spawned Branches and Workers
+    /// carry the originating principal. Until then, `AgentDeps` uses the
+    /// [`AuthContext::legacy_static`] default from `AgentDeps` construction,
+    /// which sits in the admin-bypass set. **Do not rely on Branch/Worker
+    /// inheritance propagating a real user identity in production today.**
+    ///
+    /// `#[must_use]` is load-bearing: `for_turn` returns a rebuilt
+    /// `AgentDeps`; writing `deps.for_turn(ctx);` as a bare statement
+    /// (no assignment, no chain) silently drops the new value while
+    /// `self.auth_context` stays `LegacyStatic`. Because LegacyStatic is
+    /// in the `is_admin` bypass set at `src/auth/roles.rs`, every spawned
+    /// Branch/Worker then executes as admin-equivalent. The attribute
+    /// forces the compiler to surface the missing assignment.
+    #[must_use = "for_turn returns a new AgentDeps; discarding it leaves LegacyStatic (admin-bypass) as the effective auth context for spawned Branches/Workers"]
+    pub fn for_turn(&self, ctx: auth::context::AuthContext) -> Self {
+        let mut next = self.clone();
+        next.auth_context = ctx;
+        next
     }
 }
 

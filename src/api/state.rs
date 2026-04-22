@@ -57,7 +57,21 @@ pub struct ApiState {
     /// request time (the branch is chosen in `start_http_server`). Wrapped
     /// in `ArcSwap` to match the post-construction field-population pattern
     /// used for `task_store`, `wiki_store`, etc.
-    pub entra_auth: Arc<ArcSwap<Option<Arc<crate::auth::EntraValidator>>>>,
+    ///
+    /// Held as `Arc<dyn DynJwtValidator>` so integration tests can swap in
+    /// [`crate::auth::testing::MockValidator`] (Phase 4 Task 4.7) without
+    /// wiring a real JWKS endpoint. Production wires the concrete
+    /// [`crate::auth::EntraValidator`]. The `start_http_server` branch
+    /// check reads this field via `.is_some()` to decide which middleware
+    /// to install.
+    pub entra_auth: Arc<ArcSwap<Option<Arc<dyn crate::auth::jwks::DynJwtValidator>>>>,
+    /// Held alongside `entra_auth` so code paths that need the resolved Entra
+    /// config (e.g., the middleware's Phase 3 group-sync spawn reading
+    /// `group_cache_ttl_secs`) can access it without coupling to a specific
+    /// validator type. Populated by `set_entra_auth_config` when Entra is wired;
+    /// `None` for static-token deployments and mock-backed tests that don't
+    /// need Graph integration.
+    pub entra_config: Arc<ArcSwap<Option<crate::auth::EntraAuthConfig>>>,
     /// Microsoft Graph client for resolving Entra group memberships and
     /// fetching user display photos via OBO. Populated post-construction
     /// from `main.rs` after the secrets store loads `web_api_client_secret`.
@@ -107,6 +121,14 @@ pub struct ApiState {
     /// the store wrappers above so the Entra middleware can upsert user rows
     /// on successful auth without having to route through a store.
     pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
+    /// One-shot guard for the `entra_config not attached` warn in
+    /// `entra_auth_middleware`. Set to `true` after the first emission so
+    /// mock-validator integration tests (which leave `entra_config` None by
+    /// design) don't flood the log with one warn per request. In production,
+    /// a startup-ordering bug fires exactly one warn at first-request-after-boot
+    /// rather than one per subsequent request, which is the operator signal
+    /// we actually want.
+    pub entra_config_missing_warned: std::sync::atomic::AtomicBool,
     /// Per-agent RuntimeConfig for reading live hot-reloaded configuration.
     pub runtime_configs: ArcSwap<HashMap<String, Arc<RuntimeConfig>>>,
     /// Per-agent MCP managers for status and reconnect APIs.
@@ -339,6 +361,8 @@ impl ApiState {
             started_at: Instant::now(),
             auth_token: None,
             entra_auth: Arc::new(ArcSwap::from_pointee(None)),
+            entra_config: Arc::new(ArcSwap::from_pointee(None)),
+            entra_config_missing_warned: std::sync::atomic::AtomicBool::new(false),
             graph_client: ArcSwap::from_pointee(None),
             event_tx,
             agent_pools: arc_swap::ArcSwap::from_pointee(HashMap::new()),
@@ -407,6 +431,68 @@ impl ApiState {
             Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
         state.auth_token = auth_token;
         state
+    }
+
+    /// Test-only constructor that returns an `ApiState` with an in-memory
+    /// instance-DB pool bound (migrations applied) and a [`MockValidator`]
+    /// installed on `entra_auth`. Integration tests under `tests/*.rs` use
+    /// this to exercise the middleware + handler authz path without a real
+    /// JWKS endpoint.
+    ///
+    /// Returns `(state, pool)`; the pool is shared with the state (the setter
+    /// clones it). Tests typically seed users + ownership rows on the returned
+    /// pool before exercising the router via `build_test_router_entra`.
+    ///
+    /// [`MockValidator`]: crate::auth::testing::MockValidator
+    #[doc(hidden)]
+    pub async fn new_test_state_with_mock_entra() -> (Arc<Self>, sqlx::SqlitePool) {
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let (provider_tx, _provider_rx) = mpsc::channel(16);
+        let (agent_tx, _agent_rx) = mpsc::channel(16);
+        let (agent_remove_tx, _agent_remove_rx) = mpsc::channel(16);
+        let (injection_tx, _injection_rx) = mpsc::channel(16);
+        let state =
+            Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("sqlite in-memory pool");
+        sqlx::migrate!("./migrations/global")
+            .run(&pool)
+            .await
+            .expect("global migrations apply cleanly");
+        state.set_instance_pool(pool.clone());
+
+        let mock: Arc<dyn crate::auth::jwks::DynJwtValidator> =
+            Arc::new(crate::auth::testing::MockValidator::new());
+        state.entra_auth.store(Arc::new(Some(mock)));
+
+        (Arc::new(state), pool)
+    }
+
+    /// Test-only constructor mirroring [`Self::new_test_state_with_mock_entra`]
+    /// but WITHOUT attaching an `instance_pool`. Returns just `Arc<Self>` since
+    /// there is no pool to seed. Used to exercise handler no-op fallbacks
+    /// when the Phase 2 data model isn't attached (boot window / startup
+    /// race / misconfig). The `MockValidator` is still installed so auth
+    /// itself succeeds.
+    #[doc(hidden)]
+    pub fn new_test_state_with_mock_entra_no_pool() -> Arc<Self> {
+        let (provider_tx, _provider_rx) = mpsc::channel(16);
+        let (agent_tx, _agent_rx) = mpsc::channel(16);
+        let (agent_remove_tx, _agent_remove_rx) = mpsc::channel(16);
+        let (injection_tx, _injection_rx) = mpsc::channel(16);
+        let state =
+            Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
+
+        let mock: Arc<dyn crate::auth::jwks::DynJwtValidator> =
+            Arc::new(crate::auth::testing::MockValidator::new());
+        state.entra_auth.store(Arc::new(Some(mock)));
+
+        Arc::new(state)
     }
 
     /// Register a channel's status block so the API can read snapshots.
@@ -899,8 +985,22 @@ impl ApiState {
     /// Install the Entra validator post-construction. Called from main.rs
     /// after `ApiConfig::entra_auth` has been resolved, before
     /// `start_http_server` reads the field to pick the middleware branch.
-    pub fn set_entra_auth(&self, validator: Arc<crate::auth::EntraValidator>) {
+    ///
+    /// Takes `Arc<dyn DynJwtValidator>` so production can install
+    /// [`crate::auth::EntraValidator`] (which implements the trait via the
+    /// blanket impl in `src/auth/jwks.rs`) and integration tests can install
+    /// [`crate::auth::testing::MockValidator`].
+    pub fn set_entra_auth(&self, validator: Arc<dyn crate::auth::jwks::DynJwtValidator>) {
         self.entra_auth.store(Arc::new(Some(validator)));
+    }
+
+    /// Install the resolved Entra config alongside the validator. Held
+    /// separately from the trait object because the config carries fields
+    /// (`group_cache_ttl_secs`, `allowed_scopes`, etc.) that the middleware
+    /// reads outside the validation hot path. Decoupling keeps `MockValidator`
+    /// free of a mandatory config dependency.
+    pub fn set_entra_auth_config(&self, cfg: crate::auth::EntraAuthConfig) {
+        self.entra_config.store(Arc::new(Some(cfg)));
     }
 
     /// Install the Microsoft Graph client post-construction. Called from

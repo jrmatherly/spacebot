@@ -88,6 +88,19 @@ pub struct Metrics {
     /// non-zero value indicates a startup-ordering regression.
     pub auth_upsert_skipped_total: IntCounter,
 
+    /// Phase 4: Per-handler authz check skipped because the instance pool
+    /// is not attached. Labels: `handler` (resource handler name, e.g.
+    /// `memories`). Same startup-ordering interpretation as
+    /// `auth_upsert_skipped_total`: expected to fire during boot but a
+    /// persistent non-zero rate indicates `set_instance_pool` landed after
+    /// the HTTP server started accepting requests, which silently bypasses
+    /// every per-handler authz gate.
+    ///
+    /// Feature-gated: call sites wrap the `.inc()` in
+    /// `#[cfg(feature = "metrics")]`. The `tracing::warn!` that accompanies
+    /// every increment is the always-on signal for default builds.
+    pub authz_skipped_total: IntCounterVec,
+
     /// A-10: 202 Accepted responses emitted while the async Graph group
     /// sync was in flight on a user's first request. Persistent high rate
     /// here indicates Graph is unreachable, rate-limited, or throwing.
@@ -354,6 +367,15 @@ impl Metrics {
         let auth_upsert_skipped_total = IntCounter::new(
             "spacebot_auth_upsert_skipped_total",
             "Post-auth user-row upsert skipped (instance pool not attached)",
+        )
+        .expect("hardcoded metric descriptor");
+
+        let authz_skipped_total = IntCounterVec::new(
+            Opts::new(
+                "spacebot_authz_skipped_total",
+                "Per-handler authz check skipped because instance pool is not attached",
+            ),
+            &["handler"],
         )
         .expect("hardcoded metric descriptor");
 
@@ -653,6 +675,9 @@ impl Metrics {
             .register(Box::new(auth_upsert_skipped_total.clone()))
             .expect("hardcoded metric");
         registry
+            .register(Box::new(authz_skipped_total.clone()))
+            .expect("hardcoded metric");
+        registry
             .register(Box::new(auth_first_request_race_total.clone()))
             .expect("hardcoded metric");
         registry
@@ -771,6 +796,7 @@ impl Metrics {
             auth_failures_total,
             auth_upsert_failures_total,
             auth_upsert_skipped_total,
+            authz_skipped_total,
             auth_first_request_race_total,
             auth_graph_sync_failures_total,
             memory_updates_total,
