@@ -80,7 +80,7 @@ just graphify-query "<question>"          # query the built graph
 just graphify-clean                       # drop graphify-out/ entirely
 ```
 
-Full rationale, cost sizing, integration decisions, and the cross-project audit live in `.scratchpad/completed/2026-04-21-graphify-research.md`. `.graphifyignore` at the repo root governs what gets ingested. Do not remove `node_modules/` or `spacedrive/` from that list without reading the research doc first.
+`.graphifyignore` at the repo root governs what gets ingested. Do not remove `node_modules/` or `spacedrive/` from that list — they were excluded deliberately (cost sizing + noise-to-signal ratio during the 2026-04-21 evaluation).
 
 ## Reference Docs
 

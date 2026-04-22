@@ -48,7 +48,7 @@
 
 ## Tooling (opt-in)
 
-- **Graphify** — local knowledge-graph tool installed per-developer via `pipx install graphifyy`. Three opt-in just recipes (`graphify-rebuild`, `graphify-query`, `graphify-clean`) wrap a `--directed`-preserving shell script. Not wired into CI or hooks. `.graphifyignore` at repo root mirrors `.gitignore` text-content entries plus graphify-specific exclusions (spacedrive/, vendor/, packages/api-client/src/schema.d.ts, graphify-out/ self-exclusion). Rationale + cost sizing + cross-project audit archived at `.scratchpad/completed/2026-04-21-graphify-research.md`. Complements the existing `code-review-graph` MCP (which handles structural Rust code queries); graphify's value is semantic cross-document clustering for design docs, RFCs, and screenshots. Landed 2026-04-21 alongside Phase 3 Entra work on `feat/entra-phase-3-graph-client`.
+- **Graphify** — local knowledge-graph tool installed per-developer via `pipx install graphifyy`. Three opt-in just recipes (`graphify-rebuild`, `graphify-query`, `graphify-clean`) wrap a `--directed`-preserving shell script. Not wired into CI or hooks. `.graphifyignore` at repo root mirrors `.gitignore` text-content entries plus graphify-specific exclusions (spacedrive/, vendor/, packages/api-client/src/schema.d.ts, graphify-out/ self-exclusion). Complements the existing `code-review-graph` MCP (which handles structural Rust code queries); graphify's value is semantic cross-document clustering for design docs, RFCs, and screenshots. Landed 2026-04-21 alongside Phase 3 Entra work on `feat/entra-phase-3-graph-client`.
 
 ## Deployment
 - Docker images published to GHCR (ghcr.io/jrmatherly/spacebot)
