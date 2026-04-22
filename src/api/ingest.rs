@@ -142,7 +142,7 @@ pub(super) async fn list_ingest_files(
             .authz_skipped_total
             .with_label_values(&["ingest"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -238,7 +238,7 @@ pub(super) async fn upload_ingest_file(
             .authz_skipped_total
             .with_label_values(&["ingest"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -412,7 +412,7 @@ pub(super) async fn delete_ingest_file(
             .authz_skipped_total
             .with_label_values(&["ingest"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             content_hash = %query.content_hash,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

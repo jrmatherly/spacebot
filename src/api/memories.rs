@@ -226,7 +226,7 @@ pub(super) async fn list_memories(
             .authz_skipped_total
             .with_label_values(&["memories"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -331,7 +331,7 @@ pub(super) async fn search_memories(
             .authz_skipped_total
             .with_label_values(&["memories"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -434,7 +434,7 @@ pub(super) async fn memory_graph(
             .authz_skipped_total
             .with_label_values(&["memories"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -553,7 +553,7 @@ pub(super) async fn memory_graph_neighbors(
             .authz_skipped_total
             .with_label_values(&["memories"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

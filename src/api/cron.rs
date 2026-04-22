@@ -204,7 +204,7 @@ pub(super) async fn list_cron_jobs(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -310,7 +310,7 @@ pub(super) async fn cron_executions(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -531,7 +531,7 @@ pub(super) async fn create_or_update_cron(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             cron_id = %request.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -657,7 +657,7 @@ pub(super) async fn delete_cron(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             cron_id = %query.cron_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -727,7 +727,7 @@ pub(super) async fn trigger_cron(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             cron_id = %request.cron_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -790,7 +790,7 @@ pub(super) async fn toggle_cron(
             .authz_skipped_total
             .with_label_values(&["cron"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             cron_id = %request.cron_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

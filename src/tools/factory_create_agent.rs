@@ -239,7 +239,7 @@ impl Tool for FactoryCreateAgentTool {
                 );
             }
         } else {
-            tracing::warn!(
+            tracing::error!(
                 agent_id = %create_result.agent_id,
                 "factory-created agent: instance_pool unavailable; ownership will be backfilled by reconcile_toml_agents_with_ownership at next restart"
             );

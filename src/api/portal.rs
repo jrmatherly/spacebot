@@ -259,7 +259,7 @@ pub(super) async fn portal_send(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             session_id = %request.session_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -484,7 +484,7 @@ pub(super) async fn portal_history(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             session_id = %query.session_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -573,7 +573,7 @@ pub(super) async fn list_portal_conversations(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -640,7 +640,7 @@ pub(super) async fn create_portal_conversation(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %request.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -741,7 +741,7 @@ pub(super) async fn update_portal_conversation(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             session_id = %session_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -827,7 +827,7 @@ pub(super) async fn delete_portal_conversation(
             .authz_skipped_total
             .with_label_values(&["portal"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             session_id = %session_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

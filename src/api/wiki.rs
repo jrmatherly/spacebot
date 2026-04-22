@@ -385,7 +385,7 @@ pub(super) async fn get_page(
             .authz_skipped_total
             .with_label_values(&["wiki"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             page_id = %page.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -448,7 +448,7 @@ pub(super) async fn edit_page(
             .authz_skipped_total
             .with_label_values(&["wiki"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             page_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -531,7 +531,7 @@ pub(super) async fn get_history(
             .authz_skipped_total
             .with_label_values(&["wiki"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             page_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -596,7 +596,7 @@ pub(super) async fn restore_version(
             .authz_skipped_total
             .with_label_values(&["wiki"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             page_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -663,7 +663,7 @@ pub(super) async fn archive_page(
             .authz_skipped_total
             .with_label_values(&["wiki"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             page_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

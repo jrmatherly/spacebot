@@ -271,7 +271,7 @@ pub(super) async fn list_tasks(
                 .authz_skipped_total
                 .with_label_values(&["tasks"])
                 .inc();
-            tracing::warn!(
+            tracing::error!(
                 actor = %auth_ctx.principal_key(),
                 agent_id = %agent_id,
                 "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -372,7 +372,7 @@ pub(super) async fn get_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %task.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -524,7 +524,7 @@ pub(super) async fn update_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -616,7 +616,7 @@ pub(super) async fn delete_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %task.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -705,7 +705,7 @@ pub(super) async fn approve_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -799,7 +799,7 @@ pub(super) async fn execute_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %current.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -896,7 +896,7 @@ pub(super) async fn assign_task(
             .authz_skipped_total
             .with_label_values(&["tasks"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %existing.id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

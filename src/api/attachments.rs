@@ -150,7 +150,7 @@ pub(super) async fn upload_attachment(
             .authz_skipped_total
             .with_label_values(&["attachments"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -242,16 +242,16 @@ pub(super) async fn upload_attachment(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     } else {
-        tracing::warn!(
-            actor = %auth_ctx.principal_key(),
-            attachment_id = %meta.id,
-            "set_ownership skipped: instance_pool not attached"
-        );
         #[cfg(feature = "metrics")]
         crate::telemetry::Metrics::global()
             .authz_skipped_total
             .with_label_values(&["attachments"])
             .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            attachment_id = %meta.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
     }
 
     Ok(Json(AttachmentUploadResponse {
@@ -333,7 +333,7 @@ pub(super) async fn serve_attachment(
             .authz_skipped_total
             .with_label_values(&["attachments"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             attachment_id = %attachment_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -474,7 +474,7 @@ pub(super) async fn list_attachments(
             .authz_skipped_total
             .with_label_values(&["attachments"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

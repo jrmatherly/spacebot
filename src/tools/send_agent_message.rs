@@ -231,21 +231,23 @@ impl Tool for SendAgentMessageTool {
                 )));
             }
         } else {
-            // Pool absent (pre-Phase-4 boot window or misconfiguration).
-            // The always-on tracing::warn! surfaces the gap; the
+            // Pool absent (boot window or startup-ordering bug). The
+            // error-level log survives default operator filters; the
             // feature-gated counter provides a quantitative signal under
-            // /metrics. Mirrors the pattern in src/api/memories.rs:163.
-            tracing::warn!(
-                tool = "send_agent_message",
-                from = %self.agent_id,
-                to = %target_agent_id,
-                "instance_pool is None; skipping can_link_channel (pre-Entra fallback)"
-            );
+            // /metrics when the metrics feature is enabled. Ordering
+            // (metric-then-warn) mirrors src/api/memories.rs:232.
             #[cfg(feature = "metrics")]
             crate::telemetry::Metrics::global()
                 .authz_skipped_total
                 .with_label_values(&["send_agent_message"])
                 .inc();
+            tracing::error!(
+                actor = %self.auth_context.principal_key(),
+                tool = "send_agent_message",
+                from = %self.agent_id,
+                to = %target_agent_id,
+                "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+            );
         }
 
         // Look up the link between sending agent and target

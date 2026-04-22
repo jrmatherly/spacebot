@@ -404,7 +404,7 @@ pub(super) async fn list_agent_mcp(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -459,7 +459,7 @@ pub(super) async fn reconnect_agent_mcp(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %request.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -545,7 +545,7 @@ pub(super) async fn get_warmup_status(
                 .authz_skipped_total
                 .with_label_values(&["agents"])
                 .inc();
-            tracing::warn!(
+            tracing::error!(
                 actor = %auth_ctx.principal_key(),
                 agent_id = %agent_id,
                 "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -626,7 +626,7 @@ pub(super) async fn trigger_warmup(
                 .authz_skipped_total
                 .with_label_values(&["agents"])
                 .inc();
-            tracing::warn!(
+            tracing::error!(
                 actor = %auth_ctx.principal_key(),
                 agent_id = %agent_id,
                 "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -738,6 +738,14 @@ pub(super) async fn trigger_warmup(
                 working_memory,
                 api_state: None,
                 wiki_store: None,
+                // Warmup is an operator-initiated background rebuild of
+                // prediction state; it reads from memory and writes
+                // cortex-scoped rows that are not per-user attributable.
+                // System attribution is intentional: the HTTP caller
+                // triggered the warmup, but the work executes against the
+                // agent's own data, not the caller's. A Phase-5 audit log
+                // entry ("warmup initiated by principal=X") belongs in
+                // trigger_warmup before the spawn, not inside it.
                 auth_context: crate::auth::AuthContext::legacy_static(),
             };
             let mut logger = CortexLogger::new(sqlite_pool);
@@ -1208,6 +1216,14 @@ pub async fn create_agent_internal(
         },
         api_state: Some(state.clone()),
         wiki_store: state.wiki_store.load().as_ref().clone(),
+        // Agent-init defaults to System attribution. The running agent
+        // processes inbound messages via `Channel::install_turn_deps`,
+        // which overwrites `auth_context` with the per-turn principal
+        // before any spawn. This seed value is only observable before
+        // the first message arrives; any direct read of
+        // `state.deps.auth_context` without going through the turn path
+        // is an architectural violation flagged for the Phase-5
+        // scopeguard-restore (see `src/agent/channel.rs::install_turn_deps`).
         auth_context: crate::auth::AuthContext::legacy_static(),
     };
 
@@ -1435,7 +1451,7 @@ pub(super) async fn update_agent(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1603,7 +1619,7 @@ pub(super) async fn delete_agent(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1797,7 +1813,7 @@ pub(super) async fn agent_overview(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2136,7 +2152,7 @@ pub(super) async fn get_agent_profile(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2200,7 +2216,7 @@ pub(super) async fn get_identity(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2261,7 +2277,7 @@ pub(super) async fn update_identity(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %request.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2553,7 +2569,7 @@ pub(super) async fn get_avatar(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2635,7 +2651,7 @@ pub(super) async fn upload_avatar(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -2733,7 +2749,7 @@ pub(super) async fn delete_avatar(
             .authz_skipped_total
             .with_label_values(&["agents"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             agent_id = %query.agent_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

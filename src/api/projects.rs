@@ -605,7 +605,7 @@ pub(super) async fn get_project(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -669,7 +669,7 @@ pub(super) async fn update_project(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -754,7 +754,7 @@ pub(super) async fn delete_project(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -824,7 +824,7 @@ pub(super) async fn scan_project(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -960,7 +960,7 @@ pub(super) async fn create_repo(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1045,7 +1045,7 @@ pub(super) async fn delete_repo(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1127,7 +1127,7 @@ pub(super) async fn create_worktree(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1259,7 +1259,7 @@ pub(super) async fn delete_worktree(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1381,7 +1381,7 @@ pub(super) async fn disk_usage(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -1498,7 +1498,7 @@ pub(super) async fn serve_logo(
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             project_id = %project_id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"

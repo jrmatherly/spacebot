@@ -663,10 +663,23 @@ impl Channel {
     /// `spawn_branch`/`spawn_worker`/`run_agent_turn` so spawned children
     /// inherit the originating principal.
     fn turn_deps(&self, message: &InboundMessage) -> AgentDeps {
-        let ctx = message
-            .auth_context
-            .clone()
-            .unwrap_or_else(crate::auth::context::AuthContext::legacy_static);
+        let ctx = message.auth_context.clone().unwrap_or_else(|| {
+            // Platform adapters (Discord, Slack, etc.) construct
+            // `InboundMessage` without an `auth_context` field because the
+            // user identity is the adapter itself, not a JWT-bearing HTTP
+            // caller. The legacy-static fallback is the expected behavior
+            // for those paths. This warn is the observability hook for the
+            // unexpected case: an authenticated adapter drops the field in
+            // transit, or a dead-letter replay loses it. If the warn rate
+            // ever exceeds the platform-adapter inbound rate, an adapter
+            // regressed its principal wiring.
+            tracing::warn!(
+                channel_id = %self.id,
+                source = %message.source,
+                "InboundMessage.auth_context absent; falling back to legacy_static"
+            );
+            crate::auth::context::AuthContext::legacy_static()
+        });
         self.deps.for_turn(ctx)
     }
 
@@ -1513,7 +1526,20 @@ impl Channel {
     /// with a coalesce hint telling the LLM this is a fast-moving conversation.
     #[tracing::instrument(skip(self, messages), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_count = messages.len()))]
     async fn handle_message_batch(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
-        // Apply runtime-config updates immediately without requiring a restart.
+        // Empty batch is not a valid call shape. Returning early avoids an
+        // empty-turn no-op and, more importantly, prevents stale-principal
+        // leak: `install_turn_deps` is skipped below when `messages.first()`
+        // is None, so the previous turn's principal would persist on
+        // `self.deps` and `self.state.deps`. Any fire-and-forget work from
+        // the prior turn that reads `state.deps.auth_context()` would then
+        // attribute to whichever principal ran last, not to System.
+        if messages.is_empty() {
+            tracing::warn!(
+                channel_id = %self.id,
+                "handle_message_batch called with empty batch; batcher may need audit"
+            );
+            return Ok(());
+        }
 
         // Install the originating principal's auth context from the first
         // message of the batch on self.deps and self.state.deps. All messages
@@ -1525,7 +1551,10 @@ impl Channel {
         // split because batch semantics already assume per-conversation
         // context coherence; a mismatch is a signal that the batcher
         // itself needs auditing, not that the dispatcher should absorb
-        // the inconsistency silently.
+        // the inconsistency silently. We continue scanning after the first
+        // mismatch so every divergence is surfaced, not just the earliest;
+        // forensic completeness matters more than log compactness for this
+        // path because it should never fire in production.
         if let Some(first) = messages.first() {
             let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
             for (index, other) in messages.iter().enumerate().skip(1) {
@@ -1537,9 +1566,8 @@ impl Channel {
                         first_principal = ?first_key,
                         other_principal = ?other_key,
                         other_index = index,
-                        "auth context mismatch within coalesced batch — using first message's principal; batcher may need audit"
+                        "auth context mismatch within coalesced batch; using first message's principal; batcher may need audit"
                     );
-                    break;
                 }
             }
             self.install_turn_deps(first);

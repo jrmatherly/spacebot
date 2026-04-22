@@ -15,18 +15,27 @@
 //! carry a Phase-5 TODO: those return or mutate every notification the
 //! instance holds, which requires per-row gating or an admin-only
 //! contract once the audit log lands. Notifications have no user-facing
-//! POST endpoint — all creations happen server-side via
-//! `ApiState::emit_notification`, so there is no `set_ownership` call
-//! site in this file (per the Phase-4 backfill policy, no bulk
-//! ownership rows are written for pre-existing notifications).
+//! POST endpoint: all creations happen server-side via
+//! `ApiState::emit_notification`. Per the Phase-4 no-auto-broadening
+//! backfill policy documented in
+//! `docs/design-docs/entra-backfill-strategy.md` (§11.3), no bulk
+//! ownership rows are written for pre-existing notifications; the
+//! Phase-10 orphan sweep is the designated broadening path.
 //!
 //! The ~45-line inline gate block mirrors `src/api/memories.rs` and
 //! `src/api/tasks.rs` per Phase 4 PR 2 decision N1: single-file
-//! grep-visibility beats DRY. Pool-None is always-on `tracing::warn!`
+//! grep-visibility beats DRY. Pool-None is always-on `tracing::error!`
 //! plus feature-gated
 //! `spacebot_authz_skipped_total{handler="notifications"}`. The metric
 //! label is the file resource family (`"notifications"`), never a
 //! per-handler sub-label, which keeps cardinality flat.
+//!
+//! Pool-None warn secondary field differs by call-site context:
+//! `list_notifications` logs `agent_id` (the filter that identifies
+//! the resource), while `mark_read` / `dismiss_notification` log
+//! `notification_id` (the URL-path identifier of the single resource
+//! being mutated). This divergence is intentional: the secondary field
+//! names the resource key actually observable at the call site.
 //!
 //! Phase 5 replaces the `tracing::info!` admin-override path with an
 //! `AuditAppender::append` call against the hash-chained audit log.
@@ -164,7 +173,7 @@ pub(super) async fn list_notifications(
                 .authz_skipped_total
                 .with_label_values(&["notifications"])
                 .inc();
-            tracing::warn!(
+            tracing::error!(
                 actor = %auth_ctx.principal_key(),
                 agent_id = %agent_id,
                 "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -268,7 +277,7 @@ pub(super) async fn mark_read(
             .authz_skipped_total
             .with_label_values(&["notifications"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             notification_id = %id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
@@ -330,7 +339,7 @@ pub(super) async fn dismiss_notification(
             .authz_skipped_total
             .with_label_values(&["notifications"])
             .inc();
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             notification_id = %id,
             "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
