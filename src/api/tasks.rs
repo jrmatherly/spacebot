@@ -531,9 +531,11 @@ pub(super) async fn update_task(
         );
     }
 
+    // Reuse the pre-gate fetch of `existing` — store.update_prefetched
+    // skips the duplicate SELECT that store.update would do internally.
     let task = store
-        .update(
-            number,
+        .update_prefetched(
+            existing,
             crate::tasks::UpdateTaskInput {
                 title: request.title,
                 description: request.description,
@@ -552,8 +554,7 @@ pub(super) async fn update_task(
         .map_err(|error| {
             tracing::warn!(%error, task_number = number, "failed to update task");
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        })?;
 
     emit_task_event(&state, &task, "updated");
     maybe_emit_approval_notification(&state, &task);
@@ -711,9 +712,11 @@ pub(super) async fn approve_task(
         );
     }
 
+    // Reuse the pre-gate fetch of `existing` — store.update_prefetched
+    // skips the duplicate SELECT that store.update would do internally.
     let task = store
-        .update(
-            number,
+        .update_prefetched(
+            existing,
             crate::tasks::UpdateTaskInput {
                 status: Some(crate::tasks::TaskStatus::Ready),
                 approved_by: request.approved_by,
@@ -724,8 +727,7 @@ pub(super) async fn approve_task(
         .map_err(|error| {
             tracing::warn!(%error, task_number = number, "failed to approve task");
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        })?;
 
     emit_task_event(&state, &task, "updated");
     // Auto-dismiss any pending task_approval notification for this task.
@@ -816,9 +818,11 @@ pub(super) async fn execute_task(
         return Err(StatusCode::CONFLICT);
     }
 
+    // Reuse the pre-gate fetch of `current` — store.update_prefetched
+    // skips the duplicate SELECT that store.update would do internally.
     let task = store
-        .update(
-            number,
+        .update_prefetched(
+            current,
             crate::tasks::UpdateTaskInput {
                 status: Some(crate::tasks::TaskStatus::Ready),
                 approved_by: request.approved_by,
@@ -829,8 +833,7 @@ pub(super) async fn execute_task(
         .map_err(|error| {
             tracing::warn!(%error, task_number = number, "failed to execute task");
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        })?;
 
     emit_task_event(&state, &task, "updated");
     Ok(Json(TaskResponse { task }))
@@ -900,9 +903,11 @@ pub(super) async fn assign_task(
         );
     }
 
+    // Reuse the pre-gate fetch of `existing` — store.update_prefetched
+    // skips the duplicate SELECT that store.update would do internally.
     let task = store
-        .update(
-            number,
+        .update_prefetched(
+            existing,
             crate::tasks::UpdateTaskInput {
                 assigned_agent_id: Some(request.assigned_agent_id),
                 ..Default::default()
@@ -912,8 +917,7 @@ pub(super) async fn assign_task(
         .map_err(|error| {
             tracing::warn!(%error, task_number = number, "failed to assign task");
             StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        })?;
 
     emit_task_event(&state, &task, "updated");
     Ok(Json(TaskResponse { task }))
