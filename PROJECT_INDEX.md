@@ -209,7 +209,7 @@ Ten rule files that govern agent behavior across Rust edits, messaging parity, A
 
 Under `openspec/changes/` — structured change proposals with specs + phased tasks.
 
-Active: none. Phase 4 Entra work landed via the `.scratchpad/plans/entraid-auth/` multi-phase plan (PR #104 + PR #105 merged on 2026-04-22), not through OpenSpec.
+Active: none. Phase 4 Entra work landed via a multi-phase plan tracked locally (squash commits `4716e38` / `bb9156c` for PR #104 / PR #105 merged on 2026-04-22), not through OpenSpec. Phase 5 (PR #106, squash `cda7da2`) landed the hash-chained audit log on the same track.
 
 Recently archived (`openspec/changes/archive/`):
 

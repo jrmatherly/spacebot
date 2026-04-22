@@ -300,7 +300,7 @@ check-adr-anchors:
 
 # Rebuild the directed knowledge graph for a path (e.g. docs/design-docs).
 # Preserves --directed topology that the built-in `graphify update` loses.
-# See scripts/graphify-rebuild.sh and .scratchpad/completed/2026-04-21-graphify-research.md.
+# See scripts/graphify-rebuild.sh for the directed-graph wrapper rationale.
 # --clean drops graphify-out/cache/ before building (use after .graphifyignore edits).
 # --snapshot writes GRAPH_REPORT.md.keep for manual milestone commits.
 graphify-rebuild path *flags:
