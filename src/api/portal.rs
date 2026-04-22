@@ -64,6 +64,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Default visibility for portal_conversation ownership rows. Per
+/// Phase-4 plan §12 A-2: portal chats are private user data; defaulting
+/// to `Org` would leak conversations tenant-wide. The two `set_ownership`
+/// call sites (`portal_send` auto-create branch and `create_portal_conversation`)
+/// both read this constant so the invariant is structural, not a drift-prone
+/// duplicated literal. The regression test `create_portal_conversation_assigns_personal_ownership`
+/// asserts the runtime value; this const guards against a future edit
+/// accidentally diverging one of the two call sites.
+const PORTAL_VISIBILITY: crate::auth::principals::Visibility =
+    crate::auth::principals::Visibility::Personal;
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct PortalSendRequest {
     agent_id: String,
@@ -275,7 +286,7 @@ pub(super) async fn portal_send(
             &request.session_id,
             None,
             &auth_ctx.principal_key(),
-            crate::auth::principals::Visibility::Personal,
+            PORTAL_VISIBILITY,
             None,
         )
         .await
@@ -597,6 +608,45 @@ pub(super) async fn create_portal_conversation(
     auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreatePortalConversationRequest>,
 ) -> Result<Json<PortalConversationResponse>, StatusCode> {
+    // Enforce that the caller can write to THIS agent before letting them
+    // mint a conversation under it. Without this gate, any authenticated
+    // user could POST with another user's `agent_id` and self-register as
+    // owner of a conversation row they never had authority to create.
+    // Mirrors the `"agent"` read-gate used by `list_portal_conversations`
+    // — the same "can this caller reach this agent?" question, just on
+    // the write side. Does not conflict with the subsequent Personal
+    // set_ownership: the per-conversation ownership row still makes the
+    // creator the owner, but now we've confirmed the creator had standing
+    // to create under this agent in the first place.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &request.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %request.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %request.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store = conversation_store(&state, &request.agent_id)?;
     let conversation = store
         .create(&request.agent_id, request.title.as_deref(), request.settings)
@@ -619,7 +669,7 @@ pub(super) async fn create_portal_conversation(
             &conversation.id,
             None,
             &auth_ctx.principal_key(),
-            crate::auth::principals::Visibility::Personal,
+            PORTAL_VISIBILITY,
             None,
         )
         .await

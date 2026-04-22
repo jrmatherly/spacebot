@@ -306,6 +306,19 @@ async fn create_portal_conversation_assigns_personal_ownership() {
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     upsert_user_from_auth(&pool, &alice).await.unwrap();
+    // Alice owns agent-a so the agent-scoped check_write gate added to
+    // create_portal_conversation lets her create conversations under it.
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -341,6 +354,63 @@ async fn create_portal_conversation_assigns_personal_ownership() {
         own.visibility, "personal",
         "portal_conversation visibility MUST default to Personal (§12 A-2). \
          Any other value is a tenant-wide data leak."
+    );
+}
+
+#[tokio::test]
+async fn non_agent_owner_create_portal_conversation_returns_404() {
+    // Regression guard for the T4.11 code-quality-review Critical finding:
+    // before this gate landed, any authenticated caller could POST to
+    // /portal/conversations with any `agent_id` and mint a private
+    // conversation row under that agent (then self-register as owner).
+    // The fix adds `check_write("agent", &request.agent_id)` before
+    // store.create. This test proves a caller with no claim to the agent
+    // sees 404 (hide existence) rather than the conversation being
+    // created out from under the real owner.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let _agent_pool = attach_agent_pool(&state, "agent-a").await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    // Alice owns agent-a. Bob should not be able to create conversations
+    // under it.
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_create_portal("agent-a", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-agent-owner create on alice's agent must see 404, \
+         not a new conversation row with bob as owner"
+    );
+    // Belt-and-suspenders: no conversation ownership rows should exist
+    // for agent-a since the gate fired before store.create.
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM resource_ownership WHERE resource_type = 'portal_conversation'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows, 0,
+        "denied create must not leave a conversation ownership row"
     );
 }
 
