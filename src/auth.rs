@@ -17,8 +17,7 @@ pub mod repository;
 pub mod roles;
 // Plain `pub mod` (no `cfg(test)` gate): integration tests under `tests/*.rs`
 // are separate compilation units that cannot see `cfg(test)` items from the
-// library. Precedent: `tests/support/mock_entra.rs` and `ApiState::new_for_tests`
-// at `src/api/state.rs:401`.
+// library. Precedent: `tests/support/mock_entra.rs` and `ApiState::new_for_tests`.
 pub mod testing;
 
 pub use config::EntraAuthConfig;

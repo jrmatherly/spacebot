@@ -173,6 +173,41 @@ async fn owner_passes_authz_gate_on_own_agent() {
 }
 
 #[tokio::test]
+async fn list_memories_no_ops_when_instance_pool_absent() {
+    // Regression guard for the early-startup / static-token fallback path.
+    // When instance_pool is not attached, list_memories skips authz and
+    // proceeds to the memory_searches lookup. This test confirms the
+    // request reaches that lookup (returning 404 because no MemorySearch
+    // is registered for the test agent) instead of being rejected at the
+    // authz gate. Covers Phase 4 PR 1 review finding B2 / test-coverage
+    // Finding 3: the pool-None branch was previously untested.
+    let state = ApiState::new_test_state_with_mock_entra_no_pool();
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_list_memories("agent-ghost", &token))
+        .await
+        .unwrap();
+
+    // Request passed auth (middleware succeeded) + passed the no-op
+    // authz skip + landed on the memory_searches lookup (404 because
+    // nothing is registered). A 401/403 here would indicate the middleware
+    // or the authz gate rejected the request instead of falling through.
+    assert_ne!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "mock token must authenticate successfully"
+    );
+    assert_ne!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "authz skip should not cause a 403"
+    );
+}
+
+#[tokio::test]
 async fn missing_ownership_row_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
     let alice = user_ctx("alice", vec![ROLE_USER]);

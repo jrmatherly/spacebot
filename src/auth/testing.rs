@@ -2,7 +2,7 @@
 //! unconditionally (NOT `#[cfg(test)]`) because integration tests under
 //! `tests/*.rs` are separate compilation units that do not see `cfg(test)`
 //! items from the library. Same precedent as `tests/support/mock_entra.rs`
-//! and `ApiState::new_for_tests` at `src/api/state.rs:401`.
+//! and `ApiState::new_for_tests`.
 //!
 //! Not intended for production use. The validator accepts ANY bearer whose
 //! body is a base64url-encoded JSON [`MintableAuthContext`]. Wiring this as

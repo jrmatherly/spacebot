@@ -61,8 +61,9 @@ pub struct ApiState {
     /// Held as `Arc<dyn DynJwtValidator>` so integration tests can swap in
     /// [`crate::auth::testing::MockValidator`] (Phase 4 Task 4.7) without
     /// wiring a real JWKS endpoint. Production wires the concrete
-    /// [`crate::auth::EntraValidator`]. The [`start_http_server`] branch
-    /// check at `src/api/server.rs:314` reads this field via `.is_some()`.
+    /// [`crate::auth::EntraValidator`]. The `start_http_server` branch
+    /// check reads this field via `.is_some()` to decide which middleware
+    /// to install.
     pub entra_auth: Arc<ArcSwap<Option<Arc<dyn crate::auth::jwks::DynJwtValidator>>>>,
     /// Held alongside `entra_auth` so code paths that need the resolved Entra
     /// config (e.g., the middleware's Phase 3 group-sync spawn reading
@@ -461,6 +462,28 @@ impl ApiState {
         state.entra_auth.store(Arc::new(Some(mock)));
 
         (Arc::new(state), pool)
+    }
+
+    /// Test-only constructor mirroring [`Self::new_test_state_with_mock_entra`]
+    /// but WITHOUT attaching an `instance_pool`. Returns just `Arc<Self>` since
+    /// there is no pool to seed. Used to exercise handler no-op fallbacks
+    /// when the Phase 2 data model isn't attached (boot window / startup
+    /// race / misconfig). The `MockValidator` is still installed so auth
+    /// itself succeeds.
+    #[doc(hidden)]
+    pub fn new_test_state_with_mock_entra_no_pool() -> Arc<Self> {
+        let (provider_tx, _provider_rx) = mpsc::channel(16);
+        let (agent_tx, _agent_rx) = mpsc::channel(16);
+        let (agent_remove_tx, _agent_remove_rx) = mpsc::channel(16);
+        let (injection_tx, _injection_rx) = mpsc::channel(16);
+        let state =
+            Self::new_with_provider_sender(provider_tx, agent_tx, agent_remove_tx, injection_tx);
+
+        let mock: Arc<dyn crate::auth::jwks::DynJwtValidator> =
+            Arc::new(crate::auth::testing::MockValidator::new());
+        state.entra_auth.store(Arc::new(Some(mock)));
+
+        Arc::new(state)
     }
 
     /// Register a channel's status block so the API can read snapshots.

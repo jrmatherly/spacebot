@@ -151,16 +151,24 @@ pub(super) async fn list_memories(
     // who aren't the owner AND can't reach the agent via team/org visibility
     // see 404 (matrix row: "Memory | read | no (404)" for non-owners).
     //
-    // When the instance pool isn't attached (boot window, static-token
-    // deployments without the Phase 2 data model), the check is a no-op:
-    // there's no authz to enforce without the `resource_ownership` table.
-    // This preserves backward compatibility with Phase 2 deployments.
+    // When the instance pool isn't attached yet (early startup window,
+    // before `set_instance_pool` has run), the check is a no-op and the
+    // skip is observable via `spacebot_authz_skipped_total{handler="memories"}`.
+    // A persistent non-zero rate on that counter after startup indicates a
+    // startup-ordering regression where the HTTP server is accepting
+    // requests before the Phase 2 data model is attached.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
             crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
                 .await
                 .map_err(|error| {
-                    tracing::warn!(%error, agent_id = %query.agent_id, "authz check_read_with_audit failed");
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
@@ -177,6 +185,21 @@ pub(super) async fn list_memories(
                 "admin_read override (audit event queued for Phase 5)"
             );
         }
+    } else {
+        // Make the no-op path observable: the failure modes here (boot
+        // window vs persistent misconfig vs startup race) are
+        // indistinguishable at request time but very different at 100
+        // qps. An alert on the counter rate distinguishes them.
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["memories"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
     }
 
     let searches = state.memory_searches.load();
