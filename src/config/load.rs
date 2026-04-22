@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 /// Three resolution modes:
 /// - `secret:NAME` — look up from the secrets store (if available).
 /// - `env:VAR_NAME` — read from system environment variable.
-/// - Anything else — literal value.
+/// - Anything else: literal value.
 pub(crate) fn resolve_env_value(value: &str) -> Option<String> {
     if let Some(alias) = value.strip_prefix("secret:") {
         let guard = RESOLVE_SECRETS_STORE.load();
@@ -81,7 +81,7 @@ fn resolve_required_ref(field: &str, value: &str) -> anyhow::Result<String> {
 /// `from_toml_inner` populator sites.
 ///
 /// User TOML still wins over env via the existing `or_insert_with` pattern
-/// in the caller — this helper only controls the default when no TOML block
+/// in the caller. This helper only controls the default when no TOML block
 /// exists.
 fn openai_base_url() -> String {
     std::env::var("OPENAI_API_BASE")
@@ -2118,7 +2118,7 @@ impl Config {
                         if instance.enabled && token.is_none() {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "discord instance is enabled but token is missing/unresolvable — disabling"
+                                "discord instance is enabled but token is missing/unresolvable; disabling"
                             );
                         }
                         DiscordInstanceConfig {
@@ -2159,7 +2159,7 @@ impl Config {
                         if instance.enabled && (bot_token.is_none() || app_token.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "slack instance is enabled but tokens are missing/unresolvable — disabling"
+                                "slack instance is enabled but tokens are missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = bot_token.is_some() && app_token.is_some();
@@ -2219,7 +2219,7 @@ impl Config {
                         if instance.enabled && token.is_none() {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "telegram instance is enabled but token is missing/unresolvable — disabling"
+                                "telegram instance is enabled but token is missing/unresolvable; disabling"
                             );
                         }
                         TelegramInstanceConfig {
@@ -2268,7 +2268,7 @@ impl Config {
                         if instance.enabled && !has_credentials {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "email instance is enabled but credentials are missing/unresolvable — disabling"
+                                "email instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
 
@@ -2408,7 +2408,7 @@ impl Config {
                         if instance.enabled && (username.is_none() || oauth_token.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "twitch instance is enabled but credentials are missing/unresolvable — disabling"
+                                "twitch instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = username.is_some() && oauth_token.is_some();
@@ -2483,7 +2483,7 @@ impl Config {
                         if instance.enabled && (http_url.is_none() || account.is_none()) {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "signal instance is enabled but http_url or account is missing/unresolvable — disabling"
+                                "signal instance is enabled but http_url or account is missing/unresolvable; disabling"
                             );
                         }
                         let has_credentials = http_url.is_some() && account.is_some();
@@ -2533,7 +2533,7 @@ impl Config {
                         if instance.enabled && !has_credentials {
                             tracing::warn!(
                                 adapter = %instance.name,
-                                "mattermost instance is enabled but credentials are missing/unresolvable — disabling"
+                                "mattermost instance is enabled but credentials are missing/unresolvable; disabling"
                             );
                         }
                         MattermostInstanceConfig {
@@ -2827,6 +2827,103 @@ fn load_human_md(human_dir: &std::path::Path) -> Option<String> {
         Ok(content) if !content.trim().is_empty() => Some(content),
         _ => None,
     }
+}
+
+/// Seed a synthetic users row for the `legacy-static` principal so
+/// `resource_ownership.owner_principal_key` FK references resolve on
+/// reconciliation. The row satisfies the CHECK (principal_type in
+/// 'user' | 'service_principal' | 'system') by using 'system'; the
+/// row exists solely to anchor FK constraints for pre-Entra resources
+/// backfilled per §11.3. Idempotent (`INSERT OR IGNORE`).
+///
+/// **Synthetic sentinel for Phase 5/9/10 queries.** The overload of
+/// `principal_type='system'` is load-bearing but syntactically
+/// ambiguous: future audit-log ("who acted?") and admin-claim UIs
+/// must distinguish the legitimate System principal (cortex +
+/// scheduled work) from this backfill sentinel. The detection
+/// contract is:
+///
+///   `principal_type = 'system' AND principal_key = 'legacy-static'`
+///
+/// i.e. the composite of principal_type+principal_key, not
+/// principal_type alone. Queries that need to exclude the synthetic
+/// row (e.g. "list all System actors") must add
+/// `AND principal_key <> 'legacy-static'`.
+///
+/// Alternatives considered and deferred:
+///
+/// - Add `SyntheticLegacy` as a fourth CHECK variant via migration.
+///   Cleaner semantics but requires a migration, a `PrincipalType`
+///   enum variant, and call-site updates across the auth tree.
+///   Deferred to Phase 10 if the sentinel complicates audit-log
+///   authoring materially.
+///
+/// - Use `tenant_id = ''` as an orthogonal sentinel. Already true
+///   here, but also true of the System principal (cortex has no
+///   Entra tenant), so it doesn't disambiguate alone.
+async fn ensure_legacy_static_user(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO users (
+            principal_key, tenant_id, object_id, principal_type,
+            display_name, status
+        )
+        VALUES ('legacy-static', '', '', 'system', 'Legacy Static (pre-Entra)', 'active')
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("seed legacy-static user row for FK constraint")?;
+    Ok(())
+}
+
+/// Reconcile `[[agents]]` TOML blocks with the `resource_ownership`
+/// table at startup. Any agent without an ownership row is assigned
+/// to the synthetic `legacy-static` principal per §11.3 backfill
+/// policy so pre-Entra CLI callers retain access until admin
+/// re-claims via the Phase 9 workflow. Returns the count of newly
+/// reconciled agents so operators see backfill progress in logs.
+///
+/// Idempotent: agents with an existing ownership row are left
+/// untouched. MUST run AFTER migrations and BEFORE the HTTP server
+/// accepts requests; see the wiring in `src/main.rs`.
+pub async fn reconcile_toml_agents_with_ownership(
+    pool: &sqlx::SqlitePool,
+    agents: &[super::AgentConfig],
+) -> anyhow::Result<usize> {
+    if agents.is_empty() {
+        return Ok(0);
+    }
+
+    // Ensure the FK target exists before any INSERT; otherwise the
+    // set_ownership call below fails with SQLITE_CONSTRAINT.
+    ensure_legacy_static_user(pool).await?;
+
+    let mut reconciled = 0_usize;
+    for agent in agents {
+        if crate::auth::repository::get_ownership(pool, "agent", &agent.id)
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+        crate::auth::repository::set_ownership(
+            pool,
+            "agent",
+            &agent.id,
+            None,
+            "legacy-static",
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await?;
+        tracing::warn!(
+            agent_id = %agent.id,
+            "reconciled TOML-declared agent with synthetic legacy-static ownership (§11.3 backfill)"
+        );
+        reconciled += 1;
+    }
+    Ok(reconciled)
 }
 
 #[cfg(test)]

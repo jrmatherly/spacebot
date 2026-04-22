@@ -1,6 +1,47 @@
+//! Agent HTTP handlers + shared Phase-4 authz gate.
+//!
+//! Every handler that reads or writes agent-scoped state consults
+//! `check_read_with_audit` / `check_write` with `resource_type =
+//! "agent"` before touching per-agent stores. Reads (agent_overview,
+//! get_agent_profile, get_identity, list_agent_mcp, get_warmup_status,
+//! get_avatar) call `check_read_with_audit("agent", &agent_id)` against
+//! the id drawn from the URL path, query, or body. Writes
+//! (update_agent, delete_agent, update_identity, reconnect_agent_mcp,
+//! trigger_warmup, upload_avatar, delete_avatar) call
+//! `check_write("agent", &agent_id)` on the same id before the
+//! mutation. `create_agent` is the only handler that awaits
+//! `set_ownership` AFTER the insert via the shared
+//! [`register_agent_ownership`] helper (A-12: a fire-and-forget
+//! `tokio::spawn` races the creator's subsequent GET into a 404).
+//!
+//! Agents are a split-brain resource: TOML declares them at startup
+//! and the HTTP API creates them at runtime. Both paths MUST leave a
+//! `resource_ownership` row or the resource becomes invisible to its
+//! creator. `register_agent_ownership` is the canonical helper; the
+//! TOML reconciliation in `crate::config::reconcile_toml_agents_with_ownership`
+//! assigns the synthetic `legacy-static` principal per §11.3 backfill
+//! policy so pre-Entra CLI operators retain access until admin
+//! re-claims.
+//!
+//! `list_agents` and `instance_overview` carry a Phase-5 TODO for the
+//! unfiltered-list case: they currently return every configured agent
+//! to any authenticated caller. Agents are lower-sensitivity than
+//! memories or portal conversations (the configs surface IDs and
+//! display fields, not private content), so the correct fix waits for
+//! per-row `check_read` once the audit log lands.
+//!
+//! The ~45-line inline gate block mirrors `src/api/memories.rs`,
+//! `src/api/tasks.rs`, `src/api/cron.rs`, and `src/api/portal.rs` per
+//! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
+//! Pool-None is always-on `tracing::error!` plus feature-gated
+//! `spacebot_authz_skipped_total{handler="agents"}`. The metric label
+//! is the file resource family (`"agents"`), never a per-handler
+//! sub-label, to keep cardinality flat.
+
 use super::state::{AgentInfo, ApiState};
 
 use crate::agent::cortex::CortexLogger;
+use crate::auth::principals::Visibility;
 use crate::conversation::channels::ChannelStore;
 
 use axum::Json;
@@ -21,6 +62,28 @@ fn hosted_agent_limit() -> Option<usize> {
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
+}
+
+/// Register a fresh `resource_ownership` row for an agent, keyed to the
+/// acting principal. Shared by the HTTP `create_agent` handler and the
+/// TOML reconciliation at startup. A-12: the caller MUST `.await` this
+/// before returning to the creator so an immediate follow-up GET
+/// does not race into a `NotOwned` 404.
+pub async fn register_agent_ownership(
+    pool: &sqlx::SqlitePool,
+    ctx: &crate::auth::context::AuthContext,
+    agent_id: &str,
+) -> anyhow::Result<()> {
+    crate::auth::repository::set_ownership(
+        pool,
+        "agent",
+        agent_id,
+        None,
+        &ctx.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -281,6 +344,11 @@ fn resolve_warmup_agent_ids(
     tag = "agents",
 )]
 pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<AgentsResponse> {
+    // TODO(phase-5): per-row `check_read` once the audit log lands.
+    // Today this returns every configured agent's summary to any
+    // authenticated caller. Agent configs are lower-sensitivity than
+    // memories or portal conversations (no private content), so this
+    // matches the `list_memories` / `list_tasks` unfiltered-path TODO.
     let agents = state.agent_configs.load();
     Json(AgentsResponse {
         agents: agents.as_ref().clone(),
@@ -302,8 +370,47 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
 )]
 pub(super) async fn list_agent_mcp(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AgentMcpQuery>,
 ) -> Result<Json<AgentMcpResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let managers = state.mcp_managers.load();
     let manager = managers
         .get(&query.agent_id)
@@ -327,8 +434,38 @@ pub(super) async fn list_agent_mcp(
 )]
 pub(super) async fn reconnect_agent_mcp(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<ReconnectMcpRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &request.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %request.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %request.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let managers = state.mcp_managers.load();
     let manager = managers
         .get(&request.agent_id)
@@ -370,8 +507,52 @@ pub(super) async fn reconnect_agent_mcp(
 )]
 pub(super) async fn get_warmup_status(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<WarmupQuery>,
 ) -> Result<Json<WarmupStatusResponse>, StatusCode> {
+    // Gate only when a specific agent_id is requested. The unfiltered
+    // path returns all agents' warmup statuses; Phase-5 post-filtering
+    // is the right fix, same policy as list_agents / instance_overview.
+    if let Some(agent_id) = query.agent_id.as_deref() {
+        if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+            let (access, admin_override) =
+                crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", agent_id)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(
+                            %error,
+                            actor = %auth_ctx.principal_key(),
+                            resource_type = "agent",
+                            resource_id = %agent_id,
+                            "authz check_read_with_audit failed"
+                        );
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+            if !access.is_allowed() {
+                return Err(access.to_status());
+            }
+            if admin_override {
+                tracing::info!(
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %agent_id,
+                    "admin_read override (audit event queued for Phase 5)"
+                );
+            }
+        } else {
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["agents"])
+                .inc();
+            tracing::error!(
+                actor = %auth_ctx.principal_key(),
+                agent_id = %agent_id,
+                "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+            );
+        }
+    }
+
     let runtime_configs = state.runtime_configs.load();
 
     let mut statuses = if let Some(agent_id) = query.agent_id {
@@ -410,8 +591,55 @@ pub(super) async fn get_warmup_status(
 )]
 pub(super) async fn trigger_warmup(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<WarmupTriggerRequest>,
 ) -> Result<Json<WarmupTriggerResponse>, StatusCode> {
+    // Two gating modes:
+    //
+    // 1. Specific agent_id supplied → per-resource `check_write` against
+    //    that agent.
+    // 2. No agent_id → warmup fires for EVERY agent on the instance; this
+    //    is an admin-broad operation and requires role-Admin / System /
+    //    LegacyStatic (see `crate::auth::is_admin`). A non-admin caller
+    //    with no agent_id is rejected 403 to prevent un-owned principals
+    //    from launching warmup coroutines for agents they cannot read.
+    if let Some(agent_id) = request.agent_id.as_deref() {
+        if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+            let access = crate::auth::check_write(&pool, &auth_ctx, "agent", agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %agent_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            if !access.is_allowed() {
+                return Err(access.to_status());
+            }
+        } else {
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["agents"])
+                .inc();
+            tracing::error!(
+                actor = %auth_ctx.principal_key(),
+                agent_id = %agent_id,
+                "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+            );
+        }
+    } else if !crate::auth::is_admin(&auth_ctx) {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            "unfiltered warmup trigger rejected: non-admin principal cannot launch warmup for all agents"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let llm_manager = {
         let guard = state.llm_manager.read().await;
         guard.as_ref().cloned().ok_or_else(|| {
@@ -510,6 +738,14 @@ pub(super) async fn trigger_warmup(
                 working_memory,
                 api_state: None,
                 wiki_store: None,
+                // Warmup is an operator-initiated background rebuild of
+                // prediction state; it reads from memory and writes
+                // cortex-scoped rows that are not per-user attributable.
+                // System attribution is intentional: the HTTP caller
+                // triggered the warmup, but the work executes against the
+                // agent's own data, not the caller's. A Phase-5 audit log
+                // entry ("warmup initiated by principal=X") belongs in
+                // trigger_warmup before the spawn, not inside it.
                 auth_context: crate::auth::AuthContext::legacy_static(),
             };
             let mut logger = CortexLogger::new(sqlite_pool);
@@ -542,17 +778,53 @@ pub(super) async fn trigger_warmup(
 )]
 pub(super) async fn create_agent(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreateAgentRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     match create_agent_internal(&state, request).await {
-        Ok(result) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "success": result.success,
-                "agent_id": result.agent_id,
-                "message": result.message
-            })),
-        ),
+        Ok(result) => {
+            // A-12: `.await` set_ownership. A fire-and-forget
+            // `tokio::spawn` here races the creator's subsequent
+            // GET /api/agents/overview?agent_id=... into a 404.
+            if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+                if let Err(error) =
+                    register_agent_ownership(&pool, &auth_ctx, &result.agent_id).await
+                {
+                    tracing::error!(
+                        %error,
+                        agent_id = %result.agent_id,
+                        "failed to register agent ownership"
+                    );
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "success": false,
+                            "message": "agent created but ownership registration failed"
+                        })),
+                    );
+                }
+            } else {
+                #[cfg(feature = "metrics")]
+                crate::telemetry::Metrics::global()
+                    .authz_skipped_total
+                    .with_label_values(&["agents"])
+                    .inc();
+                tracing::error!(
+                    actor = %auth_ctx.principal_key(),
+                    agent_id = %result.agent_id,
+                    "set_ownership skipped: instance_pool not attached"
+                );
+            }
+
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "success": result.success,
+                    "agent_id": result.agent_id,
+                    "message": result.message
+                })),
+            )
+        }
         Err(message) => {
             let status = if message.contains("already exists") {
                 StatusCode::CONFLICT
@@ -605,7 +877,7 @@ pub async fn create_agent_internal(
     // Acquire the config write mutex to prevent concurrent read-modify-write races.
     let _config_guard = state.config_write_mutex.lock().await;
 
-    // Fail early if messaging manager is unavailable — before any config write,
+    // Fail early if messaging manager is unavailable, before any config write,
     // directory creation, or database init that would leave a half-created agent.
     let messaging_manager = {
         let guard = state.messaging_manager.read().await;
@@ -639,7 +911,7 @@ pub async fn create_agent_internal(
         .as_array_of_tables_mut()
         .ok_or_else(|| "agents is not an array of tables in config.toml".to_string())?;
 
-    // Revalidate uniqueness under the lock — another request may have written the
+    // Revalidate uniqueness under the lock: another request may have written the
     // same agent_id to config.toml between our first check and mutex acquisition.
     // Check against the parsed TOML document (agents_array) rather than the stale
     // in-memory cache to ensure we catch concurrent writes.
@@ -673,7 +945,7 @@ pub async fn create_agent_internal(
             format!("failed to write config.toml: {error}")
         })?;
 
-    // Release the config write mutex — remaining work doesn't touch config.toml.
+    // Release the config write mutex. Remaining work doesn't touch config.toml.
     drop(_config_guard);
 
     // Read defaults directly from the config we just wrote to disk rather than
@@ -944,6 +1216,14 @@ pub async fn create_agent_internal(
         },
         api_state: Some(state.clone()),
         wiki_store: state.wiki_store.load().as_ref().clone(),
+        // Agent-init defaults to System attribution. The running agent
+        // processes inbound messages via `Channel::install_turn_deps`,
+        // which overwrites `auth_context` with the per-turn principal
+        // before any spawn. This seed value is only observable before
+        // the first message arrives; any direct read of
+        // `state.deps.auth_context` without going through the turn path
+        // is an architectural violation flagged for the Phase-5
+        // scopeguard-restore (see `src/agent/channel.rs::install_turn_deps`).
         auth_context: crate::auth::AuthContext::legacy_static(),
     };
 
@@ -971,7 +1251,7 @@ pub async fn create_agent_internal(
     let channel_store = crate::conversation::ChannelStore::new(db.sqlite.clone());
     let run_logger = crate::conversation::ProcessRunLogger::new(db.sqlite.clone());
     let cortex_ctx = crate::agent::cortex_chat::CortexChatSession::create_context();
-    #[allow(deprecated)] // Cortex chat is legacy — being replaced by Channel Settings
+    #[allow(deprecated)] // Cortex chat is legacy; being replaced by Channel Settings
     let cortex_tool_server = crate::tools::create_cortex_chat_tool_server(
         deps.agent_id.clone(),
         deps.clone(),
@@ -1138,6 +1418,7 @@ pub async fn create_agent_internal(
 )]
 pub(super) async fn update_agent(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<UpdateAgentRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let agent_id = request.agent_id.trim().to_string();
@@ -1146,6 +1427,35 @@ pub(super) async fn update_agent(
             "success": false,
             "message": "Agent ID cannot be empty"
         })));
+    }
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
     }
 
     let existing = state.agent_configs.load();
@@ -1276,6 +1586,7 @@ pub(super) async fn update_agent(
 )]
 pub(super) async fn delete_agent(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<DeleteAgentQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let agent_id = query.agent_id.trim().to_string();
@@ -1284,6 +1595,35 @@ pub(super) async fn delete_agent(
             "success": false,
             "message": "Agent ID cannot be empty"
         })));
+    }
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
     }
 
     // Verify the agent exists
@@ -1439,8 +1779,47 @@ pub(super) async fn delete_agent(
 )]
 pub(super) async fn agent_overview(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AgentOverviewQuery>,
 ) -> Result<Json<AgentOverviewResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
@@ -1623,6 +2002,10 @@ pub(super) async fn agent_overview(
 pub(super) async fn instance_overview(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<InstanceOverviewResponse>, StatusCode> {
+    // TODO(phase-5): per-row `check_read` once the audit log lands.
+    // Today this returns every configured agent's summary plus
+    // activity to any authenticated caller. Same treatment as
+    // `list_agents`.
     let uptime = state.started_at.elapsed();
     let pools = state.agent_pools.load();
     let configs = state.agent_configs.load();
@@ -1735,8 +2118,47 @@ pub(super) async fn instance_overview(
 )]
 pub(super) async fn get_agent_profile(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AgentOverviewQuery>,
 ) -> Result<Json<AgentProfileResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
@@ -1760,8 +2182,47 @@ pub(super) async fn get_agent_profile(
 )]
 pub(super) async fn get_identity(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<IdentityQuery>,
 ) -> Result<Json<IdentityResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let identity_dirs = state.agent_identity_dirs.load();
     let identity_dir = identity_dirs
         .get(&query.agent_id)
@@ -1791,8 +2252,38 @@ pub(super) async fn get_identity(
 )]
 pub(super) async fn update_identity(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     axum::Json(request): axum::Json<IdentityUpdateRequest>,
 ) -> Result<Json<IdentityResponse>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &request.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %request.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %request.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let identity_dirs = state.agent_identity_dirs.load();
     let identity_dir = identity_dirs
         .get(&request.agent_id)
@@ -1922,10 +2413,14 @@ mod tests {
         runtime_configs.insert("alpha".to_string(), alpha_config);
         state.runtime_configs.store(Arc::new(runtime_configs));
 
-        let response = get_warmup_status(State(state), Query(WarmupQuery { agent_id: None }))
-            .await
-            .expect("warmup status request failed")
-            .0;
+        let response = get_warmup_status(
+            State(state),
+            crate::auth::AuthContext::legacy_static(),
+            Query(WarmupQuery { agent_id: None }),
+        )
+        .await
+        .expect("warmup status request failed")
+        .0;
 
         assert_eq!(response.statuses.len(), 2);
         assert_eq!(response.statuses[0].agent_id, "alpha");
@@ -1946,6 +2441,7 @@ mod tests {
 
         let result = get_warmup_status(
             State(state),
+            crate::auth::AuthContext::legacy_static(),
             Query(WarmupQuery {
                 agent_id: Some("missing".to_string()),
             }),
@@ -1961,6 +2457,7 @@ mod tests {
 
         let result = trigger_warmup(
             State(state),
+            crate::auth::AuthContext::legacy_static(),
             Json(WarmupTriggerRequest {
                 agent_id: None,
                 force: false,
@@ -1985,6 +2482,7 @@ mod tests {
 
         let result = trigger_warmup(
             State(state),
+            crate::auth::AuthContext::legacy_static(),
             Json(WarmupTriggerRequest {
                 agent_id: Some("missing".to_string()),
                 force: false,
@@ -2037,8 +2535,47 @@ pub(super) struct AvatarQuery {
 )]
 pub(super) async fn get_avatar(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AvatarQuery>,
 ) -> Result<axum::response::Response, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let data_dir = state
         .agent_data_dirs
         .load()
@@ -2088,9 +2625,39 @@ use axum::response::IntoResponse;
 )]
 pub(super) async fn upload_avatar(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AvatarQuery>,
     request: axum::extract::Request,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &query.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %query.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let data_dir = state
         .agent_data_dirs
         .load()
@@ -2157,8 +2724,38 @@ pub(super) async fn upload_avatar(
 )]
 pub(super) async fn delete_avatar(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AvatarQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &query.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %query.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["agents"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let data_dir = state
         .agent_data_dirs
         .load()

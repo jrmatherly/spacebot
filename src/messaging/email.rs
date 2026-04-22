@@ -1022,6 +1022,7 @@ fn parse_inbound_email(
         timestamp,
         metadata,
         formatted_author: Some(formatted_author),
+        auth_context: None,
     }))
 }
 

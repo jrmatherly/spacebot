@@ -3,7 +3,7 @@
 //! When called, creates a task in the target agent's task store (skipping
 //! `pending_approval` for agent-delegated tasks) and logs a system message
 //! in the link channel between the two agents. The calling agent's turn ends
-//! immediately — the result will be delivered when the target agent's cortex
+//! immediately. The result will be delivered when the target agent's cortex
 //! picks up and completes the task.
 
 use crate::conversation::history::ConversationLogger;
@@ -35,18 +35,35 @@ pub struct SendAgentMessageTool {
     task_store: Arc<TaskStore>,
     /// Per-agent conversation logger for writing link channel audit records.
     conversation_logger: ConversationLogger,
+    /// Instance-wide SQLite pool for resource_ownership + team_memberships
+    /// lookups in `can_link_channel`. Wired by Phase 4 PR 2 via the
+    /// construction site; the `Option` remains because adapter paths and
+    /// static-token flows still build this tool without a pool (boot
+    /// window, tests, pre-Entra fallback). When `None`, the policy check
+    /// is skipped with a `tracing::error!` +
+    /// `spacebot_authz_skipped_total{handler="send_agent_message"}`
+    /// increment so the gap is operationally visible.
+    instance_pool: Option<sqlx::SqlitePool>,
     /// Per-turn skip flag. When set after delegation, the channel turn ends immediately.
     skip_flag: Option<SkipFlag>,
     /// The originating channel (conversation_id) where the user request came from.
     /// Set per-turn so task completion notifications route back to the right place.
     originating_channel: Option<String>,
     working_memory: Option<Arc<crate::memory::WorkingMemoryStore>>,
+    /// Per-turn originating principal. Installed at the per-turn
+    /// `with_auth_context` chain in `Channel::run_agent_turn` from the
+    /// Channel's turn-local `AgentDeps.auth_context` (written by
+    /// `install_turn_deps` at turn start). Default `LegacyStatic`
+    /// preserves pre-Entra behavior for adapter paths and static-token flows.
+    auth_context: crate::auth::context::AuthContext,
 }
 
 impl std::fmt::Debug for SendAgentMessageTool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SendAgentMessageTool")
             .field("agent_id", &self.agent_id)
+            .field("instance_pool_is_some", &self.instance_pool.is_some())
+            .field("auth_context", &self.auth_context.principal_key())
             .finish_non_exhaustive()
     }
 }
@@ -58,6 +75,8 @@ impl SendAgentMessageTool {
         agent_names: Arc<HashMap<String, String>>,
         task_store: Arc<TaskStore>,
         conversation_logger: ConversationLogger,
+        instance_pool: Option<sqlx::SqlitePool>,
+        auth_context: crate::auth::context::AuthContext,
     ) -> Self {
         Self {
             agent_id,
@@ -68,6 +87,8 @@ impl SendAgentMessageTool {
             skip_flag: None,
             originating_channel: None,
             working_memory: None,
+            instance_pool,
+            auth_context,
         }
     }
 
@@ -86,6 +107,15 @@ impl SendAgentMessageTool {
 
     pub fn with_working_memory(mut self, store: Arc<crate::memory::WorkingMemoryStore>) -> Self {
         self.working_memory = Some(store);
+        self
+    }
+
+    /// Override the originating principal for this turn. Called from
+    /// `Channel::run_agent_turn` after `install_turn_deps` has written the
+    /// per-turn `AgentDeps.auth_context`, so the policy check at `call()`
+    /// sees the real actor rather than the boot-time `LegacyStatic` default.
+    pub fn with_auth_context(mut self, ctx: crate::auth::context::AuthContext) -> Self {
+        self.auth_context = ctx;
         self
     }
 
@@ -177,11 +207,51 @@ impl Tool for SendAgentMessageTool {
             ))
         })?;
 
-        // TODO(phase-4 PR 2): call crate::auth::can_link_channel(&pool, ctx,
-        // &self.agent_id, &target_agent_id).await before the link lookup.
-        // Requires threading the instance_pool + per-turn AuthContext into
-        // SendAgentMessageTool (currently neither is available here).
-        // The helper + its 4 tests landed with the policy module in PR 1.
+        // Cross-agent link policy: when the instance_pool is attached
+        // (Phase 4+), check that the originating principal is allowed to
+        // delegate from self.agent_id to target_agent_id. Bare UUIDs per
+        // A-09, never prefix with `{agent}:`.
+        if let Some(pool) = &self.instance_pool {
+            let allowed = crate::auth::can_link_channel(
+                pool,
+                &self.auth_context,
+                self.agent_id.as_ref(),
+                target_agent_id.as_str(),
+            )
+            .await
+            .map_err(|error| SendAgentMessageError(format!("link policy check failed: {error}")))?;
+
+            if !allowed {
+                tracing::warn!(
+                    actor = %self.auth_context.principal_key(),
+                    from = %self.agent_id,
+                    to = %target_agent_id,
+                    "cross-agent link denied by policy"
+                );
+                return Err(SendAgentMessageError(format!(
+                    "cross-agent link to '{}' denied by policy",
+                    args.target
+                )));
+            }
+        } else {
+            // Pool absent (boot window or startup-ordering bug). The
+            // error-level log survives default operator filters; the
+            // feature-gated counter provides a quantitative signal under
+            // /metrics when the metrics feature is enabled. Ordering
+            // (metric-then-warn) mirrors src/api/memories.rs:232.
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["send_agent_message"])
+                .inc();
+            tracing::error!(
+                actor = %self.auth_context.principal_key(),
+                tool = "send_agent_message",
+                from = %self.agent_id,
+                to = %target_agent_id,
+                "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+            );
+        }
 
         // Look up the link between sending agent and target
         let links = self.links.load();

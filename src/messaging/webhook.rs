@@ -247,6 +247,20 @@ async fn handle_send(
         return Err((StatusCode::UNAUTHORIZED, "unauthorized".into()));
     }
 
+    // One-shot operational signal: the webhook ingress is live but not yet
+    // populating `InboundMessage.auth_context`, so every message falls
+    // through to `LegacyStatic`. Operators need to see this gap in logs
+    // once per process so it cannot hide silently until Phase 4 PR2 T4-webhook
+    // wires the extractor.
+    static WEBHOOK_AUTH_GAP_WARNED: std::sync::Once = std::sync::Once::new();
+    WEBHOOK_AUTH_GAP_WARNED.call_once(|| {
+        tracing::warn!(
+            target: "auth",
+            adapter = "webhook",
+            "webhook ingress accepted a request but is not yet AuthContext-aware; all webhook-sourced messages fall through to legacy-static identity until Phase 4 PR2 T4-webhook wires the AuthContext extractor"
+        );
+    });
+
     let tx = state.inbound_tx.read().await;
     let Some(tx) = tx.as_ref() else {
         return Err((
@@ -286,6 +300,11 @@ async fn handle_send(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author: Some(request.sender_id),
+        // TODO(phase-4 PR2 T4-webhook): thread AuthContext from request
+        // extensions once the webhook handler adopts the AuthContext
+        // extractor. For now unauthenticated webhook path falls through
+        // to LegacyStatic at dispatch.
+        auth_context: None,
     };
 
     tx.send(inbound)

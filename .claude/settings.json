@@ -50,9 +50,29 @@
             "statusMessage": "tokio-test flavor check"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "F=$(echo \"$CLAUDE_TOOL_INPUT\" | sed -nE 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\\1/p' | head -1); case \"$F\" in *.rs) case \"$F\" in */tests/*|*/target/*|*/vendor/*|*/spacedrive/*|*/spaceui/*) exit 0 ;; esac; if [ -f \"$F\" ]; then HITS=$(grep -nE '\\.(unwrap|expect)\\(' \"$F\" 2>/dev/null | grep -vE '#\\[cfg\\(test\\)\\]|^[0-9]+:[[:space:]]*//|^[0-9]+:[[:space:]]*///' | head -5); if [ -n \"$HITS\" ]; then IN_TEST_MOD=$(awk '/^#\\[cfg\\(test\\)\\]/{flag=1} flag' \"$F\" 2>/dev/null | grep -cE '\\.(unwrap|expect)\\(' || echo 0); TOTAL=$(echo \"$HITS\" | wc -l | tr -d ' '); if [ \"$TOTAL\" -gt \"$IN_TEST_MOD\" ]; then echo \"⚠️  Rust production code has .unwrap() / .expect() in $F (see .claude/rules/rust-essentials.md — production code must propagate via ?, use .context(), or .ok() on channel sends only):\" >&2; echo \"$HITS\" >&2; echo \"If these are in a #[cfg(test)] mod, this warning is safe to ignore. If not, fix before commit.\" >&2; fi; fi; fi ;; esac",
+            "statusMessage": "Unwrap / expect scan"
+          }
+        ]
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "F=$(echo \"$CLAUDE_TOOL_INPUT\" | sed -nE 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\\1/p' | head -1); case \"$F\" in */src/tools/send_agent_message.rs) if [ -f \"$F\" ]; then if ! grep -qE 'can_link_channel[[:space:]]*\\(' \"$F\" 2>/dev/null; then echo \"⚠️  Cross-agent authz guard check: $F does NOT contain a can_link_channel() call. Phase 4 PR 2 (PR #105, commit 52fcf82) added this call to src/tools/send_agent_message.rs::call() before the link lookup. If your edit removes it, the Phase-4 'cross-agent authz' invariant regresses silently — any agent could dispatch to any peer regardless of resource_ownership. If the removal is intentional (e.g., the call moved to a different module), confirm the guard still fires at the new location. See .scratchpad/plans/entraid-auth/phase-4-authz-helpers.md §'Task 4.6b' for the contract.\" >&2; fi; fi ;; esac",
+            "statusMessage": "Cross-agent authz guard check"
+          }
+        ]
+      },
       {
         "matcher": "Edit",
         "hooks": [

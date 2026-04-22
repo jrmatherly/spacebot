@@ -14,10 +14,11 @@ cargo run -- start       # Start the daemon (port 19898)
 - Run `just preflight` to validate git/remote/auth state
 - If the same command fails twice, stop and debug root cause
 - Do not push when any gate is red
-- `cargo test --lib` for unit tests
-- `cargo test --tests --no-run` to compile integration tests
-- `cargo fmt --all` to format, `cargo clippy --all-targets` to lint
+- `cargo nextest run --lib` (or `just test-lib-nextest`) for unit tests; `cargo test --lib` kept for debugging shared-state tests. `just gate-pr` defaults to nextest as of the R1 flip on 2026-04-22.
+- `cargo test --tests --no-run` to compile integration tests (also useful as TDD red-pass: skips execution on known-red tests)
+- `cargo fmt --all` to format, `cargo clippy --all-targets` to lint (clippy supersets check; never run both)
 - `cargo audit --ignore RUSTSEC-2023-0071` for security audit
+- `just check-typegen` mandatory after any `src/api/**/*.rs` edit (utoipa annotations regenerate `packages/api-client/src/schema.d.ts`)
 - If a unit test hangs for >60s on code that spawns background tasks (OTLP, LanceDB indexers, etc.), it is the current-thread-runtime deadlock — use `#[tokio::test(flavor = "multi_thread")]`. See `.claude/skills/test-runtime-patterns/SKILL.md`.
 
 ## Architecture

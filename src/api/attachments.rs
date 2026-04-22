@@ -1,4 +1,38 @@
-//! Attachment upload, serving, and listing endpoints.
+//! Attachment upload, serving, and listing endpoints + their shared
+//! Phase-4 authz gate.
+//!
+//! All three endpoints (`upload_attachment`, `serve_attachment`,
+//! `list_attachments`) consult `check_read_with_audit` or `check_write`
+//! before touching the `saved_attachments` table on the agent-scoped
+//! pool. Reads gate on the attachment's own `resource_ownership` row
+//! (`resource_type = "saved_attachment"`, `resource_id = attachment.id`,
+//! A-09 bare UUID). Writes (upload) pre-check `check_write("agent",
+//! &agent_id)` since the caller must have write access to the target
+//! agent's workspace before a new attachment row can be created for it,
+//! then `.await set_ownership("saved_attachment", ...)` AFTER the insert
+//! succeeds (A-12: a fire-and-forget `tokio::spawn` races the uploader's
+//! immediate GET into a 404).
+//!
+//! Attachments carry parent-resource relationships: a `saved_attachment`
+//! row can reference a `message_id` (portal history), a task, or a
+//! memory. Authz here keys on the attachment's own ownership row, NOT
+//! the parent. Only the per-attachment `resource_ownership` entry is
+//! the source of truth. A future parent-inheritance policy would need
+//! an explicit design decision; for Phase 4 we do not recurse through
+//! parents.
+//!
+//! `list_attachments` is filtered by `channel_id` but keys the gate on
+//! the path `agent_id` — the agent's ownership row is the authorisation
+//! root for all attachments the agent owns. A Phase-5 TODO below tracks
+//! per-row post-filtering once the audit log lands and can absorb the
+//! N+1 cost.
+//!
+//! The ~45-line inline gate block mirrors `src/api/tasks.rs` and
+//! `src/api/memories.rs` per Phase 4 PR 2 decision N1: single-file
+//! grep-visibility beats DRY. Pool-None is always-on `tracing::error!`
+//! plus feature-gated `spacebot_authz_skipped_total{handler="attachments"}`.
+//! Metric label is uniformly `"attachments"` (the file family), never a
+//! per-handler sub-label.
 
 use super::state::ApiState;
 use crate::agent::channel_attachments::persist_attachment_bytes;
@@ -44,7 +78,7 @@ pub(super) struct AttachmentServeQuery {
     #[serde(default)]
     download: bool,
     /// When true, serve a thumbnail-sized version (for display in the UI).
-    /// Currently serves the full file — thumbnail generation is a future enhancement.
+    /// Currently serves the full file; thumbnail generation is a future enhancement.
     #[serde(default)]
     #[allow(dead_code)]
     thumbnail: bool,
@@ -83,10 +117,45 @@ pub(super) struct AttachmentListQuery {
 )]
 pub(super) async fn upload_attachment(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path((agent_id, channel_id)): Path<(String, String)>,
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<AttachmentUploadResponse>, StatusCode> {
     const MAX_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+
+    // Phase 4 authz gate: uploading creates a new `saved_attachment` row
+    // owned by the caller, but the pre-check rides the agent's ownership
+    // row (a caller without write access to the agent must not be able
+    // to stuff files into its workspace). Mirrors
+    // `create_portal_conversation` in portal.rs.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["attachments"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let workspaces = state.agent_workspaces.load();
     let workspace = workspaces.get(&agent_id).ok_or(StatusCode::NOT_FOUND)?;
@@ -151,6 +220,40 @@ pub(super) async fn upload_attachment(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // A-12: `.await` set_ownership. A fire-and-forget `tokio::spawn` here
+    // races the uploader's immediate GET /attachments/{id} into a 404.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::auth::repository::set_ownership(
+            &pool,
+            "saved_attachment",
+            &meta.id,
+            None,
+            &auth_ctx.principal_key(),
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                %error,
+                attachment_id = %meta.id,
+                "failed to register attachment ownership"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["attachments"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            attachment_id = %meta.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
+    }
+
     Ok(Json(AttachmentUploadResponse {
         id: meta.id,
         original_filename: meta.filename,
@@ -185,9 +288,58 @@ pub(super) async fn upload_attachment(
 )]
 pub(super) async fn serve_attachment(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path((agent_id, attachment_id)): Path<(String, String)>,
     Query(query): Query<AttachmentServeQuery>,
 ) -> Result<Response, StatusCode> {
+    // Phase 4 authz gate: keys on the attachment's own ownership row
+    // (resource_type = "saved_attachment", resource_id = attachment_id)
+    // per A-09 bare-UUID. Parent relationships (message_id, task,
+    // memory) are NOT consulted here; the per-attachment ownership
+    // entry is the source of truth. The gate runs BEFORE the disk read
+    // so a non-owner never sees whether the file exists on disk.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            "saved_attachment",
+            &attachment_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = "saved_attachment",
+                resource_id = %attachment_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "saved_attachment",
+                resource_id = %attachment_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["attachments"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            attachment_id = %attachment_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
@@ -283,9 +435,58 @@ pub(super) async fn serve_attachment(
 )]
 pub(super) async fn list_attachments(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path((agent_id, channel_id)): Path<(String, String)>,
     Query(query): Query<AttachmentListQuery>,
 ) -> Result<Json<AttachmentListResponse>, StatusCode> {
+    // Phase 4 authz gate: listings are scoped to a single agent (the
+    // path `agent_id`). Gate on the agent's ownership row; per-row
+    // post-filtering on each returned attachment is a Phase-5 TODO
+    // below once the audit log can absorb the N+1 cost.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["attachments"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+    // TODO(phase-5): per-row `check_read` over each returned attachment
+    // once the audit log lands and can absorb the N+1 emission cost.
+    // Today a caller with agent access sees every attachment the agent
+    // holds in the channel; that matches the Phase-4 model where
+    // attachments inherit agent-scope reachability but a stricter
+    // per-attachment policy is a Phase-5 tightening.
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&agent_id).ok_or(StatusCode::NOT_FOUND)?;
 

@@ -447,6 +447,46 @@ async fn admin_read_of_missing_resource_does_not_set_override() {
 }
 
 #[tokio::test]
+async fn admin_reading_other_admin_resource_sets_override() {
+    // Phase 4 PR 1 Round-2 deferred finding G4. Two distinct admin
+    // principals: carol (reader) and dave (owner). Both carry ROLE_ADMIN.
+    // The audit flag MUST fire on carol's read of dave's resource —
+    // admin-on-admin access is still a break-glass event per the role
+    // matrix. `admin_bypasses_personal_scoping` (line 183) already covers
+    // admin-reads-user-resource; this test fills the remaining gap so a
+    // future narrowing of `admin_override` (e.g. "skip audit when owner
+    // is also admin") would trip this explicit regression guard.
+    let pool = setup_pool().await;
+    let carol = user("carol", vec![ROLE_ADMIN], vec![]);
+    let dave = user("dave", vec![ROLE_ADMIN], vec![]);
+    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    upsert_user_from_auth(&pool, &dave).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m1",
+        None,
+        &dave.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (decision, admin_override) = check_read_with_audit(&pool, &carol, "memory", "m1")
+        .await
+        .unwrap();
+    assert!(
+        matches!(decision, Access::Allowed),
+        "admin reader must bypass per-resource ownership even when owner is also admin"
+    );
+    assert!(
+        admin_override,
+        "admin-on-admin access must still set admin_override — audit fires regardless of owner's role"
+    );
+}
+
+#[tokio::test]
 async fn legacy_static_bypasses_all_checks() {
     let pool = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);

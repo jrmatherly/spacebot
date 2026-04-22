@@ -1000,7 +1000,7 @@ pub(super) async fn disconnect_platform(
             }
         }
     } else {
-        // Disconnect entire platform — remove the whole section and all bindings
+        // Disconnect entire platform: remove the whole section and all bindings
         if let Some(messaging) = doc.get_mut("messaging").and_then(|m| m.as_table_mut()) {
             messaging.remove(platform);
         }
@@ -1710,7 +1710,7 @@ pub(super) async fn create_messaging_instance(
 
     match request.name {
         None => {
-            // Default instance — set root-level credential fields
+            // Default instance: set root-level credential fields
             match platform.as_str() {
                 "discord" => {
                     if let Some(token) = &credentials.discord_token {
@@ -1848,7 +1848,7 @@ pub(super) async fn create_messaging_instance(
             }
         }
         Some(ref name) => {
-            // Named instance — add to [[messaging.<platform>.instances]]
+            // Named instance: add to [[messaging.<platform>.instances]]
             let instance_name = name.trim().to_string();
 
             // Check for duplicates
@@ -1973,7 +1973,7 @@ pub(super) async fn create_messaging_instance(
                     }
                 }
                 "signal" => {
-                    // New instance — no existing values to merge, validate directly.
+                    // New instance: no existing values to merge, validate directly.
                     let (http_url, account, dm_users) = match parse_signal_credentials(credentials)
                     {
                         Ok(result) => result,
@@ -2041,7 +2041,7 @@ pub(super) async fn create_messaging_instance(
     }
 
     // The file watcher will pick up the change and start the adapter.
-    // We don't duplicate the adapter-start logic here — the hot-reload
+    // We don't duplicate the adapter-start logic here. The hot-reload
     // path in config.rs handles creating and registering all adapters.
 
     let label = if let Some(name) = &request.name {
@@ -2137,7 +2137,7 @@ pub(super) async fn delete_messaging_instance(
             }));
         }
     } else {
-        // Remove default instance — clear root-level credentials
+        // Remove default instance: clear root-level credentials
         if let Some(table) = doc
             .get_mut("messaging")
             .and_then(|m| m.get_mut(platform.as_str()))

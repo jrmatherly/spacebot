@@ -484,7 +484,7 @@ pub(super) struct PromptInspectQuery {
 
 /// Render the full prompt that the LLM would see on the next turn for a
 /// given channel. Returns the rendered system prompt and conversation
-/// history — useful for debugging prompt construction, coalescing,
+/// history. Useful for debugging prompt construction, coalescing,
 /// status block content, and context window usage.
 #[utoipa::path(
     get,
@@ -791,17 +791,17 @@ pub(super) async fn inspect_prompt(
             worker_capabilities,
             conversation_context,
             empty_to_none(status_text),
-            None, // coalesce_hint — only set during batched message handling
+            None, // coalesce_hint: only set during batched message handling
             available_channels,
             sandbox_enabled,
             org_context,
             adapter_prompt,
             project_context,
-            None, // backfill_transcript — only set during channel initialization
+            None, // backfill_transcript: only set during channel initialization
             empty_to_none(working_memory),
             empty_to_none(channel_activity_map),
             empty_to_none(participant_context),
-            false, // direct_mode — resolved at runtime by the channel, not available here
+            false, // direct_mode: resolved at runtime by the channel, not available here
         )
         .unwrap_or_default();
 

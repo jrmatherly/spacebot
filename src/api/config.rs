@@ -500,7 +500,7 @@ pub(super) async fn update_agent_config(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Release the config write mutex — remaining work is read-only state updates.
+    // Release the config write mutex. Remaining work is read-only state updates.
     drop(_config_guard);
 
     tracing::info!(agent_id = %request.agent_id, "config.toml updated via API");

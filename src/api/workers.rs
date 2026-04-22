@@ -244,7 +244,7 @@ pub(super) async fn worker_detail(
             })
             .ok(),
         None => {
-            // No persisted transcript yet — check the live transcript cache
+            // No persisted transcript yet. Check the live transcript cache
             // so page refreshes can recover in-progress worker transcripts.
             state.get_live_transcript(&query.worker_id).await
         }

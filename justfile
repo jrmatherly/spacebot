@@ -36,8 +36,8 @@ test-lib:
 # Run unit tests via cargo-nextest (process-per-test isolation, parallel scheduling).
 # Requires `cargo install cargo-nextest`. Reported 2-3× faster than cargo test on
 # suites with multiple test binaries; gains are smaller for single-crate lib tests.
-# Use this when iterating on tests locally; gate-pr.sh runs cargo test by default
-# (or --nextest / GATE_PR_NEXTEST=1 to opt in per invocation).
+# Use this when iterating on tests locally; gate-pr.sh uses nextest by default as
+# of 2026-04-22 (pass --no-nextest / set GATE_PR_NEXTEST=0 to fall back to cargo test).
 test-lib-nextest:
     cargo nextest run --lib
 
@@ -66,8 +66,10 @@ gate-pr: preflight
 gate-pr-fast: preflight
     ./scripts/gate-pr.sh --fast
 
-# Gate-PR with cargo-nextest replacing cargo test for the unit test step.
-# Same gates as `just gate-pr` otherwise. Requires cargo-nextest installed.
+# Gate-PR explicitly invoking cargo-nextest for the unit test step.
+# As of 2026-04-22, `just gate-pr` already uses nextest by default, so this recipe
+# is a backward-compatible alias kept for muscle memory and CI scripts that call it.
+# For the explicit cargo-test fallback, run `./scripts/gate-pr.sh --no-nextest`.
 gate-pr-nextest: preflight
     ./scripts/gate-pr.sh --nextest
 

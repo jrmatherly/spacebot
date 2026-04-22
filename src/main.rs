@@ -1644,6 +1644,23 @@ async fn run(
         .await
         .context("failed to migrate legacy projects to instance database")?;
 
+    // Phase 4 §11.3 backfill: every agent declared in [[agents]] blocks
+    // must have a resource_ownership row before the HTTP server accepts
+    // requests. Missing rows get the synthetic `legacy-static` principal
+    // so pre-Entra CLI callers retain access until admin re-claims via
+    // the Phase 9 workflow. Runs AFTER migrations (above) and BEFORE
+    // the router binds (below).
+    let reconciled_agents =
+        spacebot::config::reconcile_toml_agents_with_ownership(&instance_pool, &config.agents)
+            .await
+            .context("failed to reconcile TOML-declared agents with resource_ownership")?;
+    if reconciled_agents > 0 {
+        tracing::info!(
+            reconciled_agents,
+            "backfilled TOML-declared agents with legacy-static ownership rows"
+        );
+    }
+
     // Start HTTP API server if enabled
     let mut api_state = spacebot::api::ApiState::new_with_provider_sender(
         provider_tx,
@@ -3999,6 +4016,7 @@ mod tests {
                 timestamp: Utc::now(),
                 metadata: HashMap::new(),
                 formatted_author: None,
+                auth_context: None,
             },
         };
 

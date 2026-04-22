@@ -353,6 +353,18 @@ impl TaskStore {
         let Some(current) = self.get_by_number(task_number).await? else {
             return Ok(None);
         };
+        self.update_prefetched(current, input).await.map(Some)
+    }
+
+    /// Update variant that reuses an already-fetched `Task` row. The Phase-4
+    /// API handlers pre-fetch the task to resolve `task.id` (UUID) for the
+    /// authz gate; calling `update(task_number, ...)` after that would
+    /// re-read the same row inside this store. This entry point skips the
+    /// duplicate SELECT and writes directly. Non-handler callers (the
+    /// `TaskUpdateTool` LLM tool, internal claim/retry paths) keep using
+    /// `update(task_number, ...)` which still validates the row exists.
+    pub async fn update_prefetched(&self, current: Task, input: UpdateTaskInput) -> Result<Task> {
+        let task_number = current.task_number;
 
         if let Some(next_status) = input.status
             && !can_transition(current.status, next_status)
@@ -452,7 +464,16 @@ impl TaskStore {
             .await
             .context("failed to update task")?;
 
-        self.get_by_number(task_number).await
+        // The row existed at the top of this function (caller supplied it)
+        // and the UPDATE above matches `WHERE task_number = ?`, so a fresh
+        // read must succeed. A missing row here implies a concurrent DELETE
+        // or a silent transaction rollback — surface it as an error rather
+        // than an `Option::None` that callers would silently coerce into 404.
+        self.get_by_number(task_number).await?.ok_or_else(|| {
+            crate::error::Error::Other(anyhow::anyhow!(
+                "task {task_number} vanished between UPDATE and read-back"
+            ))
+        })
     }
 
     pub async fn delete(&self, task_number: i64) -> Result<bool> {

@@ -211,6 +211,7 @@ mod tests {
             timestamp: Utc.with_ymd_and_hms(2026, 3, 31, 12, 0, 0).unwrap(),
             metadata,
             formatted_author: None,
+            auth_context: None,
         }
     }
 

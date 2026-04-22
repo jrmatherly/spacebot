@@ -728,6 +728,7 @@ impl Handler {
             timestamp: *message.timestamp,
             metadata,
             formatted_author: Some(formatted_author),
+            auth_context: None,
         };
 
         if let Err(error) = self.inbound_tx.send(inbound).await {
@@ -840,6 +841,7 @@ impl Handler {
             timestamp: chrono::Utc::now(),
             metadata,
             formatted_author: Some(formatted_author),
+            auth_context: None,
         };
 
         if let Err(error) = self.inbound_tx.send(inbound).await {

@@ -45,7 +45,7 @@ pub(super) struct SshStatusResponse {
     has_authorized_key: bool,
 }
 
-/// PUT /api/ssh/authorized-key — write the public key for SSH access.
+/// PUT /api/ssh/authorized-key: write the public key for SSH access.
 #[utoipa::path(
     put,
     path = "/ssh/authorized-key",
@@ -100,7 +100,7 @@ pub(super) async fn set_authorized_key(
     }))
 }
 
-/// GET /api/ssh/status — check if SSH is available.
+/// GET /api/ssh/status: check if SSH is available.
 #[utoipa::path(
     get,
     path = "/ssh/status",
@@ -228,7 +228,7 @@ pub async fn disable() -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // "No such process" is fine — it already exited.
+        // "No such process" is fine: it already exited.
         if !stderr.contains("No such process") {
             tracing::warn!(pid, %stderr, "kill sshd returned non-zero");
         }

@@ -1,1 +1,7 @@
 Assign a task to another agent. The target agent's cortex will pick it up and execute it autonomously. Use this when work falls outside your scope or belongs to a subordinate. Your turn ends after delegation — the result will be delivered when the task completes. The first sentence of your message becomes the task title; the full content is the task description.
+
+Failure modes:
+- The target agent name or ID is unknown.
+- No communication link exists between you and the target.
+- The link exists but only permits the reverse direction.
+- The originating user lacks permission to delegate to the target (surfaced as "denied by policy"). In that case, explain the access boundary to the user rather than retrying with a different agent.

@@ -316,7 +316,7 @@ impl ChannelState {
             .remove(&worker_id.to_string());
 
         // Persist whatever transcript was accumulated from ToolStarted/ToolCompleted
-        // events. This is a best-effort snapshot — it won't include the worker's
+        // events. This is a best-effort snapshot; it won't include the worker's
         // internal reasoning text (which only exists in the Rig history) but it
         // captures every tool call and result, which is the most useful part.
         if let Some(steps) = &live_steps
@@ -657,6 +657,66 @@ impl Drop for MessageDurationGuard {
 }
 
 impl Channel {
+    /// Build a per-turn `AgentDeps` carrying this message's `AuthContext`
+    /// (or `LegacyStatic` when the message came from a non-authenticated
+    /// adapter). Called at the top of each turn before any
+    /// `spawn_branch`/`spawn_worker`/`run_agent_turn` so spawned children
+    /// inherit the originating principal.
+    fn turn_deps(&self, message: &InboundMessage) -> AgentDeps {
+        let ctx = message.auth_context.clone().unwrap_or_else(|| {
+            // Platform adapters (Discord, Slack, etc.) construct
+            // `InboundMessage` without an `auth_context` field because the
+            // user identity is the adapter itself, not a JWT-bearing HTTP
+            // caller. The legacy-static fallback is the expected behavior
+            // for those paths. This warn is the observability hook for the
+            // unexpected case: an authenticated adapter drops the field in
+            // transit, or a dead-letter replay loses it. If the warn rate
+            // ever exceeds the platform-adapter inbound rate, an adapter
+            // regressed its principal wiring.
+            tracing::warn!(
+                channel_id = %self.id,
+                source = %message.source,
+                "InboundMessage.auth_context absent; falling back to legacy_static"
+            );
+            crate::auth::context::AuthContext::legacy_static()
+        });
+        self.deps.for_turn(ctx)
+    }
+
+    /// Install the per-turn `AgentDeps` on both `self.deps` and
+    /// `self.state.deps` so the spawn paths (which read `state.deps`) and
+    /// any `self.deps` readers observe the originating principal for the
+    /// duration of this turn.
+    ///
+    /// Race safety (in-turn): `handle_message` and `handle_message_batch`
+    /// both take `&mut self` and the Channel's event loop serializes turns,
+    /// so only one turn runs at a time per Channel. No cross-turn auth
+    /// bleed during normal-path execution because every new turn calls
+    /// this helper and overwrites. The `ChannelControlHandle` clone
+    /// captured at construction is a frozen snapshot and does not
+    /// participate in the spawn path; tool-server registration happens
+    /// inside `run_agent_turn` via `self.state.clone()` at call time,
+    /// which captures the current (per-turn-mutated) `state.deps`.
+    ///
+    /// **Known gap (addressed in Phase 5):** this mutation persists until
+    /// the next turn calls `install_turn_deps` again. If a turn panics or
+    /// returns `Err(...)` partway through, any fire-and-forget work
+    /// spawned earlier in that turn that reads `state.deps.auth_context()`
+    /// later (worker replies arriving after the turn returned,
+    /// `record_decision_event`, LanceDB writes) will read the last
+    /// installed principal. For Phase 4 this is invisible because every
+    /// handler only consults `auth_context` via the HTTP extractor path
+    /// (not via `state.deps`), and background writers default to
+    /// `LegacyStatic`. Phase 5's audit log will replace this with a
+    /// scopeguard-restore pattern (`.scratchpad/plans/entraid-auth/
+    /// phase-5-audit-log.md` tracks the fix) so misattribution across
+    /// abnormal turn exits cannot occur.
+    fn install_turn_deps(&mut self, message: &InboundMessage) {
+        let next = self.turn_deps(message);
+        self.deps = next.clone();
+        self.state.deps = next;
+    }
+
     fn record_decision_event(&self, reply_text: Option<&str>, user_id: Option<String>) {
         let Some(decision_summary) = reply_text.and_then(extract_decision_summary_from_reply)
         else {
@@ -756,16 +816,27 @@ impl Channel {
         let tool_server = ToolServer::new().run();
 
         // Construct the send_agent_message tool if this agent has links.
+        // `instance_pool` is extracted from `ApiState` (mirrors the load
+        // pattern at src/api/memories.rs:163); `auth_context` defaults to
+        // the deps' boot-time value (LegacyStatic). The real per-turn
+        // principal is applied at the turn dispatch point via
+        // `with_auth_context`.
         let send_agent_message_tool = {
             let has_links =
                 !crate::links::links_for_agent(&deps.links.load(), &deps.agent_id).is_empty();
             if has_links {
+                let instance_pool = deps
+                    .api_state
+                    .as_ref()
+                    .and_then(|s| s.instance_pool.load().as_ref().as_ref().cloned());
                 Some(crate::tools::SendAgentMessageTool::new(
                     deps.agent_id.clone(),
                     deps.links.clone(),
                     deps.agent_names.clone(),
                     deps.task_store.clone(),
                     ConversationLogger::new(deps.sqlite_pool.clone()),
+                    instance_pool,
+                    deps.auth_context().clone(),
                 ))
             } else {
                 None
@@ -900,7 +971,7 @@ impl Channel {
     async fn set_response_mode(&mut self, mode: ResponseMode) {
         self.resolved_settings.response_mode = mode;
 
-        // Persist to channel_settings table — load existing settings first so we
+        // Persist to channel_settings table. Load existing settings first so we
         // don't overwrite other fields, then spawn the DB write to avoid blocking.
         let pool = self.deps.sqlite_pool.clone();
         let agent_id = self.deps.agent_id.clone();
@@ -1455,7 +1526,52 @@ impl Channel {
     /// with a coalesce hint telling the LLM this is a fast-moving conversation.
     #[tracing::instrument(skip(self, messages), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_count = messages.len()))]
     async fn handle_message_batch(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
-        // Apply runtime-config updates immediately without requiring a restart.
+        // Empty batch is not a valid call shape. Returning early avoids an
+        // empty-turn no-op and, more importantly, prevents stale-principal
+        // leak: `install_turn_deps` is skipped below when `messages.first()`
+        // is None, so the previous turn's principal would persist on
+        // `self.deps` and `self.state.deps`. Any fire-and-forget work from
+        // the prior turn that reads `state.deps.auth_context()` would then
+        // attribute to whichever principal ran last, not to System.
+        if messages.is_empty() {
+            tracing::warn!(
+                channel_id = %self.id,
+                "handle_message_batch called with empty batch; batcher may need audit"
+            );
+            return Ok(());
+        }
+
+        // Install the originating principal's auth context from the first
+        // message of the batch on self.deps and self.state.deps. All messages
+        // in a batch share a conversation, so principal is expected to be
+        // consistent; using `messages[0]` matches the plan's convention.
+        //
+        // If a batch spans a token refresh or a cross-adapter merge, later
+        // messages could carry a different principal. We warn rather than
+        // split because batch semantics already assume per-conversation
+        // context coherence; a mismatch is a signal that the batcher
+        // itself needs auditing, not that the dispatcher should absorb
+        // the inconsistency silently. We continue scanning after the first
+        // mismatch so every divergence is surfaced, not just the earliest;
+        // forensic completeness matters more than log compactness for this
+        // path because it should never fire in production.
+        if let Some(first) = messages.first() {
+            let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
+            for (index, other) in messages.iter().enumerate().skip(1) {
+                let other_key = other.auth_context.as_ref().map(|ctx| ctx.principal_key());
+                if other_key != first_key {
+                    tracing::warn!(
+                        channel_id = %self.id,
+                        batch_size = messages.len(),
+                        first_principal = ?first_key,
+                        other_principal = ?other_key,
+                        other_index = index,
+                        "auth context mismatch within coalesced batch; using first message's principal; batcher may need audit"
+                    );
+                }
+            }
+            self.install_turn_deps(first);
+        }
 
         let message_count = messages.len();
         let batch_start_timestamp = messages
@@ -1911,6 +2027,12 @@ impl Channel {
     async fn handle_message(&mut self, message: InboundMessage) -> Result<()> {
         // Apply runtime-config updates immediately without requiring a restart.
 
+        // Install the originating principal's auth context on self.deps and
+        // self.state.deps before any spawn/tool-registration path so spawned
+        // Branch/Worker processes inherit it. Falls back to LegacyStatic for
+        // non-authenticated adapters and system retrigger messages.
+        self.install_turn_deps(&message);
+
         // Track the inbound message that triggered this turn so outbound
         // responses carry the correct routing metadata (e.g. Slack thread_ts).
         // System retrigger messages keep the previous inbound target.
@@ -2020,7 +2142,7 @@ impl Channel {
 
         // Deterministic ping ack for Discord mention-only mentions/replies to avoid
         // flaky model behavior (e.g. skipping or over-formatting simple liveness checks).
-        // Skipped in Observe mode — the agent never responds in Observe.
+        // Skipped in Observe mode: the agent never responds in Observe.
         if !matches!(self.resolved_settings.response_mode, ResponseMode::Observe)
             && should_send_discord_quiet_mode_ping_ack(&message, &raw_text, self.is_suppressed())
         {
@@ -2071,7 +2193,7 @@ impl Channel {
         let mut invoked_by_reply = false;
 
         // Response mode guardrail:
-        // Observe mode: always suppress — agent learns but never responds.
+        // Observe mode: always suppress. Agent learns but never responds.
         // MentionOnly mode: suppress unless explicitly invoked.
         if !matches!(self.resolved_settings.response_mode, ResponseMode::Active)
             && message.source != "system"
@@ -2204,7 +2326,7 @@ impl Channel {
             },
         ) {
             self.send_builtin_text(
-                "yeah i'm here — tell me what you need.".to_string(),
+                "yeah i'm here, tell me what you need.".to_string(),
                 "quiet-mode-fallback",
             )
             .await;
@@ -2249,7 +2371,7 @@ impl Channel {
                         "retrigger relay failed, preserving result in history for next turn"
                     );
                     format!(
-                        "[background work completed but relay to user failed — include this in your next response]\n{summary}"
+                        "[background work completed but relay to user failed; include this in your next response]\n{summary}"
                     )
                 };
 
@@ -2370,14 +2492,14 @@ impl Channel {
 
             let (name, role, description) = if let Some(human) = humans_by_id.get(other_id.as_str())
             {
-                // Human node — use display_name, role, and description from HumanDef
+                // Human node: use display_name, role, and description from HumanDef
                 let name = human
                     .display_name
                     .clone()
                     .unwrap_or_else(|| other_id.clone());
                 (name, human.role.clone(), human.description.clone())
             } else {
-                // Agent node — use agent display name, no role/description
+                // Agent node: use agent display name, no role/description
                 let name = self
                     .deps
                     .agent_names
@@ -2625,11 +2747,15 @@ impl Channel {
         let allow_direct_reply = !self.suppress_plaintext_fallback();
 
         // Set the originating channel on the delegation tool so task completion
-        // notifications route back to this conversation.
-        let send_agent_message_tool = self
-            .send_agent_message_tool
-            .clone()
-            .map(|tool| tool.with_originating_channel(conversation_id.to_string()));
+        // notifications route back to this conversation. Also install the
+        // per-turn `AuthContext` so `can_link_channel` enforces against the
+        // real originator (written by `install_turn_deps` earlier in this
+        // turn) rather than the boot-time `LegacyStatic` default captured
+        // at `Channel::new` construction.
+        let send_agent_message_tool = self.send_agent_message_tool.clone().map(|tool| {
+            tool.with_originating_channel(conversation_id.to_string())
+                .with_auth_context(self.state.deps.auth_context().clone())
+        });
 
         let current_inbound = self
             .current_inbound
@@ -2645,7 +2771,7 @@ impl Channel {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        // reply() always sends live — cron channels use set_outcome() for delivery.
+        // reply() always sends live; cron channels use set_outcome() for delivery.
         let reply_target = crate::tools::ReplyTarget::Live(Box::new(routed_sender.clone()));
 
         match self.resolved_settings.delegation {
@@ -2758,7 +2884,7 @@ impl Channel {
                 history.push(rig::message::Message::Assistant {
                     id: None,
                     content: OneOrMany::one(rig::message::AssistantContent::text(
-                        "[acknowledged — working on it in background]",
+                        "[acknowledged: working on it in background]",
                     )),
                 });
             }
@@ -2972,7 +3098,7 @@ impl Channel {
                     } else {
                         tracing::warn!(
                             channel_id = %self.id,
-                            "LLM skipped on retrigger with no text — worker/branch result may not have been relayed"
+                            "LLM skipped on retrigger with no text; worker/branch result may not have been relayed"
                         );
                     }
                 } else if skipped {
@@ -3203,7 +3329,7 @@ impl Channel {
                     .with_label_values(&[&*self.deps.agent_id])
                     .dec();
 
-                // Memory persistence branches complete silently — no history
+                // Memory persistence branches complete silently; no history
                 // injection, no re-trigger. The work (memory saves) already
                 // happened inside the branch via tool calls.
                 if was_memory_persistence {
@@ -3228,7 +3354,7 @@ impl Channel {
                         );
                     }
 
-                    // Truncate for working memory — full conclusion lives in branch_runs.
+                    // Truncate for working memory. Full conclusion lives in branch_runs.
                     let summary = if conclusion.len() > 200 {
                         let boundary = conclusion.floor_char_boundary(200);
                         format!("{}...", &conclusion[..boundary])
@@ -3507,7 +3633,7 @@ impl Channel {
             .iter()
             .map(|r| {
                 let status = if r.success { "completed" } else { "failed" };
-                // Truncate very long results for the history record — the user
+                // Truncate very long results for the history record; the user
                 // already saw the full version via the reply tool.
                 let truncated = if r.result.len() > 500 {
                     let boundary = r.result.floor_char_boundary(500);
@@ -3552,6 +3678,8 @@ impl Channel {
             timestamp: chrono::Utc::now(),
             metadata,
             formatted_author: None,
+            // auth_context: None for internal retrigger; Phase 5 will thread principal via audit log.
+            auth_context: None,
         };
         match self.self_tx.try_send(synthetic) {
             Ok(()) => {
@@ -3621,11 +3749,11 @@ impl Channel {
         // Trigger 1: Message count threshold.
         let message_trigger = self.message_count >= wm_config.persistence_message_threshold;
 
-        // Trigger 2: Time-based — only if conversation is active (message_count > 0).
+        // Trigger 2: Time-based. Only if conversation is active (message_count > 0).
         let time_trigger = self.message_count > 0
             && elapsed.as_secs() >= wm_config.persistence_time_threshold_secs;
 
-        // Trigger 3: Event density — working memory events from this channel.
+        // Trigger 3: Event density. Working memory events from this channel.
         let density_trigger = if !message_trigger && !time_trigger {
             // Only check DB if the cheap triggers didn't fire.
             let since = chrono::Utc::now() - chrono::Duration::seconds(elapsed.as_secs() as i64);
@@ -3932,6 +4060,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             metadata: message_metadata,
             formatted_author: None,
+            auth_context: None,
         }
     }
 
@@ -4044,6 +4173,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
             formatted_author: None,
+            auth_context: None,
         };
 
         assert!(decision_user_id(&humans, &message, true).is_none());
@@ -4252,7 +4382,7 @@ mod tests {
 
     #[test]
     fn is_dm_conversation_id_detects_dm_patterns() {
-        // Slack DMs — channel ID starts with 'D'
+        // Slack DMs: channel ID starts with 'D'
         assert!(is_dm_conversation_id("slack:T07GZRRFRRT:D0AHN0BM8D8"));
         assert!(is_dm_conversation_id(
             "slack:adapter:T07GZRRFRRT:D0AHN0BM8D8"

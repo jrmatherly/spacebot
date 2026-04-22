@@ -3,25 +3,28 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/gate-pr.sh [--ci] [--fast] [--nextest]
+Usage: scripts/gate-pr.sh [--ci] [--fast] [--no-nextest]
 
 Options:
-  --ci       CI mode (enables CI-oriented migration base resolution).
-  --fast     Skip clippy and integration test compile for quicker local iteration.
-  --nextest  Run unit tests via `cargo nextest run --lib` instead of `cargo test --lib`.
-             Requires cargo-nextest installed (`cargo install cargo-nextest`).
-             Equivalent env var: GATE_PR_NEXTEST=1
+  --ci          CI mode (enables CI-oriented migration base resolution).
+  --fast        Skip clippy and integration test compile for quicker local iteration.
+  --no-nextest  Run unit tests via `cargo test --lib` instead of `cargo nextest run --lib`.
+                Default since 2026-04-22 is nextest; this flag is the escape hatch for
+                environments without cargo-nextest installed, or for A/B-ing runner behavior.
+                Equivalent env var: GATE_PR_NEXTEST=0
+  --nextest     Accepted for backward compatibility; nextest is the default.
 EOF
 }
 
 is_ci=false
 fast_mode=false
-# Nextest opt-in: CLI flag wins, env var is the fallback. Default off because
-# nextest's process-per-test isolation may surface latent shared-state assumptions
-# in tests that today silently pass under cargo test's shared-process model.
-# Promote to default after a sustained period of nextest runs landing green.
-use_nextest="${GATE_PR_NEXTEST:-}"
-[[ "$use_nextest" == "1" || "$use_nextest" == "true" ]] && use_nextest=true || use_nextest=false
+# Nextest is now the default. Promotion rationale: phases 3, 4 (PR 1 + PR 2)
+# landed green on nextest without surfacing shared-state regressions, clearing
+# the "sustained period of nextest runs landing green" bar recorded here pre-flip.
+# Escape hatches: `--no-nextest` CLI flag OR `GATE_PR_NEXTEST=0` env var falls back
+# to `cargo test --lib`.
+use_nextest="${GATE_PR_NEXTEST:-1}"
+[[ "$use_nextest" == "0" || "$use_nextest" == "false" ]] && use_nextest=false || use_nextest=true
 
 while (($# > 0)); do
 	case "$1" in
@@ -34,7 +37,13 @@ while (($# > 0)); do
 		shift
 		;;
 	--nextest)
+		# Accepted for backward compatibility with pre-2026-04-22 callers
+		# (e.g., `just gate-pr-nextest`); nextest is now the default.
 		use_nextest=true
+		shift
+		;;
+	--no-nextest)
+		use_nextest=false
 		shift
 		;;
 	-h | --help)
@@ -113,7 +122,7 @@ fi
 
 if $use_nextest; then
 	if ! command -v cargo-nextest >/dev/null 2>&1; then
-		fail "--nextest flag set but cargo-nextest not installed (run: cargo install cargo-nextest)"
+		fail "nextest is the default unit-test runner but cargo-nextest is not installed (run: cargo install cargo-nextest), or pass --no-nextest / set GATE_PR_NEXTEST=0 to use cargo test"
 	fi
 	run_step "cargo nextest run --lib" cargo nextest run --lib
 else

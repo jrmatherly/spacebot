@@ -338,6 +338,7 @@ impl Messaging for TwitchAdapter {
                             timestamp: privmsg.server_timestamp,
                             metadata,
                             formatted_author: Some(formatted_author),
+                            auth_context: None,
                         };
 
                         if let Err(error) = inbound_tx.send(inbound).await {

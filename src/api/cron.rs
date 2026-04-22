@@ -1,3 +1,43 @@
+//! Cron HTTP handlers + their shared Phase-4 authz gate.
+//!
+//! Six endpoints (`list_cron_jobs`, `cron_executions`, `create_or_update_cron`,
+//! `delete_cron`, `trigger_cron`, `toggle_cron`) consult the Phase-4 authz
+//! helpers before touching the per-agent cron store or the in-process
+//! scheduler. Read handlers call `check_read_with_audit("agent", &agent_id)`
+//! because list-style cron reads are agent-scoped (the URL carries
+//! `agent_id`; the cron_id narrows within the agent). Write handlers call
+//! `check_write("cron_job", &cron_id)` — the write surface keys on the
+//! individual cron row per A-09.
+//!
+//! `create_or_update_cron` is a true upsert at the SQL layer; the handler
+//! discriminates new-vs-existing via `store.load(&cron_id)`. The existing
+//! path calls `check_write` before the save; the new path awaits
+//! `set_ownership` AFTER the save (A-12: a fire-and-forget `tokio::spawn`
+//! would race the creator's subsequent GET into a 404).
+//!
+//! Scheduled cron runs execute as `PrincipalType::System`. `is_admin`
+//! includes `System` in its bypass set (see `src/auth/roles.rs`), so
+//! `check_read` and `check_write` allow those principals without reaching
+//! the ownership table. The
+//! `system_can_read_cron_of_disabled_user` regression test in
+//! `tests/api_cron_authz.rs` guards against a future narrowing of
+//! `is_admin` that would silently break scheduled execution for disabled
+//! or deleted user-owned crons.
+//!
+//! The ~45-line gate block is **inlined at each call site on purpose**
+//! (Phase 4 PR 2 decision N1 in
+//! `.scratchpad/plans/entraid-auth/phase-4-authz-helpers.md`). A helper
+//! would save writing but hurt grep-by-handler visibility during route
+//! review. The metric label is always `"cron"` (file resource family),
+//! never a per-handler sub-label, to keep
+//! `spacebot_authz_skipped_total` cardinality flat. Pool-None is a
+//! boot-window signal (always-on `tracing::error!` + feature-gated counter
+//! increment); a persistent non-zero rate after startup is a
+//! startup-ordering regression.
+//!
+//! Phase 5 replaces the `tracing::info!` admin-override path with an
+//! `AuditAppender::append` call against the hash-chained audit log.
+
 use super::state::ApiState;
 
 use axum::Json;
@@ -126,8 +166,51 @@ pub(super) struct CronActionResponse {
 )]
 pub(super) async fn list_cron_jobs(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<CronQuery>,
 ) -> Result<Json<CronListResponse>, StatusCode> {
+    // Phase 4 authz gate: cron listing rides the agent's ownership row
+    // (mirrors `list_memories` and `list_tasks`). `CronQuery.agent_id` is
+    // required, so every call has an agent-scoped filter. There is no
+    // separate "no-filter" path like `list_tasks` has to handle.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let stores = state.cron_stores.load();
     let schedulers = state.cron_schedulers.load();
     let store = stores.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
@@ -190,8 +273,50 @@ pub(super) async fn list_cron_jobs(
 )]
 pub(super) async fn cron_executions(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<CronExecutionsQuery>,
 ) -> Result<Json<CronExecutionsResponse>, StatusCode> {
+    // Phase 4 authz gate: execution history is agent-scoped. `agent_id` is
+    // required on the query; `cron_id` narrows within the agent. Gate on
+    // the agent resource (mirrors `list_cron_jobs`).
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let stores = state.cron_stores.load();
     let store = stores.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
@@ -320,6 +445,7 @@ fn validate_cron_request(request: &CreateCronRequest) -> Result<(), (StatusCode,
 )]
 pub(super) async fn create_or_update_cron(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreateCronRequest>,
 ) -> Result<Json<CronActionResponse>, (StatusCode, Json<CronActionResponse>)> {
     if let Err((status, message)) = validate_cron_request(&request) {
@@ -359,6 +485,59 @@ pub(super) async fn create_or_update_cron(
         )
     })?;
 
+    // Phase 4 authz gate: branch on new-vs-existing cron. If the cron
+    // already exists, this is an update: gate via `check_write` against
+    // the existing ownership row. If it does not exist, this is a create —
+    // no pre-existing row to gate on; after a successful `store.save` the
+    // handler awaits `set_ownership` so the creator's subsequent reads
+    // pass the gate (A-12: fire-and-forget `tokio::spawn` would race a
+    // GET into 404).
+    let existing = store.load(&request.id).await.map_err(|error| {
+        tracing::warn!(%error, agent_id = %request.agent_id, cron_id = %request.id, "failed to load cron for authz discriminate");
+        cron_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to load cron: {error}"),
+        )
+    })?;
+    let is_new = existing.is_none();
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        if !is_new {
+            let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "cron_job",
+                        resource_id = %request.id,
+                        "authz check_write failed"
+                    );
+                    cron_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "authz check failed".to_string(),
+                    )
+                })?;
+            if !access.is_allowed() {
+                return Err(cron_err(
+                    access.to_status(),
+                    format!("cron '{}' not accessible", request.id),
+                ));
+            }
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            cron_id = %request.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let active_hours = match (request.active_start_hour, request.active_end_hour) {
         (Some(start), Some(end)) => Some((start, end)),
         _ => None,
@@ -386,6 +565,42 @@ pub(super) async fn create_or_update_cron(
         tracing::warn!(%error, agent_id = %request.agent_id, cron_id = %request.id, "failed to save cron job");
         cron_err(StatusCode::INTERNAL_SERVER_ERROR, format!("failed to save: {error}"))
     })?;
+
+    // A-12: new-cron path awaits `set_ownership` BEFORE returning AND
+    // before `scheduler.register` so a scheduler.register failure does
+    // not leave the SQL row with no owner.
+    if is_new {
+        if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+            crate::auth::repository::set_ownership(
+                &pool,
+                "cron_job",
+                &request.id,
+                Some(&request.agent_id),
+                &auth_ctx.principal_key(),
+                crate::auth::principals::Visibility::Personal,
+                None,
+            )
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, cron_id = %request.id, "failed to register cron ownership");
+                cron_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to register ownership".to_string(),
+                )
+            })?;
+        } else {
+            tracing::error!(
+                actor = %auth_ctx.principal_key(),
+                cron_id = %request.id,
+                "set_ownership skipped: instance_pool not attached"
+            );
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["cron"])
+                .inc();
+        }
+    }
 
     scheduler.register(config).await.map_err(|error| {
         tracing::warn!(%error, agent_id = %request.agent_id, cron_id = %request.id, "failed to register cron job");
@@ -415,8 +630,40 @@ pub(super) async fn create_or_update_cron(
 )]
 pub(super) async fn delete_cron(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<DeleteCronRequest>,
 ) -> Result<Json<CronActionResponse>, StatusCode> {
+    // Phase 4 authz gate: per-cron write. NotOwned/NotYours both collapse
+    // to 404 (hide existence).
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &query.cron_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "cron_job",
+                    resource_id = %query.cron_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            cron_id = %query.cron_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let stores = state.cron_stores.load();
     let store = stores.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
@@ -452,8 +699,41 @@ pub(super) async fn delete_cron(
 )]
 pub(super) async fn trigger_cron(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<TriggerCronRequest>,
 ) -> Result<Json<CronActionResponse>, StatusCode> {
+    // Phase 4 authz gate: triggering a cron is a write action on the cron
+    // row (it mutates the scheduler's in-memory job state and causes a
+    // side-effecting run).
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.cron_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "cron_job",
+                    resource_id = %request.cron_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            cron_id = %request.cron_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let schedulers = state.cron_schedulers.load();
     let scheduler = schedulers
         .get(&request.agent_id)
@@ -484,8 +764,39 @@ pub(super) async fn trigger_cron(
 )]
 pub(super) async fn toggle_cron(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<ToggleCronRequest>,
 ) -> Result<Json<CronActionResponse>, StatusCode> {
+    // Phase 4 authz gate: enable/disable mutates cron state.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.cron_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "cron_job",
+                    resource_id = %request.cron_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["cron"])
+            .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            cron_id = %request.cron_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let stores = state.cron_stores.load();
     let store = stores.get(&request.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 

@@ -4104,6 +4104,8 @@ async fn notify_delegation_completion(
             timestamp: chrono::Utc::now(),
             metadata: std::collections::HashMap::new(),
             formatted_author: None,
+            // auth_context: None — cortex-minted notification; Phase 5 will thread principal via audit log.
+            auth_context: None,
         },
     };
 
