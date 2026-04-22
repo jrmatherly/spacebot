@@ -152,9 +152,12 @@ pub(super) async fn list_memories(
     // see 404 (matrix row: "Memory | read | no (404)" for non-owners).
     //
     // When the instance pool isn't attached yet (early startup window,
-    // before `set_instance_pool` has run), the check is a no-op and the
-    // skip is observable via `spacebot_authz_skipped_total{handler="memories"}`.
-    // A persistent non-zero rate on that counter after startup indicates a
+    // before `set_instance_pool` has run), the check is a no-op. The
+    // always-on signal is the `tracing::warn!` below; the feature-gated
+    // signal is `spacebot_authz_skipped_total{handler="memories"}` (only
+    // compiled when the `metrics` feature is enabled — default builds
+    // skip the counter and rely on the warn log only). A persistent
+    // non-zero warn rate (or counter rate) after startup indicates a
     // startup-ordering regression where the HTTP server is accepting
     // requests before the Phase 2 data model is attached.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {

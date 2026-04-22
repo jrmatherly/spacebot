@@ -149,13 +149,28 @@ pub async fn entra_auth_middleware(
                     let ttl_secs = match state.entra_config.load().as_ref().as_ref() {
                         Some(cfg) => cfg.group_cache_ttl_secs,
                         None => {
-                            tracing::warn!(
-                                principal_key = %ctx.principal_key(),
-                                "entra_config not attached; falling back to 300s \
-                                 group-cache TTL. Mock validator paths hit this \
-                                 branch by design; production Entra paths hitting \
-                                 it indicate a set_entra_auth_config ordering bug"
-                            );
+                            // One-shot warn: mock-validator paths (every
+                            // integration test) leave entra_config None by
+                            // design and would otherwise emit one warn per
+                            // request, washing out signal. Production paths
+                            // see the warn once at first-request-after-boot
+                            // if set_entra_auth ran but set_entra_auth_config
+                            // did not, which is the operator signal we want.
+                            use std::sync::atomic::Ordering;
+                            let first = state
+                                .entra_config_missing_warned
+                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                                .is_ok();
+                            if first {
+                                tracing::warn!(
+                                    principal_key = %ctx.principal_key(),
+                                    "entra_config not attached; falling back to 300s \
+                                     group-cache TTL. Mock validator paths hit this \
+                                     branch by design (one-shot); production Entra \
+                                     paths hitting it indicate a set_entra_auth_config \
+                                     ordering bug"
+                                );
+                            }
                             300
                         }
                     };

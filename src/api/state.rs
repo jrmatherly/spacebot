@@ -121,6 +121,14 @@ pub struct ApiState {
     /// the store wrappers above so the Entra middleware can upsert user rows
     /// on successful auth without having to route through a store.
     pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
+    /// One-shot guard for the `entra_config not attached` warn in
+    /// `entra_auth_middleware`. Set to `true` after the first emission so
+    /// mock-validator integration tests (which leave `entra_config` None by
+    /// design) don't flood the log with one warn per request. In production,
+    /// a startup-ordering bug fires exactly one warn at first-request-after-boot
+    /// rather than one per subsequent request, which is the operator signal
+    /// we actually want.
+    pub entra_config_missing_warned: std::sync::atomic::AtomicBool,
     /// Per-agent RuntimeConfig for reading live hot-reloaded configuration.
     pub runtime_configs: ArcSwap<HashMap<String, Arc<RuntimeConfig>>>,
     /// Per-agent MCP managers for status and reconnect APIs.
@@ -354,6 +362,7 @@ impl ApiState {
             auth_token: None,
             entra_auth: Arc::new(ArcSwap::from_pointee(None)),
             entra_config: Arc::new(ArcSwap::from_pointee(None)),
+            entra_config_missing_warned: std::sync::atomic::AtomicBool::new(false),
             graph_client: ArcSwap::from_pointee(None),
             event_tx,
             agent_pools: arc_swap::ArcSwap::from_pointee(HashMap::new()),

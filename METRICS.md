@@ -375,6 +375,15 @@ All metrics are prefixed with `spacebot_`. The registry uses a private `promethe
 | Instrumented in | `src/auth/middleware.rs` — `instance_pool == None` branch |
 | Description | Post-auth user-row upsert skipped because `ApiState.instance_pool` is not attached. Expected to fire only during early-startup races where auth arrives before `set_instance_pool` ran. A persistent non-zero value indicates a startup-ordering regression. Phase 2, shipped 2026-04-21. |
 
+#### `spacebot_authz_skipped_total`
+
+| Field | Value |
+|-------|-------|
+| Type | `IntCounterVec` |
+| Labels | `handler` (resource handler name, e.g. `memories`) |
+| Instrumented in | Per-handler authz-gated API routes under `src/api/` — currently only `list_memories` (PR 2 rolls out to tasks, wiki, cron, portal, agents, notifications, projects, attachments, ingestion) |
+| Description | Per-handler authz check skipped because `ApiState.instance_pool` is not attached. Feature-gated behind `#[cfg(feature = "metrics")]` like every other counter in this doc; builds without the `metrics` feature fall back to the accompanying `tracing::warn!` (always-on) as the operator signal. Same startup-ordering interpretation as `auth_upsert_skipped_total`: expected to fire during boot but a persistent non-zero rate indicates `set_instance_pool` landed after the HTTP server started accepting requests, which silently bypasses every per-handler authz gate. Label cardinality is bounded by the number of authz-gated handlers (~10 after PR 2). Phase 4 PR 1, shipped 2026-04-21. |
+
 ### Cron
 
 #### `spacebot_cron_executions_total`

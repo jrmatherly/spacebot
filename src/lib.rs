@@ -472,6 +472,15 @@ impl AgentDeps {
     /// [`AuthContext::legacy_static`] default from `AgentDeps` construction,
     /// which sits in the admin-bypass set. **Do not rely on Branch/Worker
     /// inheritance propagating a real user identity in production today.**
+    ///
+    /// `#[must_use]` is load-bearing: `for_turn` returns a rebuilt
+    /// `AgentDeps`; writing `deps.for_turn(ctx);` as a bare statement
+    /// (no assignment, no chain) silently drops the new value while
+    /// `self.auth_context` stays `LegacyStatic`. Because LegacyStatic is
+    /// in the `is_admin` bypass set at `src/auth/roles.rs`, every spawned
+    /// Branch/Worker then executes as admin-equivalent. The attribute
+    /// forces the compiler to surface the missing assignment.
+    #[must_use = "for_turn returns a new AgentDeps; discarding it leaves LegacyStatic (admin-bypass) as the effective auth context for spawned Branches/Workers"]
     pub fn for_turn(&self, ctx: auth::context::AuthContext) -> Self {
         let mut next = self.clone();
         next.auth_context = ctx;

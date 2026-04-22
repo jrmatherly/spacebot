@@ -95,6 +95,10 @@ pub struct Metrics {
     /// persistent non-zero rate indicates `set_instance_pool` landed after
     /// the HTTP server started accepting requests, which silently bypasses
     /// every per-handler authz gate.
+    ///
+    /// Feature-gated: call sites wrap the `.inc()` in
+    /// `#[cfg(feature = "metrics")]`. The `tracing::warn!` that accompanies
+    /// every increment is the always-on signal for default builds.
     pub authz_skipped_total: IntCounterVec,
 
     /// A-10: 202 Accepted responses emitted while the async Graph group

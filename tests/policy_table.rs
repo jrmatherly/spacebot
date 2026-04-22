@@ -315,29 +315,28 @@ async fn owner_read_does_not_set_audit_flag() {
 }
 
 #[tokio::test]
-async fn invalid_visibility_string_in_db_is_integrity_error() {
-    // CHECK constraint at migrations/global/20260420120003_resource_ownership.sql
-    // should prevent this row from ever existing. If it does exist (migration
-    // skew, DB tampering, sqlite pragma differences), decide_user_read must
-    // return Err(_) so the handler surfaces 500 rather than silently hiding
-    // the resource behind a NotYours 404. Integrity bugs are operator alerts.
-    // Regression guard for Phase 4 PR #104 review finding I4.
+async fn valid_personal_ownership_non_owner_read_sees_not_yours() {
+    // Documentary regression guard for Phase 4 PR #104 review finding I4.
+    // The integrity branch at src/auth/policy.rs (invalid visibility string,
+    // Team visibility with null shared_with_team_id) is UNREACHABLE through
+    // the legitimate repository API: sqlite CHECK constraints enforce valid
+    // `visibility` values on both INSERT and UPDATE, and set_ownership
+    // accepts only a typed Visibility enum. The branch is defensive code
+    // against DB tampering, migration skew, or sqlite pragma differences
+    // that could bypass CHECK. No test can construct that state without
+    // disabling CHECK, which is out of scope for integration tests.
+    //
+    // What this test DOES verify: the happy-path non-owner-on-Personal
+    // flow (the same code region as the integrity branches) still produces
+    // Access::Denied(NotYours) after the I4 refactor changed the integrity
+    // branches to return anyhow::Err. The assertion guards against a
+    // regression where the integrity refactor accidentally broke the
+    // primary path.
     let pool = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
     upsert_user_from_auth(&pool, &alice).await.unwrap();
     upsert_user_from_auth(&pool, &bob).await.unwrap();
-    // Insert a row bypassing set_ownership (which validates visibility via
-    // the enum). Use raw SQL + disable CHECK constraints via a rewrite? No —
-    // sqlite CHECK is enforced at INSERT. Instead, insert a valid row and
-    // then UPDATE the visibility column to an invalid string. SQLite CHECK
-    // constraints ARE enforced on UPDATE too, so the only path to reach the
-    // invalid-visibility branch is via a live migration that adds the
-    // constraint after rows exist (which wouldn't happen here). The
-    // integrity branch is deliberately unreachable through the legitimate
-    // repository API. This test therefore verifies the happy path for the
-    // decide_user_read code structure: a valid Personal row with a non-owner
-    // gets NotYours (not the integrity error).
     set_ownership(
         &pool,
         "memory",
@@ -353,7 +352,7 @@ async fn invalid_visibility_string_in_db_is_integrity_error() {
     let result = check_read(&pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(result, Access::Denied(DenyReason::NotYours)),
-        "Valid Personal row: non-owner must see NotYours, not an integrity error"
+        "Valid Personal row: non-owner must see NotYours (not an integrity error)"
     );
 }
 
