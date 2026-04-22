@@ -6,9 +6,9 @@
 |---------|---------|
 | `just` | List all available recipes |
 | `just preflight` | Validate git/remote/auth state before pushing |
-| `just gate-pr` | Full PR gate: check-sidecar-naming + 3 frontend guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + formatting + clippy (supersets check; RUSTFLAGS=-Dwarnings) + unit tests + integration compile. Added frontend guards 2026-04-20. `cargo check` was dropped 2026-04-19 (Sprint 1 local-build-optimization). Migration-safety check disabled 2026-04-16, code relocated to scripts/_disabled/check-migration-safety.sh 2026-04-20. |
+| `just gate-pr` | Full PR gate: check-sidecar-naming + 3 frontend guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + formatting + clippy (supersets check; RUSTFLAGS=-Dwarnings) + unit tests + integration compile. Added frontend guards 2026-04-20. `cargo check` was dropped 2026-04-19 (Sprint 1 local-build-optimization). Migration-safety check disabled 2026-04-16, code relocated to scripts/_disabled/check-migration-safety.sh 2026-04-20. **Unit-test step default flipped to cargo-nextest 2026-04-22 (R1 from streamlining audit)** — `GATE_PR_NEXTEST=0` reverts per-invocation; `cargo test --lib` remains available via explicit flag. |
 | `just gate-pr-fast` | Fast local gate — runs cargo check (no clippy) + unit tests. For tight iteration loops; run full `just gate-pr` before pushing. Added 2026-04-19. |
-| `just gate-pr-nextest` | Same gates as `just gate-pr` but unit-test step uses `cargo nextest run --lib`. Equivalent to `./scripts/gate-pr.sh --nextest` or `GATE_PR_NEXTEST=1 just gate-pr`. Added 2026-04-20. |
+| `just gate-pr-nextest` | Same gates as `just gate-pr` but unit-test step uses `cargo nextest run --lib`. Equivalent to `./scripts/gate-pr.sh --nextest` or `GATE_PR_NEXTEST=1 just gate-pr`. Added 2026-04-20. Redundant as of the 2026-04-22 R1 flip since nextest is now the default; recipe retained for explicitness and back-compat. |
 | `just check-fast` | Narrowest useful inner-loop check: `cargo clippy --lib --no-deps`. Added 2026-04-19. |
 | `just check-frontend` | Rebuild embedded frontend UI (`cd interface && bun run build`). Needed when iterating on `interface/src/` TypeScript because build.rs no longer watches that path. Added 2026-04-19. |
 | `just debug-build` | Build with full debug symbols (`CARGO_PROFILE_DEV_DEBUG=2`) for lldb/rust-gdb variable inspection. Default dev profile uses `line-tables-only`. Added 2026-04-19. |
@@ -18,8 +18,8 @@
 | `just fmt-check` | Check Rust formatting (`cargo fmt --all -- --check`) |
 | `just check-all` | `cargo check --all-targets` |
 | `just clippy-all` | `cargo clippy --all-targets` |
-| `just test-lib` | Run library unit tests (`cargo test --lib`) |
-| `just test-lib-nextest` | Run library unit tests via cargo-nextest (process-per-test isolation, parallel scheduling). Requires `cargo install cargo-nextest`. Added 2026-04-20 (PR after #78). |
+| `just test-lib` | Run library unit tests (`cargo test --lib`). Prefer `just test-lib-nextest` for new work; the plain variant is kept for situations where process-per-test isolation surfaces a latent shared-state issue that needs reproducing under the default harness. |
+| `just test-lib-nextest` | Run library unit tests via cargo-nextest (process-per-test isolation, parallel scheduling). Requires `cargo install cargo-nextest`. Added 2026-04-20 (PR after #78). Now the recommended invocation per R1 (see INDEX § Cargo discipline). |
 | `just test-integration-compile` | Compile integration tests without running |
 | `just typegen` | Generate TypeScript types from OpenAPI spec. Writes to `packages/api-client/src/schema.d.ts` (retargeted from `interface/src/api/schema.d.ts` in PR #75, 2026-04-19) |
 | `just check-typegen` | Verify TypeScript types are up-to-date. Also enforced in CI at `.github/workflows/ci.yml` `check-typegen` job (added PR #75); fails the PR if regen produces a diff. |
@@ -60,14 +60,15 @@
 
 ## Delivery Gates (Mandatory before push/PR)
 1. `just preflight` — validate git/remote/auth state
-2. `just gate-pr` — formatting, compile, clippy, unit tests, integration compile
+2. `just gate-pr` — formatting, compile, clippy, unit tests (nextest default per R1), integration compile
 
 ## Rust Commands
 | Command | Purpose |
 |---------|---------|
 | `cargo build` | Build the project |
 | `cargo run` | Run the daemon |
-| `cargo test` | Run all tests |
+| `cargo test` | Run all tests (prefer `cargo nextest run` for new work per R1; plain variant is kept for debugging shared-state tests) |
+| `cargo nextest run --test <file>` | Run single integration test binary with process-per-test isolation. Canonical per-file invocation for PR 105-style authz tests. |
 | `cargo fmt --all` | Format code |
 | `cargo clippy --all-targets` | Lint code |
 | `cargo audit --ignore RUSTSEC-2023-0071` | Security audit |
