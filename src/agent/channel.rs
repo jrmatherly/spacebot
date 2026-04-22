@@ -656,6 +656,19 @@ impl Drop for MessageDurationGuard {
     }
 }
 
+/// Snapshot of `self.deps` and `self.state.deps` captured at the start of a
+/// turn by `Channel::install_turn_deps`, restored by `restore_turn_deps` at
+/// the end of the turn. `#[must_use]` ensures a contributor who forgets the
+/// restore call gets a compile-time warning instead of a silent
+/// between-turn principal leak — see Phase 5 Task 5.7b notes on the
+/// `install_turn_deps` doc comment for the runtime rationale.
+#[must_use = "PriorTurnDeps must be restored via restore_turn_deps before the turn returns; \
+              dropping the prior on the floor leaks mutated deps into subsequent turns"]
+struct PriorTurnDeps {
+    deps: AgentDeps,
+    state_deps: AgentDeps,
+}
+
 impl Channel {
     /// Build a per-turn `AgentDeps` carrying this message's `AuthContext`
     /// (or `LegacyStatic` when the message came from a non-authenticated
@@ -686,7 +699,8 @@ impl Channel {
     /// Install the per-turn `AgentDeps` on both `self.deps` and
     /// `self.state.deps` so the spawn paths (which read `state.deps`) and
     /// any `self.deps` readers observe the originating principal for the
-    /// duration of this turn.
+    /// duration of this turn. Returns a `PriorTurnDeps` handle that MUST
+    /// be passed to `restore_turn_deps` before the turn returns.
     ///
     /// Race safety (in-turn): `handle_message` and `handle_message_batch`
     /// both take `&mut self` and the Channel's event loop serializes turns,
@@ -698,23 +712,31 @@ impl Channel {
     /// inside `run_agent_turn` via `self.state.clone()` at call time,
     /// which captures the current (per-turn-mutated) `state.deps`.
     ///
-    /// **Known gap (addressed in Phase 5):** this mutation persists until
-    /// the next turn calls `install_turn_deps` again. If a turn panics or
-    /// returns `Err(...)` partway through, any fire-and-forget work
-    /// spawned earlier in that turn that reads `state.deps.auth_context()`
-    /// later (worker replies arriving after the turn returned,
-    /// `record_decision_event`, LanceDB writes) will read the last
-    /// installed principal. For Phase 4 this is invisible because every
-    /// handler only consults `auth_context` via the HTTP extractor path
-    /// (not via `state.deps`), and background writers default to
-    /// `LegacyStatic`. Phase 5's audit log will replace this with a
-    /// scopeguard-restore pattern (`.scratchpad/plans/entraid-auth/
-    /// phase-5-audit-log.md` tracks the fix) so misattribution across
-    /// abnormal turn exits cannot occur.
-    fn install_turn_deps(&mut self, message: &InboundMessage) {
+    /// Restore-on-return discipline (Phase 5 Task 5.7b): pair every
+    /// `install_turn_deps` call with a `restore_turn_deps(prior)` before
+    /// the turn returns (Ok or Err). Panic path is not restored because
+    /// the channel task dies on panic (see `src/main.rs:~2247` — bare
+    /// `tokio::spawn` with no `catch_unwind` wrap), making restore
+    /// decorative on that branch. `#[must_use]` on `PriorTurnDeps`
+    /// enforces the invariant at the type-system level.
+    fn install_turn_deps(&mut self, message: &InboundMessage) -> PriorTurnDeps {
+        let prior = PriorTurnDeps {
+            deps: self.deps.clone(),
+            state_deps: self.state.deps.clone(),
+        };
         let next = self.turn_deps(message);
         self.deps = next.clone();
         self.state.deps = next;
+        prior
+    }
+
+    /// Restore `self.deps` and `self.state.deps` to the values captured by
+    /// the paired `install_turn_deps` call. Call before every return path
+    /// in `handle_message` / `handle_message_batch` so the between-turn
+    /// window does not retain the prior turn's principal identity.
+    fn restore_turn_deps(&mut self, prior: PriorTurnDeps) {
+        self.deps = prior.deps;
+        self.state.deps = prior.state_deps;
     }
 
     fn record_decision_event(&self, reply_text: Option<&str>, user_id: Option<String>) {
@@ -1524,15 +1546,19 @@ impl Channel {
     /// Formats all messages with attribution and timestamps, persists each
     /// individually to conversation history, then presents them as one user turn
     /// with a coalesce hint telling the LLM this is a fast-moving conversation.
+    /// Public entry point. Handles the empty-batch guard, then installs
+    /// per-turn principal context and delegates to the inner body. Restores
+    /// prior context on all Ok/Err return paths. Panic path is not restored
+    /// (channel task dies on panic; see `install_turn_deps` doc).
     #[tracing::instrument(skip(self, messages), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_count = messages.len()))]
     async fn handle_message_batch(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
         // Empty batch is not a valid call shape. Returning early avoids an
-        // empty-turn no-op and, more importantly, prevents stale-principal
-        // leak: `install_turn_deps` is skipped below when `messages.first()`
-        // is None, so the previous turn's principal would persist on
-        // `self.deps` and `self.state.deps`. Any fire-and-forget work from
-        // the prior turn that reads `state.deps.auth_context()` would then
-        // attribute to whichever principal ran last, not to System.
+        // empty-turn no-op — with the Phase 5 Task 5.7b install/restore pair
+        // in place, between-turn principal leaks are already prevented by
+        // the paired `restore_turn_deps` call on the prior turn's exit, so
+        // the stale-principal argument that originally motivated this guard
+        // is no longer load-bearing. The guard stays because the empty case
+        // still represents a batcher bug worth surfacing.
         if messages.is_empty() {
             tracing::warn!(
                 channel_id = %self.id,
@@ -1541,37 +1567,39 @@ impl Channel {
             return Ok(());
         }
 
-        // Install the originating principal's auth context from the first
-        // message of the batch on self.deps and self.state.deps. All messages
-        // in a batch share a conversation, so principal is expected to be
-        // consistent; using `messages[0]` matches the plan's convention.
+        // Scan for principal-mismatch across the batch BEFORE installing, so
+        // the warn (if any) runs with the OUTER turn's deps. The wire
+        // semantics assume per-conversation context coherence; a mismatch is
+        // a signal that the batcher itself needs auditing, not that the
+        // dispatcher should absorb the inconsistency silently.
         //
-        // If a batch spans a token refresh or a cross-adapter merge, later
-        // messages could carry a different principal. We warn rather than
-        // split because batch semantics already assume per-conversation
-        // context coherence; a mismatch is a signal that the batcher
-        // itself needs auditing, not that the dispatcher should absorb
-        // the inconsistency silently. We continue scanning after the first
-        // mismatch so every divergence is surfaced, not just the earliest;
-        // forensic completeness matters more than log compactness for this
-        // path because it should never fire in production.
-        if let Some(first) = messages.first() {
-            let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
-            for (index, other) in messages.iter().enumerate().skip(1) {
-                let other_key = other.auth_context.as_ref().map(|ctx| ctx.principal_key());
-                if other_key != first_key {
-                    tracing::warn!(
-                        channel_id = %self.id,
-                        batch_size = messages.len(),
-                        first_principal = ?first_key,
-                        other_principal = ?other_key,
-                        other_index = index,
-                        "auth context mismatch within coalesced batch; using first message's principal; batcher may need audit"
-                    );
-                }
+        // SAFETY of `.expect`: guarded by `messages.is_empty()` check above;
+        // unreachable path.
+        let first = messages.first().expect("non-empty batch guaranteed by is_empty check");
+        let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
+        for (index, other) in messages.iter().enumerate().skip(1) {
+            let other_key = other.auth_context.as_ref().map(|ctx| ctx.principal_key());
+            if other_key != first_key {
+                tracing::warn!(
+                    channel_id = %self.id,
+                    batch_size = messages.len(),
+                    first_principal = ?first_key,
+                    other_principal = ?other_key,
+                    other_index = index,
+                    "auth context mismatch within coalesced batch; using first message's principal; batcher may need audit"
+                );
             }
-            self.install_turn_deps(first);
         }
+
+        let prior = self.install_turn_deps(first);
+        let result = self.handle_message_batch_inner(messages).await;
+        self.restore_turn_deps(prior);
+        result
+    }
+
+    async fn handle_message_batch_inner(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
+        // Per-turn principal context is already installed by the outer
+        // `handle_message_batch` wrapper (Phase 5 Task 5.7b).
 
         let message_count = messages.len();
         let batch_start_timestamp = messages
@@ -2023,15 +2051,26 @@ impl Channel {
     /// The LLM decides which tools to call: reply (to respond), branch (to think),
     /// spawn_worker (to delegate), route (to follow up with a worker), cancel, or
     /// memory_save. The tools act on the channel's shared state directly.
+    /// Public entry point. Installs per-turn principal context, delegates to
+    /// the inner body, and restores prior context on all return paths (Ok or
+    /// Err). Panic path is not restored; see `install_turn_deps` doc for why.
     #[tracing::instrument(skip(self, message), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_id = %message.id))]
     async fn handle_message(&mut self, message: InboundMessage) -> Result<()> {
+        let prior = self.install_turn_deps(&message);
+        let result = self.handle_message_inner(message).await;
+        self.restore_turn_deps(prior);
+        result
+    }
+
+    async fn handle_message_inner(&mut self, message: InboundMessage) -> Result<()> {
         // Apply runtime-config updates immediately without requiring a restart.
 
-        // Install the originating principal's auth context on self.deps and
-        // self.state.deps before any spawn/tool-registration path so spawned
-        // Branch/Worker processes inherit it. Falls back to LegacyStatic for
-        // non-authenticated adapters and system retrigger messages.
-        self.install_turn_deps(&message);
+        // Per-turn principal context is already installed by the outer
+        // `handle_message` wrapper (Phase 5 Task 5.7b); the wrapper also
+        // restores on all non-panic return paths. Tool-server registration
+        // inside `run_agent_turn` reads `self.state.clone()`, which captures
+        // the current per-turn-mutated `state.deps` — so originating
+        // principal propagates to spawned Branch/Worker processes.
 
         // Track the inbound message that triggered this turn so outbound
         // responses carry the correct routing metadata (e.g. Slack thread_ts).
@@ -3678,7 +3717,11 @@ impl Channel {
             timestamp: chrono::Utc::now(),
             metadata,
             formatted_author: None,
-            // auth_context: None for internal retrigger; Phase 5 will thread principal via audit log.
+            // auth_context: None for internal retrigger. The outer
+            // `handle_message` wrapper calls `install_turn_deps` on this
+            // message, which resolves None to `LegacyStatic` via
+            // `turn_deps`; retriggers are system-originated and attribute
+            // accordingly.
             auth_context: None,
         };
         match self.self_tx.try_send(synthetic) {

@@ -1219,11 +1219,11 @@ pub async fn create_agent_internal(
         // Agent-init defaults to System attribution. The running agent
         // processes inbound messages via `Channel::install_turn_deps`,
         // which overwrites `auth_context` with the per-turn principal
-        // before any spawn. This seed value is only observable before
-        // the first message arrives; any direct read of
-        // `state.deps.auth_context` without going through the turn path
-        // is an architectural violation flagged for the Phase-5
-        // scopeguard-restore (see `src/agent/channel.rs::install_turn_deps`).
+        // before any spawn and is paired with `restore_turn_deps` at
+        // turn end (Phase 5 Task 5.7b). This seed value is only
+        // observable before the first message arrives; any direct read
+        // of `state.deps.auth_context` without going through the turn
+        // path is an architectural violation.
         auth_context: crate::auth::AuthContext::legacy_static(),
     };
 
