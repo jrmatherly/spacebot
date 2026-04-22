@@ -315,6 +315,41 @@ pub async fn entra_auth_middleware(
                 }
             }
 
+            // Phase 5 Task 5.6: emit AuthSuccess audit event. Fire-and-forget
+            // via tokio::spawn; append failures surface via tracing::warn! per
+            // rust-essentials.md (no let _ = on Result). principal_type is
+            // sourced from `PrincipalType::as_canonical_str` so middleware +
+            // policy helpers + repository + test fixtures all agree on the
+            // snake_case form (PR #106 remediation I1).
+            if let Some(audit) = state.audit.load().as_ref().as_ref().cloned() {
+                let principal_key = ctx.principal_key();
+                let principal_type = ctx.principal_type.as_canonical_str().to_string();
+                let source_ip = request
+                    .headers()
+                    .get("x-forwarded-for")
+                    .or_else(|| request.headers().get("x-real-ip"))
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string);
+                tokio::spawn(async move {
+                    if let Err(error) = audit
+                        .append(crate::audit::AuditEvent {
+                            principal_key,
+                            principal_type,
+                            action: crate::audit::AuditAction::AuthSuccess,
+                            resource_type: None,
+                            resource_id: None,
+                            result: "allowed".into(),
+                            source_ip,
+                            request_id: None,
+                            metadata: serde_json::json!({}),
+                        })
+                        .await
+                    {
+                        tracing::warn!(%error, "audit append failed: auth_success event dropped");
+                    }
+                });
+            }
+
             request.extensions_mut().insert(ctx);
             next.run(request).await
         }
@@ -329,6 +364,34 @@ pub async fn entra_auth_middleware(
             // land at `warn!` so default `RUST_LOG=info` deployments see
             // brute-force probing without requiring a dashboard.
             tracing::warn!(reason, %path, "entra auth rejected");
+
+            // Phase 5 Task 5.6: emit AuthFailure audit event. principal_key is
+            // "unknown" because the token never validated; the `reason` field
+            // carries the AuthError classifier (header_missing, token_invalid,
+            // scope_denied, etc.) so the SOC 2 evidence surface can attribute
+            // the failure class.
+            if let Some(audit) = state.audit.load().as_ref().as_ref().cloned() {
+                let reason = reason.to_string();
+                tokio::spawn(async move {
+                    if let Err(error) = audit
+                        .append(crate::audit::AuditEvent {
+                            principal_key: "unknown".into(),
+                            principal_type: "unknown".into(),
+                            action: crate::audit::AuditAction::AuthFailure,
+                            resource_type: None,
+                            resource_id: None,
+                            result: reason,
+                            source_ip: None,
+                            request_id: None,
+                            metadata: serde_json::json!({}),
+                        })
+                        .await
+                    {
+                        tracing::warn!(%error, "audit append failed: auth_failure event dropped");
+                    }
+                });
+            }
+
             (err.status(), Json(json!({"error": err.to_string()}))).into_response()
         }
     }

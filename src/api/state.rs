@@ -121,6 +121,12 @@ pub struct ApiState {
     /// the store wrappers above so the Entra middleware can upsert user rows
     /// on successful auth without having to route through a store.
     pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
+    /// Instance-level audit appender. Attached atomically with the instance
+    /// pool via `set_instance_pool` (A-13: production construction lives at
+    /// that one call-site). `None` during the startup window before the pool
+    /// attaches; reads use `.load().as_ref().as_ref().cloned()` with graceful
+    /// no-op on the None branch.
+    pub audit: ArcSwap<Option<Arc<crate::audit::AuditAppender>>>,
     /// One-shot guard for the `entra_config not attached` warn in
     /// `entra_auth_middleware`. Set to `true` after the first emission so
     /// mock-validator integration tests (which leave `entra_config` None by
@@ -383,6 +389,7 @@ impl ApiState {
             project_store: ArcSwap::from_pointee(None),
             notification_store: ArcSwap::from_pointee(None),
             instance_pool: ArcSwap::from_pointee(None),
+            audit: ArcSwap::from_pointee(None),
             runtime_configs: ArcSwap::from_pointee(HashMap::new()),
             mcp_managers: ArcSwap::from_pointee(HashMap::new()),
             sandboxes: ArcSwap::from_pointee(HashMap::new()),
@@ -1037,6 +1044,22 @@ impl ApiState {
     /// reach the instance database via the typed stores (TaskStore, etc.)
     /// rather than this raw pool.
     pub fn set_instance_pool(&self, pool: sqlx::SqlitePool) {
+        // A-13: the AuditAppender singleton is constructed here, the only
+        // call-site where both ApiState and a pool are in scope. The
+        // pub(crate) constructor at crate::audit::AuditAppender::new enforces
+        // this at the module boundary.
+        //
+        // The appender is self-contained: it clones the pool into itself at
+        // construction (via AuditAppender::new(pool.clone())) and holds
+        // its own handle forever. We attach the appender BEFORE the outer
+        // `instance_pool` store so a racing observer sees either the
+        // fully-attached pair OR the brief (audit=Some, instance_pool=None)
+        // window. In the latter case, audit writes still succeed because
+        // the appender owns its pool handle; callers that read
+        // `state.instance_pool` directly (non-audit code paths) see None
+        // and no-op as designed.
+        let appender = Arc::new(crate::audit::AuditAppender::new(pool.clone()));
+        self.audit.store(Arc::new(Some(appender)));
         self.instance_pool.store(Arc::new(Some(pool)));
     }
 

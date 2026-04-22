@@ -205,17 +205,20 @@ pub(super) async fn list_memories(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            // Phase 5 replaces this with an `AuditAppender::append` call
-            // against the hash-chained audit log. For now, the tracing log
-            // is enough for operator-side visibility while Phase 5 is WIP.
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -310,17 +313,20 @@ pub(super) async fn search_memories(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            // Phase 5 replaces this with an `AuditAppender::append` call
-            // against the hash-chained audit log. For now, the tracing log
-            // is enough for operator-side visibility while Phase 5 is WIP.
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -413,17 +419,20 @@ pub(super) async fn memory_graph(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            // Phase 5 replaces this with an `AuditAppender::append` call
-            // against the hash-chained audit log. For now, the tracing log
-            // is enough for operator-side visibility while Phase 5 is WIP.
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -532,17 +541,20 @@ pub(super) async fn memory_graph_neighbors(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            // Phase 5 replaces this with an `AuditAppender::append` call
-            // against the hash-chained audit log. For now, the tracing log
-            // is enough for operator-side visibility while Phase 5 is WIP.
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {

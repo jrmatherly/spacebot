@@ -35,6 +35,40 @@ pub(super) struct TomlConfig {
     /// `llm.providers` at load time; the table form wins on conflict.
     #[serde(rename = "providers", default)]
     pub(super) top_level_providers: Vec<TopLevelProviderEntry>,
+    /// Phase 5 audit-log configuration. Currently carries only the export
+    /// sub-block; more audit knobs (retention, rate-limits) may land later.
+    #[serde(default)]
+    pub(super) audit: TomlAuditConfig,
+}
+
+/// Phase 5: audit-log config root. Only `[audit.export]` is populated today;
+/// the parent struct exists so future knobs (retention window, rate
+/// limits, scrub extensions) can slot in without another `[audit.*]` table.
+#[derive(Deserialize, Default)]
+pub(super) struct TomlAuditConfig {
+    #[serde(default)]
+    pub(super) export: Option<TomlAuditExportConfig>,
+}
+
+/// `[audit.export]` block. Phase 5 ships `mode = "filesystem"` only;
+/// `"s3"` and `"http_siem"` variants from `src/audit/export.rs` are
+/// bail-stubs pending Phase 10 SOC 2 hardening. Operator guide:
+/// `docs/design-docs/entra-audit-log.md`.
+#[derive(Deserialize)]
+pub(super) struct TomlAuditExportConfig {
+    pub(super) enabled: bool,
+    /// "filesystem" | "s3" | "http_siem". Parsed at load time into
+    /// `crate::audit::export::ExportMode`.
+    pub(super) mode: String,
+    /// Filesystem mode only. Defaults to `./audit-exports` at load time.
+    pub(super) dir: Option<String>,
+    /// Schedule interval in seconds. 86400 (24h) per SOC 2 typical.
+    #[serde(default = "default_audit_export_interval_secs")]
+    pub(super) interval_secs: u64,
+}
+
+pub(super) fn default_audit_export_interval_secs() -> u64 {
+    86400
 }
 
 #[derive(Deserialize)]

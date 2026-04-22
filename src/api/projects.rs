@@ -589,14 +589,20 @@ pub(super) async fn get_project(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "project",
-                resource_id = %project_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
             );
         }
     } else {
@@ -661,6 +667,12 @@ pub(super) async fn update_project(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -746,6 +758,12 @@ pub(super) async fn delete_project(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -816,6 +834,12 @@ pub(super) async fn scan_project(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -952,6 +976,12 @@ pub(super) async fn create_repo(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1037,6 +1067,12 @@ pub(super) async fn delete_repo(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1119,6 +1155,12 @@ pub(super) async fn create_worktree(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1251,6 +1293,12 @@ pub(super) async fn delete_worktree(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1365,14 +1413,20 @@ pub(super) async fn disk_usage(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "project",
-                resource_id = %project_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
             );
         }
     } else {
@@ -1482,14 +1536,20 @@ pub(super) async fn serve_logo(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "project",
-                resource_id = %project_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "project",
+                project_id.as_str(),
             );
         }
     } else {

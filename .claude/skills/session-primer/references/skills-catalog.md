@@ -1,6 +1,6 @@
 # Skills Catalog
 
-The 27 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
+The 33 project-level skills in `.claude/skills/`, organized by function. Each skill is invoked as a slash command (e.g., `/spacebot-dev`).
 
 ## Tier 1: Core Architecture Skills
 
@@ -44,6 +44,16 @@ These encode deep domain knowledge. Activate when working on the relevant subsys
 - AI components — ToolCall, MessageBubble, ChatComposer, TaskRow, TaskDetail
 - Integration — Vite (local HMR), Next.js, React Native/NativeWind
 - Conventions — bun only, TypeScript strict, forwardRef, CVA for variants
+
+### handler-authz-rollout (259 lines)
+**Trigger:** Adding a new REST handler under `src/api/` in a Phase 5+ PR that must preserve the Phase 4 PR 2 N1 inline-at-each-call-site authz pattern. Rollout-specific; complement to `api-handler-add`.
+
+**Covers:**
+- The ~45-line inline gate block template (`check_read_with_audit` or `check_write` + pool-None else branch with metric-then-error ordering)
+- Five-canonical-tests contract (`owner-200`, `non-owner-404`, `admin-bypass`, `create-assigns-ownership`, `pool-None-skip`)
+- Test-file scaffold for `tests/api_<resource>_authz.rs`
+- A-09 (bare UUIDs) + A-12 (`.await set_ownership`) invariants
+- Composes with `authz-gate-conformance` + `integration-test-coverage-auditor` subagents
 
 ### api-handler-add
 **Trigger:** Adding a new REST route under `src/api/`, or modifying an existing handler that changes request/response types.
@@ -116,6 +126,24 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Target ≤400 lines, ≤10 files, 1-4 commits per slice
 - Order: prerequisites → refactors → behavior → UI/docs/polish
 
+### pr-remediation-batch (162 lines)
+**Trigger:** After a multi-agent PR review surfaces a batch of findings that span multiple concern types (fix + test + docs). Groups findings by commit boundary; applies narrow-verification-between-commits discipline.
+
+**Covers:**
+- Three-commit grouping: security/fix → tests → docs, one per concern type
+- Per-commit verification gates (narrowest that catches the class)
+- Commit-message convention with review-item IDs cited
+- Composes with `pr-gates` (Step 5 invokes the full gate before push) and `session-sync` (runs after, at end of session)
+- Complements `review-fix-loop` (this skill is batch-oriented; review-fix-loop is single-finding-oriented)
+
+### dependabot-response (181 lines)
+**Trigger:** A Dependabot PR lands and needs triage — safe-fold, defer, or skip.
+
+**Covers:**
+- `gh` CLI patterns for pulling PR metadata + mergeStateStatus
+- Classification: SAFE-FOLD into current feature branch / DEFER to CI-maintenance PR / SKIP for major bumps needing code changes
+- Composition with the `dependabot-triager` subagent (Tier 2 invocation boundary)
+
 ### review-fix-loop (47 lines)
 **Trigger:** "address review feedback", "fix PR comments"
 - Parse findings into P1/P2/P3
@@ -136,6 +164,14 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Phase 10 terminal variant creates `entra-rollout-complete.md` retrospective instead
 - Pre-conditions: CI green, `claude-review` zero findings, no uncommitted work
 - Pairs with the per-phase "Session-primer handoff" task documented in `.scratchpad/plans/entraid-auth/phase-*.md`
+
+### phase-5-audit-log-scaffolder (190 lines)
+**Trigger:** Kick off Phase 5 (audit log, hash-chained + WORM export) of the Entra ID rollout — user-invocable only, one-off Spacebot-specific skill.
+- Reads the Phase 5 plan + PR 104/105 review artifacts for Phase-5-tagged deferred items
+- Produces Task 5.1 seed: `audit_events` migration + `src/audit.rs` module root + `src/lib.rs` registration
+- Deferred-item inventory mapping I1/I2/I3/I6/N3/N4/N5 to Phase 5 tasks 5.3-5.11
+- 3-commit initial work plan (migration+scaffold → AuditAppender → wire into ApiState + flip admin-override info! sites)
+- Retires (or repurposes for Phase 6) once Phase 5 ships
 
 ---
 
@@ -194,6 +230,19 @@ The OpenSpec system manages structured change proposals through a lifecycle: exp
 - Suggests `just clean-all` as nuclear next step if sweep didn't reclaim enough
 - Pairs with the storage-discipline sections in `.scratchpad/plans/entraid-auth/phase-*.md`
 - `--force` flag sweeps regardless of size; numeric argument overrides threshold
+
+### post-sweep-verification (132 lines)
+**Trigger:** After a bulk mechanical sweep (em-dash replacements, severity escalations, grep-driven multi-file edits) that touched files across multiple gate boundaries. User-invocable only.
+- Maps modified file patterns to the specific verification gates that apply, then runs only the relevant gates
+- Encodes the CI-typegen lesson from PR #105 (em-dash sweep via `perl -i -pe` on `src/api/*.rs` bypassed the PostToolUse typegen hook and landed stale `schema.d.ts`)
+- Narrower than `just gate-pr` (mid-work checkpoints, not pre-push); narrower than `cargo build` (file-pattern-driven gate selection)
+- Composes with `pr-gates` (pre-push) and `pr-remediation-batch` (Step 3 per-commit verification)
+
+### graphify-query-helper (150 lines)
+**Trigger:** Cross-document semantic questions across design docs, RFCs, and screenshots — use when the local graphify knowledge graph at `graphify-out/` is already built.
+- Wraps `just graphify-query "<question>"` with BFS-traversal guidance
+- Complements the `code-review-graph` MCP (which handles structural Rust code queries)
+- Opt-in per-developer; requires `pipx install graphifyy`
 
 ### writing-guide-scan
 **Trigger:** Before commit during session-sync, docs-audit, or phase-wrap workflows. User-invocable only.

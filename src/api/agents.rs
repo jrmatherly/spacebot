@@ -388,14 +388,20 @@ pub(super) async fn list_agent_mcp(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -451,6 +457,12 @@ pub(super) async fn reconnect_agent_mcp(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                request.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -529,14 +541,15 @@ pub(super) async fn get_warmup_status(
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
             if !access.is_allowed() {
+                crate::auth::policy::fire_denied_audit(&state.audit, &auth_ctx, "agent", agent_id);
                 return Err(access.to_status());
             }
             if admin_override {
-                tracing::info!(
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
-                    resource_id = %agent_id,
-                    "admin_read override (audit event queued for Phase 5)"
+                crate::auth::policy::fire_admin_read_audit(
+                    &state.audit,
+                    &auth_ctx,
+                    "agent",
+                    agent_id,
                 );
             }
         } else {
@@ -618,6 +631,7 @@ pub(super) async fn trigger_warmup(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
             if !access.is_allowed() {
+                crate::auth::policy::fire_denied_audit(&state.audit, &auth_ctx, "agent", agent_id);
                 return Err(access.to_status());
             }
         } else {
@@ -1219,11 +1233,11 @@ pub async fn create_agent_internal(
         // Agent-init defaults to System attribution. The running agent
         // processes inbound messages via `Channel::install_turn_deps`,
         // which overwrites `auth_context` with the per-turn principal
-        // before any spawn. This seed value is only observable before
-        // the first message arrives; any direct read of
-        // `state.deps.auth_context` without going through the turn path
-        // is an architectural violation flagged for the Phase-5
-        // scopeguard-restore (see `src/agent/channel.rs::install_turn_deps`).
+        // before any spawn and is paired with `restore_turn_deps` at
+        // turn end (Phase 5 Task 5.7b). This seed value is only
+        // observable before the first message arrives; any direct read
+        // of `state.deps.auth_context` without going through the turn
+        // path is an architectural violation.
         auth_context: crate::auth::AuthContext::legacy_static(),
     };
 
@@ -1443,6 +1457,12 @@ pub(super) async fn update_agent(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1611,6 +1631,12 @@ pub(super) async fn delete_agent(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -1797,14 +1823,20 @@ pub(super) async fn agent_overview(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -2136,14 +2168,20 @@ pub(super) async fn get_agent_profile(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -2200,14 +2238,20 @@ pub(super) async fn get_identity(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -2269,6 +2313,12 @@ pub(super) async fn update_identity(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                request.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -2553,14 +2603,20 @@ pub(super) async fn get_avatar(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -2643,6 +2699,12 @@ pub(super) async fn upload_avatar(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -2741,6 +2803,12 @@ pub(super) async fn delete_avatar(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {

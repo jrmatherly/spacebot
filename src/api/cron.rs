@@ -188,14 +188,20 @@ pub(super) async fn list_cron_jobs(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -294,14 +300,20 @@ pub(super) async fn cron_executions(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -519,6 +531,12 @@ pub(super) async fn create_or_update_cron(
                     )
                 })?;
             if !access.is_allowed() {
+                crate::auth::policy::fire_denied_audit(
+                    &state.audit,
+                    &auth_ctx,
+                    "cron_job",
+                    request.id.as_str(),
+                );
                 return Err(cron_err(
                     access.to_status(),
                     format!("cron '{}' not accessible", request.id),
@@ -649,6 +667,12 @@ pub(super) async fn delete_cron(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "cron_job",
+                query.cron_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -719,6 +743,12 @@ pub(super) async fn trigger_cron(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "cron_job",
+                request.cron_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -782,6 +812,12 @@ pub(super) async fn toggle_cron(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "cron_job",
+                request.cron_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {

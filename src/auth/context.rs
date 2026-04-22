@@ -26,6 +26,25 @@ pub enum PrincipalType {
     LegacyStatic,
 }
 
+impl PrincipalType {
+    /// Canonical snake_case string form used across the codebase wherever
+    /// the principal type is serialized as free-text: audit events
+    /// (`audit_events.principal_type` column), repository upserts
+    /// (`users.principal_type` CHECK constraint in
+    /// `migrations/global/20260420120003_users.sql`), and test helpers
+    /// (`src/auth/testing.rs`). One source of truth prevents the
+    /// "serviceprincipal" vs "service_principal" drift that PR #106
+    /// I1 flagged in `fire_admin_read_audit` / `fire_denied_audit`.
+    pub fn as_canonical_str(self) -> &'static str {
+        match self {
+            PrincipalType::User => "user",
+            PrincipalType::ServicePrincipal => "service_principal",
+            PrincipalType::System => "system",
+            PrincipalType::LegacyStatic => "legacy_static",
+        }
+    }
+}
+
 /// Extracted and validated per-request principal. Attached to request
 /// extensions by the middleware. Handlers extract via the `AuthContext`
 /// Axum extractor.

@@ -255,3 +255,76 @@ pub async fn check_write(
         Ok(Access::Denied(DenyReason::NotYours))
     }
 }
+
+/// Fire an AdminRead audit event (break-glass override). Fire-and-forget via
+/// tokio::spawn. Logs the append failure via tracing::warn! (never silently
+/// dropped — SOC 2 evidence requires visibility into dropped events).
+pub fn fire_admin_read_audit(
+    audit: &arc_swap::ArcSwap<Option<std::sync::Arc<crate::audit::AuditAppender>>>,
+    ctx: &crate::auth::context::AuthContext,
+    resource_type: &str,
+    resource_id: &str,
+) {
+    if let Some(audit) = audit.load().as_ref().as_ref().cloned() {
+        let principal_key = ctx.principal_key();
+        // PR #106 I1: source principal_type from PrincipalType::as_canonical_str
+        // so ServicePrincipal admins (app-role assignments) are correctly
+        // attributed as "service_principal" instead of hardcoded "user".
+        let principal_type = ctx.principal_type.as_canonical_str().to_string();
+        let resource_type = resource_type.to_string();
+        let resource_id = resource_id.to_string();
+        tokio::spawn(async move {
+            if let Err(error) = audit
+                .append(crate::audit::AuditEvent {
+                    principal_key,
+                    principal_type,
+                    action: crate::audit::AuditAction::AdminRead,
+                    resource_type: Some(resource_type),
+                    resource_id: Some(resource_id),
+                    result: "allowed".into(),
+                    source_ip: None,
+                    request_id: None,
+                    metadata: serde_json::json!({"reason": "break_glass"}),
+                })
+                .await
+            {
+                tracing::warn!(%error, "audit append failed: admin_read event dropped");
+            }
+        });
+    }
+}
+
+/// Fire an AuthzDenied audit event. Same fire-and-forget + warn-on-error
+/// contract as [`fire_admin_read_audit`].
+pub fn fire_denied_audit(
+    audit: &arc_swap::ArcSwap<Option<std::sync::Arc<crate::audit::AuditAppender>>>,
+    ctx: &crate::auth::context::AuthContext,
+    resource_type: &str,
+    resource_id: &str,
+) {
+    if let Some(audit) = audit.load().as_ref().as_ref().cloned() {
+        let principal_key = ctx.principal_key();
+        // PR #106 I1: see fire_admin_read_audit for the snake_case sourcing rationale.
+        let principal_type = ctx.principal_type.as_canonical_str().to_string();
+        let resource_type = resource_type.to_string();
+        let resource_id = resource_id.to_string();
+        tokio::spawn(async move {
+            if let Err(error) = audit
+                .append(crate::audit::AuditEvent {
+                    principal_key,
+                    principal_type,
+                    action: crate::audit::AuditAction::AuthzDenied,
+                    resource_type: Some(resource_type),
+                    resource_id: Some(resource_id),
+                    result: "denied".into(),
+                    source_ip: None,
+                    request_id: None,
+                    metadata: serde_json::json!({}),
+                })
+                .await
+            {
+                tracing::warn!(%error, "audit append failed: authz_denied event dropped");
+            }
+        });
+    }
+}

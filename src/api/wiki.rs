@@ -369,14 +369,20 @@ pub(super) async fn get_page(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                page.id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "wiki_page",
-                resource_id = %page.id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                page.id.as_str(),
             );
         }
     } else {
@@ -440,6 +446,12 @@ pub(super) async fn edit_page(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                existing.id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -515,14 +527,20 @@ pub(super) async fn get_history(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                existing.id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "wiki_page",
-                resource_id = %existing.id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                existing.id.as_str(),
             );
         }
     } else {
@@ -588,6 +606,12 @@ pub(super) async fn restore_version(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                existing.id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -655,6 +679,12 @@ pub(super) async fn archive_page(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "wiki_page",
+                existing.id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
