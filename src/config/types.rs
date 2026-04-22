@@ -76,9 +76,11 @@ pub struct Config {
 /// the operator guide.
 #[derive(Debug, Clone, Default)]
 pub struct AuditConfig {
-    /// `None` when export is disabled or unconfigured. When `Some`, the
-    /// cortex maintenance loop runs `export_audit` on the configured
-    /// interval (A-14 incremental, A-15 mode-keyed).
+    /// `None` when export is disabled or unconfigured. When `Some`, a
+    /// top-level tokio task spawned from `src/main.rs` runs `export_audit`
+    /// on the configured interval (A-14 incremental, A-15 mode-keyed).
+    /// The task reads `instance_pool` (known Some at spawn time, because
+    /// `set_instance_pool` runs a few lines earlier in daemon startup).
     pub export: Option<AuditExportScheduledConfig>,
 }
 

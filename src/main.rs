@@ -1687,8 +1687,16 @@ async fn run(
     // Phase 5 Task 5.10: schedule daily audit-log WORM export when
     // `[audit.export].enabled = true`. Fire-and-forget spawn; survival
     // tracked via tracing. On export failure, the cursor in
-    // `audit_export_state` does NOT advance — next tick retries the same
-    // seq range (A-14 incremental semantics).
+    // `audit_export_state` does NOT advance, and the next tick retries
+    // the same seq range (A-14 incremental semantics).
+    //
+    // PR #106 C1 noted that a persistent Err (bad filesystem dir,
+    // future S3/HttpSiem misconfig that bypassed the load-time bail)
+    // would produce a `tracing::error!` firehose. Mitigate via a
+    // consecutive-failure counter: first 2 failures fire at error!,
+    // subsequent identical failures suppress to debug! until a success
+    // clears the counter. The first error on any recovery still fires
+    // at error! so operator pagers wake.
     if let Some(audit_export) = config.audit.export.clone() {
         let pool_for_export = instance_pool.clone();
         tokio::spawn(async move {
@@ -1699,17 +1707,22 @@ async fn run(
                 "audit export scheduler started",
             );
             let mut ticker = tokio::time::interval(audit_export.interval);
-            // First tick fires immediately per tokio's default `MissedTickBehavior::Burst`;
-            // switch to Delay so the first export happens one interval after
-            // startup, not during boot-phase database warmup.
+            // `tokio::time::interval` always fires its first tick
+            // immediately; we consume it so the first real export
+            // happens one full interval after startup (avoids
+            // boot-phase DB warmup contention). `MissedTickBehavior::Delay`
+            // governs post-startup behavior: if the daemon pauses for
+            // more than one interval, don't burst-catchup on resume.
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             ticker.tick().await; // consume the immediate tick
+            let mut consecutive_failures: u32 = 0;
             loop {
                 ticker.tick().await;
                 match spacebot::audit::export::export_audit(&pool_for_export, &audit_export.config)
                     .await
                 {
                     Ok(result) if result.rows_exported > 0 => {
+                        consecutive_failures = 0;
                         tracing::info!(
                             mode = mode_label,
                             rows = result.rows_exported,
@@ -1719,10 +1732,31 @@ async fn run(
                         );
                     }
                     Ok(_) => {
+                        consecutive_failures = 0;
                         tracing::debug!(mode = mode_label, "audit export: no new rows");
                     }
                     Err(error) => {
-                        tracing::error!(%error, mode = mode_label, "audit export failed");
+                        consecutive_failures = consecutive_failures.saturating_add(1);
+                        // First two failures: error! (wakes pagers + is visible
+                        // in default log filters). Subsequent runs of the same
+                        // error class: debug! to avoid log firehose. A success
+                        // that arrives between failures resets the counter so
+                        // the next failure escalates again.
+                        if consecutive_failures <= 2 {
+                            tracing::error!(
+                                %error,
+                                mode = mode_label,
+                                consecutive_failures,
+                                "audit export failed",
+                            );
+                        } else {
+                            tracing::debug!(
+                                %error,
+                                mode = mode_label,
+                                consecutive_failures,
+                                "audit export failed (suppressed; >2 consecutive)",
+                            );
+                        }
                     }
                 }
             }

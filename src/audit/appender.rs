@@ -151,7 +151,7 @@ impl AuditAppender {
     pub async fn verify_chain(&self) -> sqlx::Result<ChainVerifyResult> {
         // Hold the write mutex so concurrent appends do not race the
         // snapshot read. Auditors calling this while the daemon serves
-        // live traffic must see a consistent view of the chain — without
+        // live traffic must see a consistent view of the chain. Without
         // this guard, a row inserted mid-SELECT can make verify() return
         // spurious false-negatives. (Per 2026-04-22 Phase 5 audit IMPORTANT 8.)
         let _guard = self.write_mutex.lock().await;

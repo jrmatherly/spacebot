@@ -1,5 +1,5 @@
-//! Daily WORM export. Filesystem mode is dev-only and NOT tamper-evident (per A-15 — chattr +i
-//! removed because it silently fails in non-root containers). Production deployments MUST use
+//! Daily WORM export. Filesystem mode is dev-only and NOT tamper-evident (per A-15, which
+//! removed chattr +i because it silently fails in non-root containers). Production deployments MUST use
 //! S3 Object Lock (`ExportMode::S3`) or append-only SIEM ingestion (`ExportMode::HttpSiem`); both
 //! are fully-serializable enum variants whose implementations land in Phase 10 SOC 2 hardening.
 

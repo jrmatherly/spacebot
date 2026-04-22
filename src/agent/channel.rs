@@ -660,7 +660,7 @@ impl Drop for MessageDurationGuard {
 /// turn by `Channel::install_turn_deps`, restored by `restore_turn_deps` at
 /// the end of the turn. `#[must_use]` ensures a contributor who forgets the
 /// restore call gets a compile-time warning instead of a silent
-/// between-turn principal leak — see Phase 5 Task 5.7b notes on the
+/// between-turn principal leak. See Phase 5 Task 5.7b notes on the
 /// `install_turn_deps` doc comment for the runtime rationale.
 #[must_use = "PriorTurnDeps must be restored via restore_turn_deps before the turn returns; \
               dropping the prior on the floor leaks mutated deps into subsequent turns"]
@@ -1570,7 +1570,7 @@ impl Channel {
     #[tracing::instrument(skip(self, messages), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_count = messages.len()))]
     async fn handle_message_batch(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
         // Empty batch is not a valid call shape. Returning early avoids an
-        // empty-turn no-op — with the Phase 5 Task 5.7b install/restore pair
+        // empty-turn no-op. With the Phase 5 Task 5.7b install/restore pair
         // in place, between-turn principal leaks are already prevented by
         // the paired `restore_turn_deps` call on the prior turn's exit, so
         // the stale-principal argument that originally motivated this guard

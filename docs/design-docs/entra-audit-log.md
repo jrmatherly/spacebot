@@ -37,7 +37,7 @@ Indexes: `(seq UNIQUE)`, `(timestamp)`, `(principal_key)`, `(action)`, `(resourc
 
 ## Retention
 
-- **Online in SQLite:** 1 year minimum. Operator-tuned via external backup/archive tooling; the daemon does not prune.
+- **Online in SQLite:** 1 year minimum. Operator-tuned via external backup/archive tooling. The daemon does not prune.
 - **WORM archive:** 7 years (SOC 2 typical). Achieved via the export sinks documented below.
 
 ## Chain verification procedure (for auditors)
@@ -122,7 +122,7 @@ Per A-15, filesystem mode is **dev-only** and is NOT claimed as
 tamper-evident. The 2026-04-22 Phase 5 audit removed the original
 `chattr +i` immutability claim because it silently fails in non-root
 containers (Spacebot's Talos deployment runs as non-root). A local
-filesystem can be modified freely after write; the tamper-evidence
+filesystem can be modified freely after write. The tamper-evidence
 boundary is the external sink.
 
 ### Mode: `s3` (production, not yet wired)
@@ -141,9 +141,9 @@ meet SOC 2 WORM requirements. Supported backends: AWS S3, MinIO,
 Cloudflare R2, OCI Object Storage.
 
 Phase 5 ships this as an `anyhow::bail!` stub referencing Phase 10
-SOC 2 hardening for the real upload pipeline; the config surface +
-enum variant + `audit_export_state` cursor are in place so the Phase 10
-wire-up is a bounded drop-in.
+SOC 2 hardening for the real upload pipeline. The config surface,
+enum variant, and `audit_export_state` cursor are in place so the
+Phase 10 wire-up is a bounded drop-in.
 
 ### Mode: `http_siem` (production, not yet wired)
 
@@ -155,13 +155,13 @@ mode = "http_siem"
 ```
 
 Ships NDJSON to an external SIEM (Splunk HEC, Datadog ingest, generic
-HTTPS POST). SIEM owns retention; the daemon is stateless w.r.t.
-long-term retention. Stub same as `s3`; real wire-up in Phase 10.
+HTTPS POST). SIEM owns retention. The daemon is stateless w.r.t.
+long-term retention. Stub same as `s3`. Real wire-up in Phase 10.
 
 ## Retention for export files
 
 Operator responsibility. The daemon writes exports and advances the
-cursor; it does NOT delete or archive past exports. Use:
+cursor. It does NOT delete or archive past exports. Use:
 
 - Filesystem ACLs + external backup (dev only).
 - S3 Object Lock retention timer (production).

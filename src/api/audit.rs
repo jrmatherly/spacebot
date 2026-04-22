@@ -240,7 +240,7 @@ fn csv_escape(field: &str) -> String {
 ///
 /// Semantics kept intentionally narrow: if CSV appears ahead of NDJSON
 /// in the header (or NDJSON is absent), prefer CSV. Otherwise NDJSON is
-/// the default. Quality weights are ignored for simplicity — operator
+/// the default. Quality weights are ignored for simplicity. Operator
 /// tooling that wants CSV will send `Accept: text/csv` unambiguously.
 fn accept_prefers_csv(accept: &str) -> bool {
     // Look at the first matching media type. Split on comma, trim, take

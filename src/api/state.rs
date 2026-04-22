@@ -1047,10 +1047,17 @@ impl ApiState {
         // A-13: the AuditAppender singleton is constructed here, the only
         // call-site where both ApiState and a pool are in scope. The
         // pub(crate) constructor at crate::audit::AuditAppender::new enforces
-        // this at the module boundary. Attach the appender BEFORE the pool
-        // so any early-bound middleware path that races the store sees either
-        // (audit=Some, pool=None) — benign, the audit append would fail
-        // cleanly on a missing pool — or the fully-attached pair.
+        // this at the module boundary.
+        //
+        // The appender is self-contained: it clones the pool into itself at
+        // construction (via AuditAppender::new(pool.clone())) and holds
+        // its own handle forever. We attach the appender BEFORE the outer
+        // `instance_pool` store so a racing observer sees either the
+        // fully-attached pair OR the brief (audit=Some, instance_pool=None)
+        // window. In the latter case, audit writes still succeed because
+        // the appender owns its pool handle; callers that read
+        // `state.instance_pool` directly (non-audit code paths) see None
+        // and no-op as designed.
         let appender = Arc::new(crate::audit::AuditAppender::new(pool.clone()));
         self.audit.store(Arc::new(Some(appender)));
         self.instance_pool.store(Arc::new(Some(pool)));
