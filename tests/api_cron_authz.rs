@@ -306,15 +306,17 @@ async fn non_owner_trigger_cron_returns_denied() {
 }
 
 #[tokio::test]
-async fn system_can_read_cron_of_disabled_user() {
+async fn system_bypasses_ownership_for_scheduled_run() {
     // Regression guard MANDATED by the Phase 4 PR 2 plan. Scheduled cron
     // runs execute as `PrincipalType::System`. `is_admin` includes System
     // in its bypass set (see `src/auth/roles.rs`), so check_read allows
-    // the System principal against any resource, including a cron owned
-    // by a user whose user row is absent (analog for "disabled user" since
-    // the repository has no public Disabled setter today). If a future
-    // refactor narrows `is_admin` to exclude System, this test fires and
-    // prevents silent breakage of scheduled execution.
+    // the System principal against any resource regardless of the owner's
+    // identity or user-table state. The plan originally framed this as
+    // "cron of a disabled user" but the ownership FK forces the user row
+    // to exist; the test keeps the spirit by proving the bypass still
+    // fires against a non-matching principal owner. If a future refactor
+    // narrows `is_admin` to exclude System, this test fires and prevents
+    // silent breakage of scheduled execution.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     // The plan suggests skipping Alice's user row to simulate
