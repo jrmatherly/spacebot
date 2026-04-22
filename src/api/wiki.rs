@@ -29,6 +29,14 @@
 //! plus feature-gated `spacebot_authz_skipped_total{handler="wiki"}`.
 //! The metric label is the file resource family (`"wiki"`), never a
 //! per-handler sub-label, which keeps cardinality flat.
+//!
+//! Deferred perf: `edit_page` / `restore_version` / `archive_page`
+//! each call `load_by_slug` for the gate and then call a `WikiStore`
+//! write method that re-fetches internally. This is a single indexed
+//! SELECT and wiki edits are a cold path relative to task writes, so
+//! the duplicate is accepted rather than mirroring `tasks.rs`'s
+//! `update_prefetched` optimization. Revisit if the wiki write path
+//! ever lands on the hot path.
 
 use super::state::ApiState;
 use crate::error::{Error as CrateError, WikiError};
