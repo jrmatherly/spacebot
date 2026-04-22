@@ -10,9 +10,10 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (227 .rs files)
+├── src/                           (232 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
-│   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
+│   ├── api/                       (33 files) - REST endpoints (axum + utoipa OpenAPI)
+│   ├── audit/                     (3 files)  - Phase 5: types (AuditAction/AuditEvent/AuditRow/canonical_bytes), appender (A-13 singleton, tokio-Mutex-serialized insert, verify_chain), export (3 ExportMode variants per A-15; Filesystem dev-only + S3/HttpSiem Phase-10 stubs)
 │   ├── auth/                      (11 files) - Entra ID (Phases 1-4): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
 │   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
@@ -35,13 +36,13 @@ spacebot/
 │   └── api-client/                - OpenAPI TypeScript client (code-gen from Rust spec; consumed by interface/)
 ├── docs/                           (40 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
-├── migrations/                     (54 SQL migrations: 41 flat per-agent + 13 instance-wide under global/, 2026-02 → 2026-04)
+├── migrations/                     (55 SQL migrations: 41 flat per-agent + 14 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
 ├── prompts/                        (91 Jinja2 templates: top-level, tools/, adapters/, schedulers/, fragments/)
 ├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
-└── tests/                          (32 integration test files)
+└── tests/                          (39 integration test files)
 ```
 
 ---
@@ -62,8 +63,9 @@ spacebot/
 | Module | Purpose |
 |---|---|
 | **agent** | Channel, worker, branch, cortex, compactor process model |
-| **api** | 32 REST endpoints via axum + utoipa OpenAPI |
-| **auth** | Entra ID JWT validation (Phase 1) + authz data model (Phase 2) + Graph API + group resolution (Phase 3) + per-handler authorization helpers (Phase 4) |
+| **api** | 33 REST endpoints via axum + utoipa OpenAPI |
+| **audit** | Phase 5 hash-chained audit log: AuditAppender (A-13 singleton, tokio-Mutex narrow txn, verify_chain), types (AuditAction enum + canonical_bytes), export (3 ExportMode variants per A-15) |
+| **auth** | Entra ID JWT validation (Phase 1) + authz data model (Phase 2) + Graph API + group resolution (Phase 3) + per-handler authorization helpers (Phase 4) + PrincipalType::as_canonical_str (Phase 5) |
 | **config** | TOML loader, permissions, provider routing, runtime watcher |
 | **llm** | Rig-core v0.35 orchestration, model routing, pricing, auth |
 | **memory** | Graph store (typed SQLite), working memory, semantic search |
@@ -139,7 +141,7 @@ just gate-pr
 ## Test Coverage
 
 - 893 `#[test]` + `#[tokio::test]` annotations across src/
-- 32 dedicated integration test files in tests/
+- 39 dedicated integration test files in tests/
 - CI gate: `just gate-pr` enforces check-sidecar-naming + 3 frontend invariant guards (check-workspace-protocol, check-vite-dedupe, check-adr-anchors) + fmt + clippy (RUSTFLAGS=-Dwarnings) + lib tests + integration test compile. Migration-safety check is defined but disabled; the enforcement logic lives at `scripts/_disabled/check-migration-safety.sh` and can be reactivated from there. Use `just gate-pr-fast` for tight iteration (cargo check in place of clippy, skip integration compile; does NOT propagate -Dwarnings).
 
 ---
