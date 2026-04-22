@@ -66,6 +66,28 @@ pub struct Config {
     pub spacedrive: crate::spacedrive::SpacedriveIntegrationConfig,
     /// OpenTelemetry export configuration.
     pub telemetry: TelemetryConfig,
+    /// Phase 5 audit-log configuration. `audit.export` is None when
+    /// `[audit.export]` is absent from TOML or carries `enabled = false`.
+    pub audit: AuditConfig,
+}
+
+/// Phase 5 audit-log configuration root. See `src/audit/export.rs` for
+/// export-mode semantics and `docs/design-docs/entra-audit-log.md` for
+/// the operator guide.
+#[derive(Debug, Clone, Default)]
+pub struct AuditConfig {
+    /// `None` when export is disabled or unconfigured. When `Some`, the
+    /// cortex maintenance loop runs `export_audit` on the configured
+    /// interval (A-14 incremental, A-15 mode-keyed).
+    pub export: Option<AuditExportScheduledConfig>,
+}
+
+/// Resolved `[audit.export]` settings. Carries both the `ExportConfig`
+/// value passed to `export_audit` and the scheduler's interval.
+#[derive(Debug, Clone)]
+pub struct AuditExportScheduledConfig {
+    pub config: crate::audit::export::ExportConfig,
+    pub interval: std::time::Duration,
 }
 
 impl Config {

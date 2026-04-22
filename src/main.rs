@@ -1684,6 +1684,49 @@ async fn run(
     // Start background update checker
     spacebot::update::spawn_update_checker(api_state.update_status.clone());
 
+    // Phase 5 Task 5.10: schedule daily audit-log WORM export when
+    // `[audit.export].enabled = true`. Fire-and-forget spawn; survival
+    // tracked via tracing. On export failure, the cursor in
+    // `audit_export_state` does NOT advance — next tick retries the same
+    // seq range (A-14 incremental semantics).
+    if let Some(audit_export) = config.audit.export.clone() {
+        let pool_for_export = instance_pool.clone();
+        tokio::spawn(async move {
+            let mode_label = audit_export.config.mode.kind_str();
+            tracing::info!(
+                mode = mode_label,
+                interval_secs = audit_export.interval.as_secs(),
+                "audit export scheduler started",
+            );
+            let mut ticker = tokio::time::interval(audit_export.interval);
+            // First tick fires immediately per tokio's default `MissedTickBehavior::Burst`;
+            // switch to Delay so the first export happens one interval after
+            // startup, not during boot-phase database warmup.
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            ticker.tick().await; // consume the immediate tick
+            loop {
+                ticker.tick().await;
+                match spacebot::audit::export::export_audit(&pool_for_export, &audit_export.config).await {
+                    Ok(result) if result.rows_exported > 0 => {
+                        tracing::info!(
+                            mode = mode_label,
+                            rows = result.rows_exported,
+                            first_seq = ?result.first_seq,
+                            last_seq = ?result.last_seq,
+                            "audit export completed",
+                        );
+                    }
+                    Ok(_) => {
+                        tracing::debug!(mode = mode_label, "audit export: no new rows");
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, mode = mode_label, "audit export failed");
+                    }
+                }
+            }
+        });
+    }
+
     // Start metrics server if enabled (requires `metrics` cargo feature)
     #[cfg(feature = "metrics")]
     let _metrics_handle = if config.metrics.enabled {

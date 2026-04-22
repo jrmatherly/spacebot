@@ -1064,6 +1064,9 @@ impl Config {
                 sample_rate: 1.0,
                 otlp_protocol: std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok(),
             },
+            // Phase 5: no-export fallback when the minimal env-driven
+            // loader is used (fresh install / no config.toml yet).
+            audit: crate::config::types::AuditConfig::default(),
         })
     }
 
@@ -2723,6 +2726,49 @@ impl Config {
             }
         };
 
+        // Phase 5: map `[audit.export]` TOML to resolved AuditConfig. Only
+        // Filesystem mode is resolvable at this layer; `s3` / `http_siem`
+        // would need secret-store resolution for credentials. A-15 plan
+        // defers those real implementations to Phase 10, so Phase 5 treats
+        // any mode other than `filesystem` as a configuration error rather
+        // than silently ignoring.
+        let audit = {
+            let export = toml
+                .audit
+                .export
+                .as_ref()
+                .filter(|e| e.enabled)
+                .map(|e| -> anyhow::Result<crate::config::types::AuditExportScheduledConfig> {
+                    let mode = match e.mode.as_str() {
+                        "filesystem" => crate::audit::export::ExportMode::Filesystem {
+                            dir: e
+                                .dir
+                                .clone()
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| std::path::PathBuf::from("./audit-exports")),
+                        },
+                        "s3" => anyhow::bail!(
+                            "audit.export.mode = \"s3\" requires Phase 10 wire-up; not available in Phase 5"
+                        ),
+                        "http_siem" => anyhow::bail!(
+                            "audit.export.mode = \"http_siem\" requires Phase 10 wire-up; not available in Phase 5"
+                        ),
+                        other => anyhow::bail!(
+                            "unknown audit.export.mode: {other:?} (expected \"filesystem\")"
+                        ),
+                    };
+                    Ok(crate::config::types::AuditExportScheduledConfig {
+                        config: crate::audit::export::ExportConfig {
+                            enabled: true,
+                            mode,
+                        },
+                        interval: std::time::Duration::from_secs(e.interval_secs),
+                    })
+                })
+                .transpose()?;
+            crate::config::types::AuditConfig { export }
+        };
+
         let mut links: Vec<LinkDef> = toml
             .links
             .into_iter()
@@ -2815,6 +2861,7 @@ impl Config {
             metrics,
             spacedrive,
             telemetry,
+            audit,
         })
     }
 }
