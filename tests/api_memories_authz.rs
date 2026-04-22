@@ -53,6 +53,36 @@ fn req_list_memories(agent_id: &str, bearer: &str) -> Request<Body> {
         .unwrap()
 }
 
+fn req_search_memories(agent_id: &str, bearer: &str) -> Request<Body> {
+    Request::builder()
+        .uri(format!(
+            "/api/agents/memories/search?agent_id={agent_id}&q=hello&limit=10"
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn req_memory_graph(agent_id: &str, bearer: &str) -> Request<Body> {
+    Request::builder()
+        .uri(format!(
+            "/api/agents/memories/graph?agent_id={agent_id}&limit=10&offset=0&sort=recent"
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn req_memory_graph_neighbors(agent_id: &str, bearer: &str) -> Request<Body> {
+    Request::builder()
+        .uri(format!(
+            "/api/agents/memories/graph/neighbors?agent_id={agent_id}&memory_id=mem-1&depth=1"
+        ))
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
 #[tokio::test]
 async fn non_owner_reading_personal_agent_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
@@ -304,5 +334,152 @@ async fn missing_ownership_row_returns_404() {
         res.status(),
         StatusCode::NOT_FOUND,
         "missing ownership row → NotOwned → 404 per matrix (non-leaking deny)"
+    );
+}
+
+// The three per-handler gate tests below prove the authz gate is wired into
+// search_memories / memory_graph / memory_graph_neighbors. Since the
+// `check_read_with_audit` policy itself is already exhaustively covered via
+// list_memories (owner-200 / admin-override / team-visibility / pool-None /
+// missing-ownership-row), each sibling handler only needs a single
+// non-owner → 404 assertion to confirm the gate fires before the handler
+// body. Any future regression that drops the gate would allow a 401/200
+// response here instead.
+
+#[tokio::test]
+async fn non_owner_search_memories_returns_404() {
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-alice-1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_search_memories("agent-alice-1", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-owner on personal agent must see 404 from search_memories authz gate"
+    );
+}
+
+#[tokio::test]
+async fn non_owner_memory_graph_returns_404() {
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-alice-1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_memory_graph("agent-alice-1", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-owner on personal agent must see 404 from memory_graph authz gate"
+    );
+}
+
+#[tokio::test]
+async fn non_owner_memory_graph_neighbors_returns_404() {
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-alice-1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_memory_graph_neighbors("agent-alice-1", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-owner on personal agent must see 404 from memory_graph_neighbors authz gate"
+    );
+}
+
+/// G1 counter-delta assertion: the pool-None branch in the authz gate must
+/// increment `spacebot_authz_skipped_total{handler="memories"}` on every
+/// request. Mirrors the delta pattern from `tests/api_auth_middleware.rs`
+/// because `Metrics::global()` is process-wide and cargo runs tests in
+/// parallel by default: other tests hitting the pool-None branch contribute
+/// to the same counter. Only a before/after delta assertion is stable.
+#[tokio::test]
+#[cfg(feature = "metrics")]
+async fn authz_skipped_total_increments_on_pool_none() {
+    let before = spacebot::telemetry::Metrics::global()
+        .authz_skipped_total
+        .with_label_values(&["memories"])
+        .get();
+
+    let state = ApiState::new_test_state_with_mock_entra_no_pool();
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+
+    // The HTTP status is incidental — this test only cares that the
+    // pool-None branch was entered, which is observable via the counter.
+    // The list_memories handler already exercises the same pool-None code
+    // path as the three new handlers (identical inline block per N1).
+    let _res = app
+        .oneshot(req_list_memories("agent-ghost", &token))
+        .await
+        .unwrap();
+
+    let after = spacebot::telemetry::Metrics::global()
+        .authz_skipped_total
+        .with_label_values(&["memories"])
+        .get();
+    assert!(
+        after.saturating_sub(before) >= 1,
+        "authz_skipped_total should increment at least once per pool-None request \
+         (before={before}, after={after})"
     );
 }
