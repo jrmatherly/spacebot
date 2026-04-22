@@ -14,7 +14,7 @@ SpaceUI houses all shared UI components, design tokens, and styling utilities fo
 spaceui/
 ├── packages/
 │   ├── tokens/         # @spacedrive/tokens - CSS-first design tokens (Tailwind v4)
-│   ├── primitives/     # @spacedrive/primitives - Base UI components (45)
+│   ├── primitives/     # @spacedrive/primitives - Base UI components (~45)
 │   ├── forms/          # @spacedrive/forms - react-hook-form wrappers (7)
 │   ├── icons/          # @spacedrive/icons - file-type icons + extension badges (SVG)
 │   ├── ai/             # @spacedrive/ai - AI agent components (14)
