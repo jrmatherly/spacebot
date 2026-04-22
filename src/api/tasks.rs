@@ -1,3 +1,32 @@
+//! Task HTTP handlers + shared Phase-4 authz gate.
+//!
+//! All read + write endpoints consult `check_read_with_audit` /
+//! `check_write` with `resource_type = "task"` before touching the store.
+//! Access keys on the task's UUID `id` (A-09: bare UUID, never
+//! `task_number` or any sigil'd variant), even though the URL path uses
+//! the human-friendly `task_number: i64`. Per-task handlers therefore
+//! fetch the task once before the gate to resolve `task.id`; the
+//! missing-row 404 collapses naturally with the `NotOwned` 404.
+//!
+//! `list_tasks` gates only when the optional `agent_id` filter is
+//! provided (mirrors `list_memories`: the filter identifies a single
+//! agent resource). Listings without an agent filter carry a Phase-5
+//! TODO to post-filter by per-row `check_read` once the audit log
+//! lands; a broad list-over-all-tasks gate doesn't fit the current
+//! helper API.
+//!
+//! `create_task` skips the pre-check (nothing exists yet) and
+//! `.await`s `set_ownership` AFTER the insert succeeds. The `.await`
+//! is load-bearing (A-12): a `tokio::spawn` here races a subsequent
+//! `GET /tasks/:number` from the creator into a 404, breaking
+//! create-then-read UX.
+//!
+//! The ~45-line inline gate block mirrors `src/api/memories.rs` per
+//! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
+//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! `spacebot_authz_skipped_total{handler="tasks"}`. Metric label is
+//! the file resource family, never a per-handler sub-label.
+
 use super::state::ApiState;
 use crate::notifications::{NewNotification, NotificationKind, NotificationSeverity};
 
@@ -188,8 +217,61 @@ fn maybe_emit_approval_notification(state: &ApiState, task: &crate::tasks::Task)
 )]
 pub(super) async fn list_tasks(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<TaskListQuery>,
 ) -> Result<Json<TaskListResponse>, StatusCode> {
+    // Phase 4 authz gate: a list scoped to a single agent (`agent_id`)
+    // rides that agent's ownership row, matching `list_memories`. The
+    // `owner_agent_id` / `assigned_agent_id` legs aren't gated here:
+    // post-filtering each row would require a check per result and
+    // doesn't compose with the current helper API. Phase 5's audit log
+    // + per-row check lands that capability. Until then, a caller who
+    // wants the filter MUST also pass `agent_id` to get the gate; the
+    // Phase-5 TODO below tracks the follow-up.
+    if let Some(agent_id) = query.agent_id.as_deref() {
+        if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+            let (access, admin_override) =
+                crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", agent_id)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(
+                            %error,
+                            actor = %auth_ctx.principal_key(),
+                            resource_type = "agent",
+                            resource_id = %agent_id,
+                            "authz check_read_with_audit failed"
+                        );
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+            if !access.is_allowed() {
+                return Err(access.to_status());
+            }
+            if admin_override {
+                tracing::info!(
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %agent_id,
+                    "admin_read override (audit event queued for Phase 5)"
+                );
+            }
+        } else {
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .authz_skipped_total
+                .with_label_values(&["tasks"])
+                .inc();
+            tracing::warn!(
+                actor = %auth_ctx.principal_key(),
+                agent_id = %agent_id,
+                "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+            );
+        }
+    }
+    // TODO(phase-5): post-filter task list by check_read per-row once
+    // the audit log lands so that `owner_agent_id` / `assigned_agent_id`
+    // / unfiltered listings enforce ownership without the caller having
+    // to pass `agent_id`.
+
     let store = get_task_store(&state)?;
 
     let status = parse_status(query.status.as_deref())?;
@@ -230,10 +312,14 @@ pub(super) async fn list_tasks(
 )]
 pub(super) async fn get_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let store = get_task_store(&state)?;
 
+    // Fetch before the authz gate: task_number (URL) maps to task.id (UUID)
+    // and the ownership row keys on the UUID per A-09. Missing-task 404
+    // and NotOwned 404 collapse to the same client-visible shape.
     let task = store
         .get_by_number(number)
         .await
@@ -242,6 +328,44 @@ pub(super) async fn get_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "task", &task.id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "task",
+                        resource_id = %task.id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "task",
+                resource_id = %task.id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %task.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     Ok(Json(TaskResponse { task }))
 }
@@ -260,6 +384,7 @@ pub(super) async fn get_task(
 )]
 pub(super) async fn create_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreateTaskRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let store = get_task_store(&state)?;
@@ -291,6 +416,36 @@ pub(super) async fn create_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    // A-12: `.await` set_ownership — a fire-and-forget `tokio::spawn` here
+    // races the creator's subsequent GET /tasks/{number} into a 404.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::auth::repository::set_ownership(
+            &pool,
+            "task",
+            &task.id,
+            None,
+            &auth_ctx.principal_key(),
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, task_id = %task.id, "failed to register task ownership");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    } else {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %task.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+    }
+
     emit_task_event(&state, &task, "created");
     maybe_emit_approval_notification(&state, &task);
     Ok(Json(TaskResponse { task }))
@@ -314,6 +469,7 @@ pub(super) async fn create_task(
 )]
 pub(super) async fn update_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
     Json(request): Json<UpdateTaskRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
@@ -321,6 +477,47 @@ pub(super) async fn update_task(
 
     let status = parse_status(request.status.as_deref())?;
     let priority = parse_priority(request.priority.as_deref())?;
+
+    // Fetch-before-gate: URL path is task_number (i64), ownership keys on
+    // task.id (UUID). Missing-task 404 and NotOwned 404 are the same
+    // client-visible shape.
+    let existing = store
+        .get_by_number(number)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, task_number = number, "failed to load task for update authz");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "task",
+                    resource_id = %existing.id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %existing.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let task = store
         .update(
@@ -367,11 +564,14 @@ pub(super) async fn update_task(
 )]
 pub(super) async fn delete_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
 ) -> Result<Json<TaskActionResponse>, StatusCode> {
     let store = get_task_store(&state)?;
 
-    // Fetch before delete so we can emit an event with the correct agent_id.
+    // Fetch before delete so we can emit an event with the correct agent_id
+    // and resolve task.id (UUID) for the authz gate. Missing-task 404 and
+    // NotOwned 404 collapse to the same client-visible shape.
     let task = store
         .get_by_number(number)
         .await
@@ -380,6 +580,35 @@ pub(super) async fn delete_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &task.id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "task",
+                    resource_id = %task.id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %task.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let deleted = store.delete(number).await.map_err(|error| {
         tracing::warn!(%error, task_number = number, "failed to delete task");
@@ -423,10 +652,52 @@ pub(super) async fn delete_task(
 )]
 pub(super) async fn approve_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
     Json(request): Json<ApproveRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let store = get_task_store(&state)?;
+
+    // Fetch-before-gate: URL path is task_number (i64), ownership keys on
+    // task.id (UUID). Missing-task 404 and NotOwned 404 are the same
+    // client-visible shape.
+    let existing = store
+        .get_by_number(number)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, task_number = number, "failed to load task for approve authz");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "task",
+                    resource_id = %existing.id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %existing.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let task = store
         .update(
@@ -475,6 +746,7 @@ pub(super) async fn approve_task(
 )]
 pub(super) async fn execute_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
     Json(request): Json<ApproveRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
@@ -488,6 +760,37 @@ pub(super) async fn execute_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Gate on the already-fetched task.id (UUID); URL path carries only
+    // task_number. Missing-task 404 and NotOwned 404 collapse.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &current.id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "task",
+                    resource_id = %current.id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %current.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     if matches!(
         current.status,
@@ -538,10 +841,52 @@ pub(super) async fn execute_task(
 )]
 pub(super) async fn assign_task(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(number): Path<i64>,
     Json(request): Json<AssignRequest>,
 ) -> Result<Json<TaskResponse>, StatusCode> {
     let store = get_task_store(&state)?;
+
+    // Fetch-before-gate: URL path is task_number (i64), ownership keys on
+    // task.id (UUID). Missing-task 404 and NotOwned 404 are the same
+    // client-visible shape.
+    let existing = store
+        .get_by_number(number)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, task_number = number, "failed to load task for assign authz");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "task",
+                    resource_id = %existing.id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["tasks"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            task_id = %existing.id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let task = store
         .update(
