@@ -1,4 +1,51 @@
-//! Portal API endpoints for conversation management.
+//! Portal HTTP handlers + shared Phase-4 authz gate.
+//!
+//! All seven endpoints (`portal_send`, `portal_history`, `list_portal_conversations`,
+//! `create_portal_conversation`, `update_portal_conversation`,
+//! `delete_portal_conversation`, `conversation_defaults`) consult the
+//! Phase-4 authz helpers with `resource_type = "portal_conversation"`
+//! before touching the store. Access keys on the session_id (A-09: the
+//! bare UUID-shaped session_id, no sigil'd prefix).
+//!
+//! **Personal-visibility invariant (non-negotiable):** every
+//! `set_ownership` call in this file passes `Visibility::Personal`. Portal
+//! conversations are private user chats. Per
+//! `.scratchpad/plans/entraid-auth/phase-4-authz-helpers.md` §12 A-2,
+//! this is the single most identity-sensitive table in the system; a
+//! convenience default to `Visibility::Org` would leak one user's chat
+//! history to the rest of the tenant. Never relax this without updating
+//! the plan doc first. The regression test
+//! `create_portal_conversation_assigns_personal_ownership` in
+//! `tests/api_portal_authz.rs` guards this at runtime.
+//!
+//! `portal_send` has an auto-create path: if the `session_id` has no
+//! ownership row yet, the handler treats the request as a create and
+//! `.await`s `set_ownership` with `Visibility::Personal` before injecting
+//! the message. If the session already exists, the handler calls
+//! `check_write` instead. The branch is decided by a single
+//! `get_ownership` call made up front; no TOCTOU window of consequence
+//! exists because the subsequent `store.ensure` is idempotent and the
+//! `set_ownership` upsert collapses races into a single row.
+//!
+//! `list_portal_conversations` gates on the caller's `agent_id` filter
+//! via `"agent"` read-access (mirrors `list_tasks` and `list_memories`:
+//! the agent filter identifies a single resource). A listing query that
+//! omits `agent_id` cannot currently reach this handler (the type
+//! requires it), so there is no Phase-5 unfiltered TODO.
+//!
+//! `conversation_defaults` is a catalog/config endpoint that returns
+//! agent-scoped default settings and the configured model list. It
+//! exposes no per-user conversation data, so it is intentionally
+//! ungated: gating would require a caller-policy contract the endpoint
+//! doesn't need. An `agent_id`-scoped read gate is a reasonable Phase-5
+//! tightening (TODO below) once the audit log can absorb the N+1 cost.
+//!
+//! The ~45-line inline gate block mirrors `src/api/memories.rs` per
+//! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
+//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! `spacebot_authz_skipped_total{handler="portal"}`. Metric label is
+//! the file resource family (not `"portal_conversation"` singular), so
+//! counter cardinality stays flat.
 
 use super::state::ApiState;
 use crate::{
@@ -130,6 +177,7 @@ fn conversation_store(
 )]
 pub(super) async fn portal_send(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     axum::Json(request): axum::Json<PortalSendRequest>,
 ) -> Result<Json<PortalSendResponse>, StatusCode> {
     let manager = state
@@ -139,6 +187,74 @@ pub(super) async fn portal_send(
         .clone()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
+    // Phase 4 authz gate: portal_send is a write path with an auto-create
+    // branch. A single `get_ownership` probe up front decides which side
+    // of the branch we take:
+    //   * row present → existing conversation → `check_write`
+    //   * row absent → brand-new session → `.await set_ownership` with
+    //     `Visibility::Personal` AFTER `store.ensure` creates the row.
+    //       Personal (never Org/Team) — portal chats are private user
+    //       data per phase-4 plan §12 A-2. Flipping this default is a
+    //       tenant-wide data leak.
+    //
+    // The get_ownership/set_ownership pair is not a TOCTOU hazard: the
+    // `resource_ownership` upsert collapses concurrent creates to one
+    // row, and `store.ensure` is idempotent.
+    let mut is_new_conversation = false;
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let existing = crate::auth::repository::get_ownership(
+            &pool,
+            "portal_conversation",
+            &request.session_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = "portal_conversation",
+                resource_id = %request.session_id,
+                "authz get_ownership failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        if existing.is_some() {
+            let access = crate::auth::check_write(
+                &pool,
+                &auth_ctx,
+                "portal_conversation",
+                &request.session_id,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "portal_conversation",
+                    resource_id = %request.session_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            if !access.is_allowed() {
+                return Err(access.to_status());
+            }
+        } else {
+            is_new_conversation = true;
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            session_id = %request.session_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store = conversation_store(&state, &request.agent_id)?;
     store
         .ensure(&request.agent_id, &request.session_id)
@@ -147,6 +263,32 @@ pub(super) async fn portal_send(
             tracing::warn!(%error, session_id = %request.session_id, "failed to ensure portal conversation");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // A-12: `.await` set_ownership on the auto-create branch BEFORE
+    // injecting the message, so a follow-up GET /portal/history from the
+    // creator reads a consistent owner (no race window).
+    if is_new_conversation && let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned()
+    {
+        crate::auth::repository::set_ownership(
+            &pool,
+            "portal_conversation",
+            &request.session_id,
+            None,
+            &auth_ctx.principal_key(),
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                %error,
+                session_id = %request.session_id,
+                "failed to register portal_conversation ownership on auto-create"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+
     store
         .maybe_set_generated_title(&request.agent_id, &request.session_id, &request.message)
         .await
@@ -259,8 +401,7 @@ pub(super) async fn portal_send(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author: Some(request.sender_name),
-        // TODO(phase-4 PR2 T4.11): thread AuthContext from portal handler extractor
-        auth_context: None,
+        auth_context: Some(auth_ctx),
     };
 
     manager.inject_message(inbound).await.map_err(|error| {
@@ -288,8 +429,57 @@ pub(super) async fn portal_send(
 )]
 pub(super) async fn portal_history(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<PortalHistoryQuery>,
 ) -> Result<Json<Vec<PortalHistoryMessage>>, StatusCode> {
+    // Phase 4 authz gate: read access to a portal conversation's message
+    // history keys on the session_id (A-09 bare UUID). The `"portal"`
+    // metric label matches the file resource family so
+    // `spacebot_authz_skipped_total` cardinality stays flat. Pool-None is
+    // the boot-window / startup-race case — always-on `tracing::warn!`
+    // plus a feature-gated counter.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            "portal_conversation",
+            &query.session_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = "portal_conversation",
+                resource_id = %query.session_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "portal_conversation",
+                resource_id = %query.session_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            session_id = %query.session_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
     let logger = crate::conversation::ConversationLogger::new(pool.clone());
@@ -333,8 +523,52 @@ pub(super) async fn portal_history(
 )]
 pub(super) async fn list_portal_conversations(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<PortalConversationsQuery>,
 ) -> Result<Json<PortalConversationsResponse>, StatusCode> {
+    // Phase 4 authz gate: scope the listing by the agent's read-access
+    // row (same approach as `list_memories` / `list_tasks`). A list
+    // without an `agent_id` filter cannot currently reach this handler
+    // (the query type requires it). If that changes, a per-row gate is
+    // the Phase-5 fix once the audit log lands.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store = conversation_store(&state, &query.agent_id)?;
     let conversations = store
         .list(&query.agent_id, query.include_archived, query.limit)
@@ -360,6 +594,7 @@ pub(super) async fn list_portal_conversations(
 )]
 pub(super) async fn create_portal_conversation(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<CreatePortalConversationRequest>,
 ) -> Result<Json<PortalConversationResponse>, StatusCode> {
     let store = conversation_store(&state, &request.agent_id)?;
@@ -370,6 +605,44 @@ pub(super) async fn create_portal_conversation(
             tracing::warn!(%error, agent_id = %request.agent_id, "failed to create portal conversation");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // A-12: `.await` set_ownership (never `tokio::spawn`), otherwise a
+    // create-then-read race would return 404 to the creator's next GET.
+    // Visibility is `Personal` — phase-4 plan §12 A-2: portal chats are
+    // private user data; defaulting to Org would leak this user's
+    // conversations to the entire tenant. This is the single most
+    // identity-sensitive table in the system.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::auth::repository::set_ownership(
+            &pool,
+            "portal_conversation",
+            &conversation.id,
+            None,
+            &auth_ctx.principal_key(),
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                %error,
+                conversation_id = %conversation.id,
+                "failed to register portal_conversation ownership"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    } else {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            conversation_id = %conversation.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+    }
 
     Ok(Json(PortalConversationResponse { conversation }))
 }
@@ -390,9 +663,41 @@ pub(super) async fn create_portal_conversation(
 )]
 pub(super) async fn update_portal_conversation(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(session_id): Path<String>,
     Json(request): Json<UpdatePortalConversationRequest>,
 ) -> Result<Json<PortalConversationResponse>, StatusCode> {
+    // Phase 4 authz gate: write on the conversation keyed by session_id
+    // (A-09 bare UUID). NotYours → 404 per the hide-existence matrix.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "portal_conversation", &session_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "portal_conversation",
+                    resource_id = %session_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            session_id = %session_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store = conversation_store(&state, &request.agent_id)?;
     let has_settings_update = request.settings.is_some();
     let conversation = store
@@ -443,9 +748,42 @@ pub(super) async fn update_portal_conversation(
 )]
 pub(super) async fn delete_portal_conversation(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Path(session_id): Path<String>,
     Query(query): Query<DeletePortalConversationQuery>,
 ) -> Result<Json<PortalSendResponse>, StatusCode> {
+    // Phase 4 authz gate: delete is a write on the conversation keyed by
+    // session_id (A-09 bare UUID). Shares the inline `check_write` shape
+    // with `update_portal_conversation`.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "portal_conversation", &session_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "portal_conversation",
+                    resource_id = %session_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["portal"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            session_id = %session_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let store = conversation_store(&state, &query.agent_id)?;
     let deleted = store
         .delete(&query.agent_id, &session_id)
@@ -481,6 +819,17 @@ pub(super) async fn conversation_defaults(
     State(state): State<Arc<ApiState>>,
     Query(query): Query<ConversationDefaultsQuery>,
 ) -> Result<Json<ConversationDefaultsResponse>, StatusCode> {
+    // Phase 4 authz gate: intentionally none. This is a catalog/config
+    // endpoint — it returns an agent's default conversation settings and
+    // the configured model list, neither of which expose per-user
+    // conversation data. Gating here would require a caller-policy
+    // contract the endpoint doesn't need; `existence of the agent` is
+    // already disclosed by `/api/agents`.
+    //
+    // TODO(phase-5): if the payload grows to include per-user state
+    // (per-agent history summaries, last-used settings), tighten to a
+    // `check_read_with_audit("agent", &query.agent_id)` then.
+
     // Verify agent exists by checking agent_configs
     let agent_configs = state.agent_configs.load();
     let agent_exists = agent_configs.iter().any(|a| a.id == query.agent_id);
