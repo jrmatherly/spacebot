@@ -222,13 +222,24 @@ pub(super) async fn list_tasks(
 ) -> Result<Json<TaskListResponse>, StatusCode> {
     // Phase 4 authz gate: a list scoped to a single agent (`agent_id`)
     // rides that agent's ownership row, matching `list_memories`. The
-    // `owner_agent_id` / `assigned_agent_id` legs aren't gated here:
-    // post-filtering each row would require a check per result and
-    // doesn't compose with the current helper API. Phase 5's audit log
-    // + per-row check lands that capability. Until then, a caller who
-    // wants the filter MUST also pass `agent_id` to get the gate; the
-    // Phase-5 TODO below tracks the follow-up.
-    if let Some(agent_id) = query.agent_id.as_deref() {
+    // Every agent-scoped filter (`agent_id`, `owner_agent_id`,
+    // `assigned_agent_id`) is an agent-resource read. Gate each one that
+    // was provided. Without this, a caller could enumerate another
+    // user's tasks by passing `owner_agent_id=<their-agent>` — the SQL
+    // filter narrows the result set, but the rows inside still belong
+    // to the other user. Using the first agent-scoped filter keyed in
+    // the request order keeps the gate deterministic.
+    //
+    // Unfiltered calls (no agent-scope filter at all) still carry the
+    // Phase-5 TODO below: those listings return every task the instance
+    // holds, which requires per-row gating or a caller-policy contract
+    // that only an admin can list without a filter.
+    let gate_agent_id: Option<&str> = query
+        .agent_id
+        .as_deref()
+        .or(query.owner_agent_id.as_deref())
+        .or(query.assigned_agent_id.as_deref());
+    if let Some(agent_id) = gate_agent_id {
         if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
             let (access, admin_override) =
                 crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", agent_id)
@@ -267,10 +278,11 @@ pub(super) async fn list_tasks(
             );
         }
     }
-    // TODO(phase-5): post-filter task list by check_read per-row once
-    // the audit log lands so that `owner_agent_id` / `assigned_agent_id`
-    // / unfiltered listings enforce ownership without the caller having
-    // to pass `agent_id`.
+    // TODO(phase-5): gate the no-filter listing path (currently returns
+    // every task the instance holds to any authenticated caller). The
+    // correct fix is per-row check_read once the audit log lands and can
+    // absorb the N+1 audit emission cost; in the interim an admin-only
+    // guard here would be an acceptable tightening.
 
     let store = get_task_store(&state)?;
 

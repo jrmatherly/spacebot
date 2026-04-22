@@ -245,6 +245,100 @@ async fn create_task_assigns_ownership() {
     assert_eq!(own.visibility, "personal");
 }
 
+fn req_delete_task(number: i64, bearer: &str) -> Request<Body> {
+    Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/tasks/{number}"))
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn req_list_tasks_by_owner(owner_agent_id: &str, bearer: &str) -> Request<Body> {
+    Request::builder()
+        .uri(format!("/api/tasks?owner_agent_id={owner_agent_id}"))
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn non_owner_delete_task_returns_404() {
+    // Regression guard for the delete write-gate. Shares the inline
+    // check_write block with update/approve/execute/assign; if a future
+    // refactor drops the gate on delete specifically, this test fires.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    attach_task_store(&state, &pool);
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    let (number, task_id) = seed_task(&pool, &alice).await;
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_delete_task(number, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-owner delete on alice's task must see 404, not 403 or 204"
+    );
+    // Ownership row must still exist — denied delete must not have
+    // touched the row.
+    let row = get_ownership(&pool, "task", &task_id).await.unwrap();
+    assert!(
+        row.is_some(),
+        "ownership row must remain after denied delete"
+    );
+}
+
+#[tokio::test]
+async fn non_owner_list_tasks_by_owner_returns_404() {
+    // Regression guard for the list_tasks info-disclosure surface:
+    // `?owner_agent_id=<alice-agent>` from Bob must NOT return Alice's
+    // task list. Before this gate landed, a caller could enumerate
+    // another user's tasks by passing owner_agent_id without triggering
+    // the agent_id gate. The fix gates on the first agent-scoped filter
+    // present (agent_id -> owner_agent_id -> assigned_agent_id).
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    attach_task_store(&state, &pool);
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    // Seed Alice as the owner of agent-a. Bob will attempt to list by
+    // owner_agent_id=agent-a.
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_list_tasks_by_owner("agent-a", &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "non-owner listing by owner_agent_id must see 404 (hide agent existence), \
+         not a task list"
+    );
+}
+
 #[tokio::test]
 async fn pool_none_skip_get_task() {
     // Regression guard for the early-startup / static-token fallback path.
