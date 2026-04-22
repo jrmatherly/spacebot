@@ -7,10 +7,10 @@
 //! spanning two authz shapes: agent-scoped read (`list_ingest_files`),
 //! agent-scoped write with per-file ownership registration
 //! (`upload_ingest_file`), and file-scoped write keyed on content_hash
-//! (`delete_ingest_file`). A non-owner read + owner read + admin bypass
-//! + create-assigns-ownership + pool-None skip cover the three gate
-//! shapes without re-covering the policy module, which has its own
-//! 15+ tests in `tests/policy_table.rs`.
+//! (`delete_ingest_file`). Five tests cover the three gate shapes:
+//! non-owner read, owner read, admin bypass, create-assigns-ownership,
+//! pool-None skip. Policy module is exercised separately through its
+//! own 15+ tests in `tests/policy_table.rs`.
 //!
 //! Uploads use a hand-rolled multipart body with a fixed boundary —
 //! axum's Multipart extractor parses any RFC-7578 compliant stream.
