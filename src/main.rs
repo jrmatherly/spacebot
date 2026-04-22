@@ -1650,12 +1650,10 @@ async fn run(
     // so pre-Entra CLI callers retain access until admin re-claims via
     // the Phase 9 workflow. Runs AFTER migrations (above) and BEFORE
     // the router binds (below).
-    let reconciled_agents = spacebot::config::reconcile_toml_agents_with_ownership(
-        &instance_pool,
-        &config.agents,
-    )
-    .await
-    .context("failed to reconcile TOML-declared agents with resource_ownership")?;
+    let reconciled_agents =
+        spacebot::config::reconcile_toml_agents_with_ownership(&instance_pool, &config.agents)
+            .await
+            .context("failed to reconcile TOML-declared agents with resource_ownership")?;
     if reconciled_agents > 0 {
         tracing::info!(
             reconciled_agents,

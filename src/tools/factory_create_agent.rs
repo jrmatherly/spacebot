@@ -223,14 +223,7 @@ impl Tool for FactoryCreateAgentTool {
         // calling tool doesn't carry a human principal; the reconciliation
         // helper would have written the same row at restart, so pre-landing
         // it here closes the orphan window.
-        if let Some(pool) = self
-            .state
-            .instance_pool
-            .load()
-            .as_ref()
-            .as_ref()
-            .cloned()
-        {
+        if let Some(pool) = self.state.instance_pool.load().as_ref().as_ref().cloned() {
             let legacy_ctx = crate::auth::context::AuthContext::legacy_static();
             if let Err(error) = crate::api::agents::register_agent_ownership(
                 &pool,

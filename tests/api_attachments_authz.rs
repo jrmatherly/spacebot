@@ -199,8 +199,7 @@ async fn non_owner_get_attachment_returns_404() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id =
-        seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -232,8 +231,7 @@ async fn owner_get_attachment_returns_200() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id =
-        seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -268,8 +266,7 @@ async fn admin_bypass_attachment_read() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id =
-        seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);

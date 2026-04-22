@@ -20,7 +20,6 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use sqlx::sqlite::SqlitePoolOptions;
 use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
@@ -28,6 +27,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt as _;
@@ -87,15 +87,18 @@ fn req_list_ingest_files(agent_id: &str, bearer: &str) -> Request<Body> {
 /// Build a minimal multipart/form-data POST body for the upload handler.
 /// Boundary is fixed so the body is byte-predictable; any value is fine
 /// as long as it doesn't appear in the payload.
-fn req_upload_ingest_file(agent_id: &str, bearer: &str, filename: &str, bytes: &[u8]) -> Request<Body> {
+fn req_upload_ingest_file(
+    agent_id: &str,
+    bearer: &str,
+    filename: &str,
+    bytes: &[u8],
+) -> Request<Body> {
     let boundary = "----test-boundary-spacebot-ingest-authz";
     let mut body: Vec<u8> = Vec::new();
     body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(
-        format!(
-            "Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
-        )
-        .as_bytes(),
+        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
     );
     body.extend_from_slice(b"Content-Type: text/plain\r\n\r\n");
     body.extend_from_slice(bytes);
@@ -252,18 +255,14 @@ async fn create_ingest_file_assigns_ownership() {
     .unwrap();
 
     let payload = b"hello spacebot ingest authz";
-    let expected_hash = spacebot::agent::ingestion::content_hash(
-        std::str::from_utf8(payload).unwrap(),
-    );
+    let expected_hash =
+        spacebot::agent::ingestion::content_hash(std::str::from_utf8(payload).unwrap());
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
     let res = app
         .oneshot(req_upload_ingest_file(
-            "agent-a",
-            &token,
-            "doc.txt",
-            payload,
+            "agent-a", &token, "doc.txt", payload,
         ))
         .await
         .unwrap();

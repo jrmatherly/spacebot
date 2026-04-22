@@ -299,19 +299,23 @@ pub(super) async fn serve_attachment(
     // entry is the source of truth. The gate runs BEFORE the disk read
     // so a non-owner never sees whether the file exists on disk.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "saved_attachment", &attachment_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "saved_attachment",
-                        resource_id = %attachment_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            "saved_attachment",
+            &attachment_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = "saved_attachment",
+                resource_id = %attachment_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             return Err(access.to_status());
         }

@@ -262,7 +262,10 @@ async fn pool_none_skip_mark_read() {
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
     let res = app
-        .oneshot(req_mark_read("00000000-0000-0000-0000-000000000001", &token))
+        .oneshot(req_mark_read(
+            "00000000-0000-0000-0000-000000000001",
+            &token,
+        ))
         .await
         .unwrap();
 
