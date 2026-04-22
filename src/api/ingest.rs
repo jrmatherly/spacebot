@@ -1,3 +1,45 @@
+//! Ingestion file HTTP handlers + shared Phase-4 authz gate.
+//!
+//! All three endpoints (`list_ingest_files`, `upload_ingest_file`,
+//! `delete_ingest_file`) consult the Phase-4 authz helpers before
+//! touching the per-agent SQLite pool or workspace on disk. Two resource
+//! families are in play:
+//!
+//! - **Agent-scoped authz** (`resource_type = "agent"`) for handlers
+//!   that operate on an entire agent's ingest directory: listing all
+//!   files for an agent (`list_ingest_files`) and uploading new files
+//!   into an agent's knowledge base (`upload_ingest_file`). These
+//!   mirror the `list_tasks` / `list_memories` pattern: an agent-scoped
+//!   filter identifies a single agent resource and rides that agent's
+//!   ownership row.
+//! - **File-scoped authz** (`resource_type = "ingestion_file"`) for
+//!   handlers that target a single file by its content hash
+//!   (`delete_ingest_file`). Access keys on the bare `content_hash`
+//!   (A-09: the stable identifier the `ingestion_files` table uses as
+//!   its primary key, no sigil'd prefix).
+//!
+//! `upload_ingest_file` `.await`s `set_ownership` with
+//! `resource_type = "ingestion_file"` AFTER each file's `INSERT OR
+//! IGNORE` succeeds. The `.await` is load-bearing (A-12): a
+//! `tokio::spawn` fire-and-forget would race a subsequent
+//! `DELETE /agents/ingest/files?content_hash=...` from the same user
+//! into a NotOwned 404. The upload handler also writes through a
+//! `Visibility::Personal` ownership row by default; shared-visibility
+//! promotion is a future UI decision, not a handler default.
+//!
+//! The ~45-line inline gate block mirrors `src/api/memories.rs` per
+//! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
+//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! `spacebot_authz_skipped_total{handler="ingest"}`. Metric label is
+//! the file resource family (ingest), never a per-handler sub-label,
+//! so counter cardinality stays flat.
+//!
+//! Phase 5 replaces the `tracing::info!` admin-override path with an
+//! `AuditAppender::append` call against the hash-chained audit log.
+//! Until that lands, the tracing log is the operational record. A
+//! Phase-5 TODO covers broad unfiltered file listings if any ever
+//! land here; today every endpoint in this file is agent-scoped.
+
 use super::state::ApiState;
 
 use axum::Json;
@@ -61,9 +103,51 @@ pub(super) struct IngestDeleteQuery {
 )]
 pub(super) async fn list_ingest_files(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<IngestQuery>,
 ) -> Result<Json<IngestFilesResponse>, StatusCode> {
     use sqlx::Row as _;
+
+    // Phase 4 authz gate: listing an agent's ingested files requires
+    // read access to the agent resource itself (mirrors list_memories:
+    // the filter identifies a single agent and rides its ownership row).
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let (access, admin_override) =
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "agent",
+                        resource_id = %query.agent_id,
+                        "authz check_read_with_audit failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+        if admin_override {
+            tracing::info!(
+                actor = %auth_ctx.principal_key(),
+                resource_type = "agent",
+                resource_id = %query.agent_id,
+                "admin_read override (audit event queued for Phase 5)"
+            );
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["ingest"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
 
     let pools = state.agent_pools.load();
     let pool = pools.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
@@ -124,9 +208,43 @@ pub(super) async fn list_ingest_files(
 )]
 pub(super) async fn upload_ingest_file(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<IngestQuery>,
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<IngestUploadResponse>, StatusCode> {
+    // Phase 4 authz gate: uploading into an agent's ingest directory is
+    // a write against that agent's knowledge base. Gate on the agent
+    // resource; per-file `set_ownership("ingestion_file", ...)` calls
+    // happen below after each row inserts (A-12).
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &query.agent_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    actor = %auth_ctx.principal_key(),
+                    resource_type = "agent",
+                    resource_id = %query.agent_id,
+                    "authz check_write failed"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["ingest"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            agent_id = %query.agent_id,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let workspaces = state.agent_workspaces.load();
     let workspace = workspaces
         .get(&query.agent_id)
@@ -206,6 +324,32 @@ pub(super) async fn upload_ingest_file(
                 .execute(pool)
                 .await;
             }
+
+            // A-12: `.await` set_ownership AFTER the insert — a
+            // fire-and-forget `tokio::spawn` here races the creator's
+            // subsequent DELETE /agents/ingest/files?content_hash=... into
+            // a NotOwned 404. Skipped silently when the instance_pool is
+            // not attached; the pool-None branch above already emitted the
+            // observability signal for this request.
+            if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned()
+                && let Err(error) = crate::auth::repository::set_ownership(
+                    &pool,
+                    "ingestion_file",
+                    &hash,
+                    Some(&query.agent_id),
+                    &auth_ctx.principal_key(),
+                    crate::auth::principals::Visibility::Personal,
+                    None,
+                )
+                .await
+            {
+                tracing::error!(
+                    %error,
+                    content_hash = %hash,
+                    "failed to register ingestion_file ownership"
+                );
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         }
 
         tracing::info!(
@@ -238,8 +382,43 @@ pub(super) async fn upload_ingest_file(
 )]
 pub(super) async fn delete_ingest_file(
     State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<IngestDeleteQuery>,
 ) -> Result<Json<IngestDeleteResponse>, StatusCode> {
+    // Phase 4 authz gate: deleting a specific ingestion file is a write
+    // against the file resource itself (A-09: keyed on the bare
+    // content_hash, which the ingestion_files table uses as its primary
+    // key). A non-owner sees 404 per DenyReason::NotYours.
+    if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, "ingestion_file", &query.content_hash)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = "ingestion_file",
+                        resource_id = %query.content_hash,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        if !access.is_allowed() {
+            return Err(access.to_status());
+        }
+    } else {
+        #[cfg(feature = "metrics")]
+        crate::telemetry::Metrics::global()
+            .authz_skipped_total
+            .with_label_values(&["ingest"])
+            .inc();
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            content_hash = %query.content_hash,
+            "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+    }
+
     let pools = state.agent_pools.load();
     let pool = pools.get(&query.agent_id).ok_or(StatusCode::NOT_FOUND)?;
 
