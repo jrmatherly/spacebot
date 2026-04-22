@@ -1,3 +1,31 @@
+//! Memory-read HTTP handlers + their shared Phase-4 authz gate.
+//!
+//! All four read endpoints (`list_memories`, `search_memories`, `memory_graph`,
+//! `memory_graph_neighbors`) consult `check_read_with_audit` with
+//! `resource_type = "agent"` before touching the vector store or graph
+//! index. Access rides the agent's ownership row, not a per-memory row,
+//! because memories belong to their agent and the ownership model keys
+//! on agent identity.
+//!
+//! The ~45-line gate block is **inlined at each call site on purpose**
+//! (Phase 4 PR 2 decision N1 in
+//! `.scratchpad/plans/entraid-auth/phase-4-authz-helpers.md`). A helper
+//! would save writing but hurt grep-by-handler visibility during route
+//! review. Since the block is only repeated within this file, drift
+//! between copies is visible in a single-file diff; a reader grepping
+//! any one handler sees the whole enforcement story without jumping.
+//!
+//! The metric label is always `"memories"` (the file's resource family),
+//! never a per-handler sub-label — this keeps
+//! `spacebot_authz_skipped_total` cardinality flat. Pool-None is treated
+//! as a boot-window signal (always-on `tracing::warn!` + feature-gated
+//! counter increment); a persistent non-zero rate after startup is a
+//! startup-ordering regression worth paging.
+//!
+//! Phase 5 replaces the `tracing::info!` admin-override path with an
+//! `AuditAppender::append` call against the hash-chained audit log.
+//! Until that lands, the tracing log is the operational record.
+
 use super::state::ApiState;
 
 use crate::memory::search::{SearchConfig, SearchMode};
