@@ -1521,6 +1521,7 @@ id = "main"
             timestamp: chrono::Utc::now(),
             metadata: Default::default(),
             formatted_author: None,
+            auth_context: None,
         }
     }
 

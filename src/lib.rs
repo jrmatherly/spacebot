@@ -535,6 +535,13 @@ pub struct InboundMessage {
     /// Platform-formatted author display (e.g., "Alice (<@123>)" for Discord).
     /// If None, channel falls back to sender_display_name from metadata.
     pub formatted_author: Option<String>,
+    /// Originating principal captured by the HTTP middleware (Phase 1) when
+    /// the request entered the messaging adapter. `None` for messages minted
+    /// by platform adapters (Telegram/Discord/Mattermost) that don't sit
+    /// behind Entra; those default to `AuthContext::legacy_static()` at
+    /// dispatch.
+    #[serde(default)]
+    pub auth_context: Option<crate::auth::context::AuthContext>,
 }
 
 impl InboundMessage {
@@ -552,6 +559,7 @@ impl InboundMessage {
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
             formatted_author: None,
+            auth_context: None,
         }
     }
 

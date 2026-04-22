@@ -704,6 +704,7 @@ impl SignalAdapter {
             timestamp,
             metadata,
             formatted_author,
+            auth_context: None,
         };
 
         Some((inbound, reply_target))

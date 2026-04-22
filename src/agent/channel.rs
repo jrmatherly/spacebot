@@ -657,6 +657,39 @@ impl Drop for MessageDurationGuard {
 }
 
 impl Channel {
+    /// Build a per-turn `AgentDeps` carrying this message's `AuthContext`
+    /// (or `LegacyStatic` when the message came from a non-authenticated
+    /// adapter). Called at the top of each turn before any
+    /// `spawn_branch`/`spawn_worker`/`run_agent_turn` so spawned children
+    /// inherit the originating principal.
+    fn turn_deps(&self, message: &InboundMessage) -> AgentDeps {
+        let ctx = message
+            .auth_context
+            .clone()
+            .unwrap_or_else(crate::auth::context::AuthContext::legacy_static);
+        self.deps.for_turn(ctx)
+    }
+
+    /// Install the per-turn `AgentDeps` on both `self.deps` and
+    /// `self.state.deps` so the spawn paths (which read `state.deps`) and
+    /// any `self.deps` readers observe the originating principal for the
+    /// duration of this turn.
+    ///
+    /// Race safety: `handle_message` and `handle_message_batch` both take
+    /// `&mut self` and the Channel's event loop serializes turns, so only
+    /// one turn runs at a time per Channel. No cross-turn auth bleed is
+    /// possible because every new turn calls this helper again and
+    /// overwrites. The `ChannelControlHandle` clone captured at
+    /// construction is a frozen snapshot and does not participate in the
+    /// spawn path; tool-server registration happens inside `run_agent_turn`
+    /// via `self.state.clone()` at call time, which captures the current
+    /// (per-turn-mutated) `state.deps`.
+    fn install_turn_deps(&mut self, message: &InboundMessage) {
+        let next = self.turn_deps(message);
+        self.deps = next.clone();
+        self.state.deps = next;
+    }
+
     fn record_decision_event(&self, reply_text: Option<&str>, user_id: Option<String>) {
         let Some(decision_summary) = reply_text.and_then(extract_decision_summary_from_reply)
         else {
@@ -1457,6 +1490,14 @@ impl Channel {
     async fn handle_message_batch(&mut self, messages: Vec<InboundMessage>) -> Result<()> {
         // Apply runtime-config updates immediately without requiring a restart.
 
+        // Install the originating principal's auth context from the first
+        // message of the batch on self.deps and self.state.deps. All messages
+        // in a batch share a conversation, so principal is expected to be
+        // consistent; using `messages[0]` matches the plan's convention.
+        if let Some(first) = messages.first() {
+            self.install_turn_deps(first);
+        }
+
         let message_count = messages.len();
         let batch_start_timestamp = messages
             .iter()
@@ -1910,6 +1951,12 @@ impl Channel {
     #[tracing::instrument(skip(self, message), fields(channel_id = %self.id, agent_id = %self.deps.agent_id, message_id = %message.id))]
     async fn handle_message(&mut self, message: InboundMessage) -> Result<()> {
         // Apply runtime-config updates immediately without requiring a restart.
+
+        // Install the originating principal's auth context on self.deps and
+        // self.state.deps before any spawn/tool-registration path so spawned
+        // Branch/Worker processes inherit it. Falls back to LegacyStatic for
+        // non-authenticated adapters and system retrigger messages.
+        self.install_turn_deps(&message);
 
         // Track the inbound message that triggered this turn so outbound
         // responses carry the correct routing metadata (e.g. Slack thread_ts).
@@ -3552,6 +3599,8 @@ impl Channel {
             timestamp: chrono::Utc::now(),
             metadata,
             formatted_author: None,
+            // auth_context: None — internal retrigger; Phase 5 will thread principal via audit log.
+            auth_context: None,
         };
         match self.self_tx.try_send(synthetic) {
             Ok(()) => {
@@ -3932,6 +3981,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             metadata: message_metadata,
             formatted_author: None,
+            auth_context: None,
         }
     }
 
@@ -4044,6 +4094,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
             formatted_author: None,
+            auth_context: None,
         };
 
         assert!(decision_user_id(&humans, &message, true).is_none());

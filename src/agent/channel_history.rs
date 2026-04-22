@@ -942,6 +942,7 @@ mod tests {
             metadata: HashMap::new(),
             formatted_author: Some("TestUser".to_string()),
             timestamp: Utc::now(),
+            auth_context: None,
         };
 
         let formatted = format_user_message("", &message, "2026-02-26 12:00:00 UTC");
@@ -973,6 +974,7 @@ mod tests {
             metadata: HashMap::new(),
             formatted_author: None,
             timestamp: Utc::now(),
+            auth_context: None,
         };
 
         let formatted_sys = format_user_message("", &system_message, "2026-02-26 12:00:00 UTC");
@@ -1020,6 +1022,7 @@ mod tests {
             metadata: metadata_only,
             formatted_author: None,
             timestamp: Utc::now(),
+            auth_context: None,
         };
         assert_eq!(message_display_name(&metadata_message), "Metadata User");
 
@@ -1039,6 +1042,7 @@ mod tests {
             metadata: both_metadata,
             formatted_author: Some("Formatted Author".to_string()),
             timestamp: Utc::now(),
+            auth_context: None,
         };
         assert_eq!(
             message_display_name(&formatted_author_message),
@@ -1056,6 +1060,7 @@ mod tests {
             metadata: HashMap::new(),
             formatted_author: None,
             timestamp: Utc::now(),
+            auth_context: None,
         };
         assert_eq!(message_display_name(&sender_fallback_message), "sender123");
     }

@@ -3999,6 +3999,7 @@ mod tests {
                 timestamp: Utc::now(),
                 metadata: HashMap::new(),
                 formatted_author: None,
+                auth_context: None,
             },
         };
 

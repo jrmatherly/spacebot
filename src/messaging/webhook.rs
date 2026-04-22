@@ -286,6 +286,11 @@ async fn handle_send(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author: Some(request.sender_id),
+        // TODO(phase-4 PR2 T4-webhook): thread AuthContext from request
+        // extensions once the webhook handler adopts the AuthContext
+        // extractor. For now unauthenticated webhook path falls through
+        // to LegacyStatic at dispatch.
+        auth_context: None,
     };
 
     tx.send(inbound)

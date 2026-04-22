@@ -1363,6 +1363,8 @@ async fn run_cron_job(
         timestamp: chrono::Utc::now(),
         metadata: HashMap::new(),
         formatted_author: None,
+        // auth_context: None — scheduler-minted cron retrigger; Phase 5 will thread principal via audit log.
+        auth_context: None,
     };
 
     if let Err(error) = channel_tx.send(message).await {
@@ -1457,6 +1459,8 @@ async fn run_cron_job(
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
             formatted_author: None,
+            // auth_context: None — scheduler-minted synthesis prompt; Phase 5 will thread principal via audit log.
+            auth_context: None,
         };
         let _ = channel_tx.send(wrap_up).await;
         // Drop sender so the channel exits after processing this message.

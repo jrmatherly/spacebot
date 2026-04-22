@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// delegated Entra tokens, service principals via client-credentials
 /// grant, the system (cortex) principal constructs internally, and the
 /// static-token branch represents operator-level coarse access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalType {
     /// A human user, identified by Entra `tid` + `oid`.
@@ -29,7 +29,12 @@ pub enum PrincipalType {
 /// Extracted and validated per-request principal. Attached to request
 /// extensions by the middleware. Handlers extract via the `AuthContext`
 /// Axum extractor.
-#[derive(Debug, Clone)]
+///
+/// `Serialize + Deserialize` exists so `InboundMessage.auth_context`
+/// round-trips cleanly through the per-message wire format. `#[serde(default)]`
+/// at the `InboundMessage` level keeps older payloads (missing the field)
+/// decoding to `None`, which falls through to `legacy_static()` at dispatch.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AuthContext {
     pub principal_type: PrincipalType,
     /// Entra tenant ID (`tid` claim). Empty for `System` and `LegacyStatic`.

@@ -242,6 +242,7 @@ mod tests {
             timestamp: Utc::now(),
             metadata: HashMap::new(),
             formatted_author: Some("Alice".to_string()),
+            auth_context: None,
         };
 
         let history = adapter

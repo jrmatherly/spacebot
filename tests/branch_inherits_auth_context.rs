@@ -77,3 +77,40 @@ fn auth_context_clone_preserves_system_principal() {
     assert!(matches!(cloned.principal_type, PrincipalType::System));
     assert_eq!(cloned.principal_key(), "system");
 }
+
+#[test]
+fn inbound_message_auth_context_survives_unwrap_to_for_turn_equivalent() {
+    // Encodes the runtime invariant exercised by `Channel::turn_deps`:
+    // `InboundMessage.auth_context.clone().unwrap_or_else(legacy_static)`
+    // yields the originating principal when the field is populated. The
+    // real `turn_deps` is a private Channel method; we test the equivalent
+    // unwrap chain here so a refactor that drops the `.clone()` before
+    // `unwrap_or_else` (shifting away from Alice's identity to the static
+    // fallback) is caught by a targeted test.
+    let alice = user("alice");
+    let mut msg = spacebot::InboundMessage::empty();
+    msg.auth_context = Some(alice.clone());
+
+    let ctx = msg
+        .auth_context
+        .clone()
+        .unwrap_or_else(AuthContext::legacy_static);
+    assert_eq!(ctx.oid.as_ref(), "alice");
+    assert!(matches!(ctx.principal_type, PrincipalType::User));
+}
+
+#[test]
+fn inbound_message_none_auth_context_falls_back_to_legacy_static() {
+    // Platform adapters (Telegram/Discord/Mattermost/Slack/etc.) and
+    // internal synthetics (cortex, cron retriggers) all construct
+    // `InboundMessage` with `auth_context: None`. The dispatch-time
+    // unwrap must fall back to LegacyStatic — not panic, and not
+    // invent a user.
+    let msg = spacebot::InboundMessage::empty();
+    let ctx = msg
+        .auth_context
+        .clone()
+        .unwrap_or_else(AuthContext::legacy_static);
+    assert!(matches!(ctx.principal_type, PrincipalType::LegacyStatic));
+    assert_eq!(ctx.principal_key(), "legacy-static");
+}

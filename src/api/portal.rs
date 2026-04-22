@@ -259,6 +259,8 @@ pub(super) async fn portal_send(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author: Some(request.sender_name),
+        // TODO(phase-4 PR2 T4.11): thread AuthContext from portal handler extractor
+        auth_context: None,
     };
 
     manager.inject_message(inbound).await.map_err(|error| {

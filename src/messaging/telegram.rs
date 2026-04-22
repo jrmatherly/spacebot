@@ -274,6 +274,7 @@ impl Messaging for TelegramAdapter {
                                 timestamp: message.date,
                                 metadata,
                                 formatted_author,
+                                auth_context: None,
                             };
 
                             if let Err(error) = inbound_tx.send(inbound).await {

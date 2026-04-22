@@ -561,6 +561,7 @@ async fn handle_command_event(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author: Some(format!("<@{}>", user_id)),
+        auth_context: None,
     };
 
     if let Err(error) = adapter_state.inbound_tx.send(inbound).await {
@@ -740,6 +741,7 @@ async fn handle_interaction_event(
             timestamp: chrono::Utc::now(),
             metadata,
             formatted_author: Some(format!("<@{}>", user_id)),
+            auth_context: None,
         };
 
         if let Err(error) = adapter_state.inbound_tx.send(inbound).await {
@@ -1592,6 +1594,7 @@ async fn send_inbound(
         timestamp: chrono::Utc::now(),
         metadata,
         formatted_author,
+        auth_context: None,
     };
     if let Err(error) = tx.send(inbound).await {
         tracing::warn!(%error, "failed to send inbound message from Slack");

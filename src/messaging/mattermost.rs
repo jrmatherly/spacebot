@@ -1232,6 +1232,7 @@ fn build_message_from_post(
             .unwrap_or_else(chrono::Utc::now),
         metadata,
         formatted_author,
+        auth_context: None,
     })
 }
 
