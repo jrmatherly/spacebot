@@ -14,7 +14,7 @@ spacebot/
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (33 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── audit/                     (3 files)  - Phase 5: types (AuditAction/AuditEvent/AuditRow/canonical_bytes), appender (A-13 singleton, tokio-Mutex-serialized insert, verify_chain), export (3 ExportMode variants per A-15; Filesystem dev-only + S3/HttpSiem Phase-10 stubs)
-│   ├── auth/                      (11 files) - Entra ID (Phases 1-4): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1)
+│   ├── auth/                      (11 files) - Entra ID (Phases 1-5): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1), PrincipalType::as_canonical_str + audit-emission helpers (Phase 5)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
 │   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
 │   ├── memory/                    (7 files)  - Graph store, working memory, search, maintenance
@@ -168,7 +168,7 @@ Eleven persona presets under `presets/` — each with `IDENTITY.md`, `ROLE.md`, 
 
 ## Design Docs
 
-`docs/design-docs/` — 58 architecture and implementation notes (+ 1 archived under `docs/design-docs/archive/`). Partial index (see directory for full list):
+`docs/design-docs/` — 59 architecture and implementation notes (+ 1 archived under `docs/design-docs/archive/`). Partial index (see directory for full list):
 
 | Domain | Docs |
 |---|---|
@@ -241,5 +241,5 @@ Recently archived (`openspec/changes/archive/`):
 | RUST_STYLE_GUIDE.md | Coding conventions |
 | docs/design-docs/spaceui-migration.md | Frontend migration changelog |
 | CLAUDE.md | AI assistant context |
-| docs/design-docs/ | 58 architecture + implementation notes (1 archived under `docs/design-docs/archive/`) |
+| docs/design-docs/ | 59 architecture + implementation notes (1 archived under `docs/design-docs/archive/`) |
 | openspec/ | Active change proposals + archived specs |
