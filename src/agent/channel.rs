@@ -675,15 +675,29 @@ impl Channel {
     /// any `self.deps` readers observe the originating principal for the
     /// duration of this turn.
     ///
-    /// Race safety: `handle_message` and `handle_message_batch` both take
-    /// `&mut self` and the Channel's event loop serializes turns, so only
-    /// one turn runs at a time per Channel. No cross-turn auth bleed is
-    /// possible because every new turn calls this helper again and
-    /// overwrites. The `ChannelControlHandle` clone captured at
-    /// construction is a frozen snapshot and does not participate in the
-    /// spawn path; tool-server registration happens inside `run_agent_turn`
-    /// via `self.state.clone()` at call time, which captures the current
-    /// (per-turn-mutated) `state.deps`.
+    /// Race safety (in-turn): `handle_message` and `handle_message_batch`
+    /// both take `&mut self` and the Channel's event loop serializes turns,
+    /// so only one turn runs at a time per Channel. No cross-turn auth
+    /// bleed during normal-path execution because every new turn calls
+    /// this helper and overwrites. The `ChannelControlHandle` clone
+    /// captured at construction is a frozen snapshot and does not
+    /// participate in the spawn path; tool-server registration happens
+    /// inside `run_agent_turn` via `self.state.clone()` at call time,
+    /// which captures the current (per-turn-mutated) `state.deps`.
+    ///
+    /// **Known gap — addressed in Phase 5:** this mutation persists until
+    /// the next turn calls `install_turn_deps` again. If a turn panics or
+    /// returns `Err(...)` partway through, any fire-and-forget work
+    /// spawned earlier in that turn that reads `state.deps.auth_context()`
+    /// later (worker replies arriving after the turn returned,
+    /// `record_decision_event`, LanceDB writes) will read the last
+    /// installed principal. For Phase 4 this is invisible because every
+    /// handler only consults `auth_context` via the HTTP extractor path
+    /// (not via `state.deps`), and background writers default to
+    /// `LegacyStatic`. Phase 5's audit log will replace this with a
+    /// scopeguard-restore pattern (`.scratchpad/plans/entraid-auth/
+    /// phase-5-audit-log.md` tracks the fix) so misattribution across
+    /// abnormal turn exits cannot occur.
     fn install_turn_deps(&mut self, message: &InboundMessage) {
         let next = self.turn_deps(message);
         self.deps = next.clone();
@@ -1494,7 +1508,35 @@ impl Channel {
         // message of the batch on self.deps and self.state.deps. All messages
         // in a batch share a conversation, so principal is expected to be
         // consistent; using `messages[0]` matches the plan's convention.
+        //
+        // If a batch spans a token refresh or a cross-adapter merge, later
+        // messages could carry a different principal. We warn rather than
+        // split because batch semantics already assume per-conversation
+        // context coherence; a mismatch is a signal that the batcher
+        // itself needs auditing, not that the dispatcher should absorb
+        // the inconsistency silently.
         if let Some(first) = messages.first() {
+            let first_key = first
+                .auth_context
+                .as_ref()
+                .map(|ctx| ctx.principal_key());
+            for (index, other) in messages.iter().enumerate().skip(1) {
+                let other_key = other
+                    .auth_context
+                    .as_ref()
+                    .map(|ctx| ctx.principal_key());
+                if other_key != first_key {
+                    tracing::warn!(
+                        channel_id = %self.id,
+                        batch_size = messages.len(),
+                        first_principal = ?first_key,
+                        other_principal = ?other_key,
+                        other_index = index,
+                        "auth context mismatch within coalesced batch — using first message's principal; batcher may need audit"
+                    );
+                    break;
+                }
+            }
             self.install_turn_deps(first);
         }
 
