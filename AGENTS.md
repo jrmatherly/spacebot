@@ -241,14 +241,18 @@ src/
 ├── secrets.rs          → secrets/
 │   └── store.rs        — encrypted credentials (AES-256-GCM, redb)
 │
-├── auth.rs             → auth/ (Entra ID JWT validation + authz data model)
-│   ├── errors.rs       — AuthError enum, HTTP status + metric-reason mapping
-│   ├── context.rs      — AuthContext extractor (tid, oid, roles, groups, principal_type)
-│   ├── config.rs       — EntraAuthConfig: tenant_id, client_id, scopes, roles, TTLs
-│   ├── jwks.rs         — EntraValidator: jwt-authorizer 0.15 wrapper, RS256 pinned
-│   ├── middleware.rs   — entra_auth_middleware: bearer parse, validate, upsert user
-│   ├── principals.rs   — UserRecord, TeamRecord, ResourceOwnershipRecord, Visibility enum
-│   └── repository.rs   — RepositoryError + upsert_user_from_auth, upsert_team, set/get_ownership
+├── auth.rs             → auth/ (Entra ID: Phases 1-4)
+│   ├── errors.rs       — AuthError enum, HTTP status + metric-reason mapping (Phase 1)
+│   ├── context.rs      — AuthContext extractor (tid, oid, roles, groups, principal_type) (Phase 1)
+│   ├── config.rs       — EntraAuthConfig: tenant_id, client_id, scopes, roles, TTLs (Phase 1)
+│   ├── jwks.rs         — JwtValidator trait + DynJwtValidator companion; jwt-authorizer 0.15, RS256 pinned (Phase 1, trait migration Phase 4 PR 1)
+│   ├── middleware.rs   — entra_auth_middleware: bearer parse, validate, upsert user, group sync, photo sync (Phase 1-3)
+│   ├── principals.rs   — UserRecord, TeamRecord, ResourceOwnershipRecord, Visibility enum (Phase 2)
+│   ├── repository.rs   — RepositoryError + upsert_user_from_auth, upsert_team, set/get_ownership (Phase 2)
+│   ├── graph.rs        — GraphClient: OBO token exchange, list_member_groups, fetch_user_photo (Phase 3)
+│   ├── roles.rs        — ROLE_ADMIN/USER/SERVICE constants, require_role + is_admin helpers (Phase 4 PR 1)
+│   ├── policy.rs       — Access/DenyReason + check_read/check_write/check_read_with_audit/can_link_channel (Phase 4 PR 1)
+│   └── testing.rs      — MockValidator + mint_mock_token integration-test helpers (Phase 4 PR 1)
 │
 ├── anthropic_oauth.rs  — Anthropic OAuth PKCE (formerly `src/auth.rs`; renamed to free the namespace)
 │

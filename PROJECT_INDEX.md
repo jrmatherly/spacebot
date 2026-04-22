@@ -13,18 +13,20 @@ spacebot/
 ├── src/                           (227 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
 │   ├── api/                       (32 files) - REST endpoints (axum + utoipa OpenAPI)
+│   ├── auth/                      (11 files) - Entra ID (Phases 1-4): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1)
 │   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
 │   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
 │   ├── memory/                    (7 files)  - Graph store, working memory, search, maintenance
 │   ├── messaging/                 (12 files) - Discord, Slack, Telegram, Twitch, Email, Cron
 │   ├── tools/                     (49 files) - LLM-callable tools (multiple per file in some cases)
 │   ├── conversation/              (8 files)  - Channel history, settings, context, portal
+│   ├── spacedrive/                (5 files)  - Spacedrive integration (Track A: config, HTTP client, envelope, wire types)
 │   ├── tasks/                     (2 files)  - Goal/task state machine
 │   ├── skills/                    (2 files)  - Skill installation, bundling, discovery
 │   ├── opencode/                  (3 files)  - Worker transcript UI embedding
 │   ├── db.rs                      - SQLite + LanceDB + redb initialization
 │   ├── cron.rs, config.rs, factory.rs, error.rs
-│   ├── prompts/, identity/, secrets/, settings/, hooks/, telemetry/
+│   ├── prompts/, identity/, secrets/, settings/, hooks/, telemetry/, projects/, sandbox/, wiki/, links/
 │   └── main.rs, lib.rs            - CLI daemon + module exports
 ├── interface/                      (Vite + React + TypeScript)
 │   ├── src/components/            - 60+ React components
@@ -61,6 +63,7 @@ spacebot/
 |---|---|
 | **agent** | Channel, worker, branch, cortex, compactor process model |
 | **api** | 32 REST endpoints via axum + utoipa OpenAPI |
+| **auth** | Entra ID JWT validation (Phase 1) + authz data model (Phase 2) + Graph API + group resolution (Phase 3) + per-handler authorization helpers (Phase 4) |
 | **config** | TOML loader, permissions, provider routing, runtime watcher |
 | **llm** | Rig-core v0.35 orchestration, model routing, pricing, auth |
 | **memory** | Graph store (typed SQLite), working memory, semantic search |
