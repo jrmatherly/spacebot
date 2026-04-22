@@ -29,8 +29,8 @@
 //!
 //! The ~45-line inline gate block mirrors `src/api/tasks.rs` and
 //! `src/api/memories.rs` per Phase 4 PR 2 decision N1: single-file
-//! grep-visibility beats DRY. Pool-None is always-on `tracing::warn!` +
-//! feature-gated `spacebot_authz_skipped_total{handler="attachments"}`.
+//! grep-visibility beats DRY. Pool-None is always-on `tracing::error!`
+//! plus feature-gated `spacebot_authz_skipped_total{handler="attachments"}`.
 //! Metric label is uniformly `"attachments"` (the file family), never a
 //! per-handler sub-label.
 

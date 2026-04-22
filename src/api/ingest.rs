@@ -29,7 +29,7 @@
 //!
 //! The ~45-line inline gate block mirrors `src/api/memories.rs` per
 //! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
-//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! Pool-None is always-on `tracing::error!` + feature-gated
 //! `spacebot_authz_skipped_total{handler="ingest"}`. Metric label is
 //! the file resource family (ingest), never a per-handler sub-label,
 //! so counter cardinality stays flat.
@@ -312,7 +312,13 @@ pub(super) async fn upload_ingest_file(
             let pools = state.agent_pools.load();
             if let Some(pool) = pools.get(&query.agent_id) {
                 let file_size = data.len() as i64;
-                let _ = sqlx::query(
+                // `INSERT OR IGNORE` intentionally absorbs unique-constraint
+                // hits on re-upload (same content_hash). Any OTHER sqlx error
+                // (disk full, WAL lock, FK failure) was previously swallowed
+                // by `let _ = ...`. Now we warn so the failure is observable;
+                // the upload still proceeds because the row is a tracking
+                // aid, not a hard requirement for the downstream write.
+                if let Err(error) = sqlx::query(
                     r#"
                     INSERT OR IGNORE INTO ingestion_files (content_hash, filename, file_size, total_chunks, status)
                     VALUES (?, ?, ?, 0, 'queued')
@@ -322,7 +328,15 @@ pub(super) async fn upload_ingest_file(
                 .bind(safe_name)
                 .bind(file_size)
                 .execute(pool)
-                .await;
+                .await
+                {
+                    tracing::warn!(
+                        %error,
+                        content_hash = %hash,
+                        agent_id = %query.agent_id,
+                        "ingestion_files insert failed (non-dupe error)"
+                    );
+                }
             }
 
             // A-12: `.await` set_ownership AFTER the insert. A

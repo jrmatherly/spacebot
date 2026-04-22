@@ -31,7 +31,7 @@
 //! review. The metric label is always `"cron"` (file resource family),
 //! never a per-handler sub-label, to keep
 //! `spacebot_authz_skipped_total` cardinality flat. Pool-None is a
-//! boot-window signal (always-on `tracing::warn!` + feature-gated counter
+//! boot-window signal (always-on `tracing::error!` + feature-gated counter
 //! increment); a persistent non-zero rate after startup is a
 //! startup-ordering regression.
 //!
@@ -589,7 +589,7 @@ pub(super) async fn create_or_update_cron(
                 )
             })?;
         } else {
-            tracing::warn!(
+            tracing::error!(
                 actor = %auth_ctx.principal_key(),
                 cron_id = %request.id,
                 "set_ownership skipped: instance_pool not attached"

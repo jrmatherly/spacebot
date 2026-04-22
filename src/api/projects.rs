@@ -34,7 +34,7 @@
 //! The ~45-line inline gate block mirrors `src/api/memories.rs`,
 //! `src/api/tasks.rs`, `src/api/agents.rs`, `src/api/cron.rs`, and
 //! `src/api/portal.rs` per Phase 4 PR 2 decision N1: single-file
-//! grep-visibility beats DRY. Pool-None is always-on `tracing::warn!`
+//! grep-visibility beats DRY. Pool-None is always-on `tracing::error!`
 //! plus feature-gated
 //! `spacebot_authz_skipped_total{handler="projects"}`. The metric
 //! label is the file resource family (`"projects"`), never a
@@ -474,16 +474,16 @@ pub(super) async fn create_project(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     } else {
-        tracing::warn!(
-            actor = %auth_ctx.principal_key(),
-            project_id = %project.id,
-            "set_ownership skipped: instance_pool not attached"
-        );
         #[cfg(feature = "metrics")]
         crate::telemetry::Metrics::global()
             .authz_skipped_total
             .with_label_values(&["projects"])
             .inc();
+        tracing::error!(
+            actor = %auth_ctx.principal_key(),
+            project_id = %project.id,
+            "set_ownership skipped: instance_pool not attached"
+        );
     }
 
     // Refresh sandbox allowlist with new project path.

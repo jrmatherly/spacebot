@@ -33,7 +33,7 @@
 //! The ~45-line inline gate block mirrors `src/api/memories.rs`,
 //! `src/api/tasks.rs`, `src/api/cron.rs`, and `src/api/portal.rs` per
 //! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
-//! Pool-None is always-on `tracing::warn!` plus feature-gated
+//! Pool-None is always-on `tracing::error!` plus feature-gated
 //! `spacebot_authz_skipped_total{handler="agents"}`. The metric label
 //! is the file resource family (`"agents"`), never a per-handler
 //! sub-label, to keep cardinality flat.
@@ -804,16 +804,16 @@ pub(super) async fn create_agent(
                     );
                 }
             } else {
-                tracing::warn!(
-                    actor = %auth_ctx.principal_key(),
-                    agent_id = %result.agent_id,
-                    "set_ownership skipped: instance_pool not attached"
-                );
                 #[cfg(feature = "metrics")]
                 crate::telemetry::Metrics::global()
                     .authz_skipped_total
                     .with_label_values(&["agents"])
                     .inc();
+                tracing::error!(
+                    actor = %auth_ctx.principal_key(),
+                    agent_id = %result.agent_id,
+                    "set_ownership skipped: instance_pool not attached"
+                );
             }
 
             (

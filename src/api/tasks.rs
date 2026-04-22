@@ -23,7 +23,7 @@
 //!
 //! The ~45-line inline gate block mirrors `src/api/memories.rs` per
 //! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
-//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! Pool-None is always-on `tracing::error!` + feature-gated
 //! `spacebot_authz_skipped_total{handler="tasks"}`. Metric label is
 //! the file resource family, never a per-handler sub-label.
 
@@ -446,7 +446,7 @@ pub(super) async fn create_task(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     } else {
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             task_id = %task.id,
             "set_ownership skipped: instance_pool not attached"

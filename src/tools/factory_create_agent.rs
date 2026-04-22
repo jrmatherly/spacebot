@@ -232,7 +232,7 @@ impl Tool for FactoryCreateAgentTool {
             )
             .await
             {
-                tracing::warn!(
+                tracing::error!(
                     %error,
                     agent_id = %create_result.agent_id,
                     "factory-created agent: ownership registration failed; reconciliation at next restart will backfill"

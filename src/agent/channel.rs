@@ -698,7 +698,7 @@ impl Channel {
     /// inside `run_agent_turn` via `self.state.clone()` at call time,
     /// which captures the current (per-turn-mutated) `state.deps`.
     ///
-    /// **Known gap — addressed in Phase 5:** this mutation persists until
+    /// **Known gap (addressed in Phase 5):** this mutation persists until
     /// the next turn calls `install_turn_deps` again. If a turn panics or
     /// returns `Err(...)` partway through, any fire-and-forget work
     /// spawned earlier in that turn that reads `state.deps.auth_context()`

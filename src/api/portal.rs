@@ -42,7 +42,7 @@
 //!
 //! The ~45-line inline gate block mirrors `src/api/memories.rs` per
 //! Phase 4 PR 2 decision N1: single-file grep-visibility beats DRY.
-//! Pool-None is always-on `tracing::warn!` + feature-gated
+//! Pool-None is always-on `tracing::error!` + feature-gated
 //! `spacebot_authz_skipped_total{handler="portal"}`. Metric label is
 //! the file resource family (not `"portal_conversation"` singular), so
 //! counter cardinality stays flat.
@@ -682,7 +682,7 @@ pub(super) async fn create_portal_conversation(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     } else {
-        tracing::warn!(
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
             conversation_id = %conversation.id,
             "set_ownership skipped: instance_pool not attached"
