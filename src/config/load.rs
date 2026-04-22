@@ -2829,6 +2829,77 @@ fn load_human_md(human_dir: &std::path::Path) -> Option<String> {
     }
 }
 
+/// Seed a synthetic users row for the `legacy-static` principal so
+/// `resource_ownership.owner_principal_key` FK references resolve on
+/// reconciliation. The row satisfies the CHECK (principal_type in
+/// 'user' | 'service_principal' | 'system') by using 'system'; the
+/// row exists solely to anchor FK constraints for pre-Entra resources
+/// backfilled per §11.3. Idempotent (`INSERT OR IGNORE`).
+async fn ensure_legacy_static_user(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO users (
+            principal_key, tenant_id, object_id, principal_type,
+            display_name, status
+        )
+        VALUES ('legacy-static', '', '', 'system', 'Legacy Static (pre-Entra)', 'active')
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("seed legacy-static user row for FK constraint")?;
+    Ok(())
+}
+
+/// Reconcile `[[agents]]` TOML blocks with the `resource_ownership`
+/// table at startup. Any agent without an ownership row is assigned
+/// to the synthetic `legacy-static` principal per §11.3 backfill
+/// policy so pre-Entra CLI callers retain access until admin
+/// re-claims via the Phase 9 workflow. Returns the count of newly
+/// reconciled agents so operators see backfill progress in logs.
+///
+/// Idempotent: agents with an existing ownership row are left
+/// untouched. MUST run AFTER migrations and BEFORE the HTTP server
+/// accepts requests; see the wiring in `src/main.rs`.
+pub async fn reconcile_toml_agents_with_ownership(
+    pool: &sqlx::SqlitePool,
+    agents: &[super::AgentConfig],
+) -> anyhow::Result<usize> {
+    if agents.is_empty() {
+        return Ok(0);
+    }
+
+    // Ensure the FK target exists before any INSERT; otherwise the
+    // set_ownership call below fails with SQLITE_CONSTRAINT.
+    ensure_legacy_static_user(pool).await?;
+
+    let mut reconciled = 0_usize;
+    for agent in agents {
+        if crate::auth::repository::get_ownership(pool, "agent", &agent.id)
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+        crate::auth::repository::set_ownership(
+            pool,
+            "agent",
+            &agent.id,
+            None,
+            "legacy-static",
+            crate::auth::principals::Visibility::Personal,
+            None,
+        )
+        .await?;
+        tracing::warn!(
+            agent_id = %agent.id,
+            "reconciled TOML-declared agent with synthetic legacy-static ownership (§11.3 backfill)"
+        );
+        reconciled += 1;
+    }
+    Ok(reconciled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
