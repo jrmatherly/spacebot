@@ -1,6 +1,6 @@
 # @spacedrive/primitives
 
-> Changelog entries between 0.1.1 and the current `package.json` version were not authored via changesets; see `git log packages/primitives` for the detail. The 0.1.0 "Packages Included" bullet list below predates the addition of `@spacedrive/icons` — spaceui now ships 6 packages: tokens, primitives, forms, icons, ai, explorer.
+> Changelog entries between 0.1.1 and the current `package.json` version were not authored via changesets. See `git log packages/primitives` for the detail. The 0.1.0 "Packages Included" bullet list below predates the addition of `@spacedrive/icons`. spaceui now ships 6 packages: tokens, primitives, forms, icons, ai, explorer.
 
 ## 0.1.1
 
