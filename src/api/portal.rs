@@ -248,6 +248,12 @@ pub(super) async fn portal_send(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
             if !access.is_allowed() {
+                crate::auth::policy::fire_denied_audit(
+                    &state.audit,
+                    &auth_ctx,
+                    "portal_conversation",
+                    request.session_id.as_str(),
+                );
                 return Err(access.to_status());
             }
         } else {
@@ -468,14 +474,20 @@ pub(super) async fn portal_history(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "portal_conversation",
+                query.session_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "portal_conversation",
-                resource_id = %query.session_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "portal_conversation",
+                query.session_id.as_str(),
             );
         }
     } else {
@@ -557,14 +569,20 @@ pub(super) async fn list_portal_conversations(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -632,6 +650,12 @@ pub(super) async fn create_portal_conversation(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                request.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -733,6 +757,12 @@ pub(super) async fn update_portal_conversation(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "portal_conversation",
+                session_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -819,6 +849,12 @@ pub(super) async fn delete_portal_conversation(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "portal_conversation",
+                session_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {

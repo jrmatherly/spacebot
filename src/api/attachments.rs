@@ -142,6 +142,12 @@ pub(super) async fn upload_attachment(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -317,14 +323,20 @@ pub(super) async fn serve_attachment(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "saved_attachment",
+                attachment_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "saved_attachment",
-                resource_id = %attachment_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "saved_attachment",
+                attachment_id.as_str(),
             );
         }
     } else {
@@ -458,14 +470,20 @@ pub(super) async fn list_attachments(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                agent_id.as_str(),
             );
         }
     } else {

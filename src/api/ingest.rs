@@ -126,14 +126,20 @@ pub(super) async fn list_ingest_files(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
         if admin_override {
-            tracing::info!(
-                actor = %auth_ctx.principal_key(),
-                resource_type = "agent",
-                resource_id = %query.agent_id,
-                "admin_read override (audit event queued for Phase 5)"
+            crate::auth::policy::fire_admin_read_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
             );
         }
     } else {
@@ -230,6 +236,12 @@ pub(super) async fn upload_ingest_file(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "agent",
+                query.agent_id.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
@@ -418,6 +430,12 @@ pub(super) async fn delete_ingest_file(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         if !access.is_allowed() {
+            crate::auth::policy::fire_denied_audit(
+                &state.audit,
+                &auth_ctx,
+                "ingestion_file",
+                query.content_hash.as_str(),
+            );
             return Err(access.to_status());
         }
     } else {
