@@ -173,6 +173,85 @@ async fn owner_passes_authz_gate_on_own_agent() {
 }
 
 #[tokio::test]
+async fn list_memories_without_bearer_header_returns_401() {
+    // Regression guard: confirms list_memories goes through the Entra
+    // middleware. A misconfigured route (e.g. a future developer moves
+    // /api/agents/memories out of the middleware-wrapped router) would
+    // let unauthenticated requests through. This test fails loudly if
+    // that wiring regresses. Covers PR #104 review test-coverage Nit 4.
+    let (state, _pool) = ApiState::new_test_state_with_mock_entra().await;
+    let app = build_test_router_entra(state);
+    let req = axum::http::Request::builder()
+        .uri("/api/agents/memories?agent_id=anything&limit=10&offset=0&sort=recent")
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "missing Authorization header must yield 401 from the middleware"
+    );
+}
+
+#[tokio::test]
+async fn team_member_reads_team_visible_agent_memories() {
+    // Regression guard for the handler-level team-visibility path.
+    // The logic is covered by policy_table.rs::team_member_can_read_team_memory,
+    // but the handler test surface previously missed the "check_read_with_audit
+    // was called with the correct resource_type + resource_id" assertion.
+    // Covers PR #104 review test-coverage Nit 5.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    spacebot::auth::repository::upsert_user_from_auth(&pool, &alice)
+        .await
+        .unwrap();
+    spacebot::auth::repository::upsert_user_from_auth(&pool, &bob)
+        .await
+        .unwrap();
+    let team = spacebot::auth::repository::upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO team_memberships (principal_key, team_id, source)
+           VALUES (?, ?, 'token_claim')"#,
+    )
+    .bind(bob.principal_key())
+    .bind(&team.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    spacebot::auth::repository::set_ownership(
+        &pool,
+        "agent",
+        "agent-shared",
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_list_memories("agent-shared", &token))
+        .await
+        .unwrap();
+
+    // Bob is a team member; authz passes. Downstream memory_searches
+    // lookup returns 404 (no MemorySearch registered), same as the
+    // admin/owner tests above. Assertion: NOT 401/403 at the gate.
+    assert_ne!(res.status(), StatusCode::UNAUTHORIZED);
+    assert_ne!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "team member must pass authz on team-visible agent"
+    );
+}
+
+#[tokio::test]
 async fn list_memories_no_ops_when_instance_pool_absent() {
     // Regression guard for the early-startup / static-token fallback path.
     // When instance_pool is not attached, list_memories skips authz and

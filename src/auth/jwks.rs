@@ -53,7 +53,9 @@ impl<T: JwtValidator + ?Sized> DynJwtValidator for T {
 
 /// Claims extracted from Entra v2 tokens. Unused claims are ignored.
 /// `_claim_names` / `_claim_sources` appear on groups-overage tokens. We
-/// capture their presence here and leave lookup to Phase 3.
+/// capture their presence here; Phase 3 resolves overage via
+/// `GraphClient::list_member_groups` (see
+/// `src/auth/middleware.rs::sync_groups_for_principal`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct EntraClaims {
     /// Tenant ID.

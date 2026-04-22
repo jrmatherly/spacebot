@@ -1,6 +1,9 @@
 # Role × Resource × Action Matrix
 
-> SOC 2 CC6.3 evidence. Source: research §12 CC6.6, §11.1 Q3-Q4.
+> SOC 2 CC6.1 / CC6.3 *design reference*. Operating evidence (audit log
+> output, quarterly access review artifacts) lives in `audit_events` +
+> the Phase 10 access-review endpoint. Source: research §12 CC6.6,
+> §11.1 Q3-Q4.
 
 ## Principals
 

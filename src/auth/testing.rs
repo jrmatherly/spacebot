@@ -52,6 +52,7 @@ use std::sync::Arc;
 
 /// Mock validator. Decodes the bearer as a base64url-encoded
 /// [`MintableAuthContext`] and returns the embedded context verbatim.
+#[doc(hidden)]
 #[derive(Debug, Default)]
 pub struct MockValidator;
 
@@ -162,6 +163,7 @@ impl TryFrom<MintableAuthContext> for AuthContext {
 
 /// Mint a mock bearer token encoding the given context. Round-trips back
 /// through [`MockValidator::validate`] into an identical [`AuthContext`].
+#[doc(hidden)]
 pub fn mint_mock_token(ctx: &AuthContext) -> String {
     let mintable = MintableAuthContext {
         principal_type: match ctx.principal_type {

@@ -25,6 +25,12 @@ use crate::auth::repository::get_ownership;
 use crate::auth::roles::is_admin;
 
 /// Access decision returned by [`check_read`] / [`check_write`].
+///
+/// `#[must_use]` enforces that callers actually inspect the result.
+/// Forgetting to consult an `Access` value after computing one is the
+/// exact class of bug ("called check_read, discarded result") that
+/// converts this type into a no-op at compile time.
+#[must_use = "Access value must be checked; discarding it bypasses authz"]
 #[derive(Debug, Clone)]
 pub enum Access {
     Allowed,
@@ -41,10 +47,18 @@ pub enum DenyReason {
     /// pre-Entra data or a truly missing resource.
     NotOwned,
     /// Ownership exists but the requester is not the owner and has no
-    /// visibility path to it (Personal → not owner; Team → not a member).
+    /// visibility path to it (Personal -> not owner; Team -> not a member).
     NotYours,
     /// Role-based deny (requester is authenticated but lacks the required
     /// role). Resource existence already established.
+    ///
+    /// Not currently constructed by `check_read`/`check_write` (which
+    /// only produce `NotOwned`/`NotYours`). Kept as part of the public
+    /// enum because Phase 5's audit log keys off `Denied(Forbidden)` for
+    /// the `AuthzDenied` event type, and future role-gated helpers
+    /// (e.g. `require_role_for_resource`) will produce this variant.
+    /// See `.scratchpad/plans/entraid-auth/phase-5-audit-log.md` for the
+    /// Phase 5 consumer.
     Forbidden,
 }
 
@@ -203,6 +217,12 @@ pub async fn check_read_with_audit(
 /// bypass applies because they bypass [`check_read`]. Returns `true` when
 /// the link is allowed. Call sites on deny should drop the routed message
 /// and log at `warn!` with the actor principal key.
+///
+/// `#[must_use]` exists because the helper is useless if the boolean is
+/// discarded: the enforcement surface at `src/tools/send_agent_message.rs`
+/// (deferred to PR 2) has a TODO marker exactly here, so the compile-time
+/// guard makes "forgot to enforce" a compile error in that future wiring.
+#[must_use = "can_link_channel returns a boolean that MUST gate cross-agent dispatch"]
 pub async fn can_link_channel(
     pool: &SqlitePool,
     ctx: &AuthContext,
