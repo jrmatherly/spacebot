@@ -6,9 +6,15 @@ use spacebot::audit::types::{AuditAction, AuditEvent};
 use sqlx::sqlite::SqlitePoolOptions;
 
 async fn setup_pool() -> sqlx::SqlitePool {
-    let pool = SqlitePoolOptions::new().max_connections(1)
-        .connect("sqlite::memory:").await.unwrap();
-    sqlx::migrate!("./migrations/global").run(&pool).await.unwrap();
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::migrate!("./migrations/global")
+        .run(&pool)
+        .await
+        .unwrap();
     pool
 }
 
@@ -30,8 +36,11 @@ async fn jwt_in_metadata_is_scrubbed() {
         metadata: serde_json::json!({"raw_header": format!("Bearer {jwt}")}),
     };
     let row = appender.append(ev).await.unwrap();
-    assert!(!row.metadata_json.contains(jwt),
-            "JWT leaked into audit row: {}", row.metadata_json);
+    assert!(
+        !row.metadata_json.contains(jwt),
+        "JWT leaked into audit row: {}",
+        row.metadata_json
+    );
 }
 
 #[tokio::test]
@@ -50,6 +59,9 @@ async fn benign_metadata_is_preserved() {
         metadata: serde_json::json!({"memory_title": "shopping list"}),
     };
     let row = appender.append(ev).await.unwrap();
-    assert!(row.metadata_json.contains("shopping list"),
-            "benign content was stripped: {}", row.metadata_json);
+    assert!(
+        row.metadata_json.contains("shopping list"),
+        "benign content was stripped: {}",
+        row.metadata_json
+    );
 }

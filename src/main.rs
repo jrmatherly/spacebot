@@ -1706,7 +1706,9 @@ async fn run(
             ticker.tick().await; // consume the immediate tick
             loop {
                 ticker.tick().await;
-                match spacebot::audit::export::export_audit(&pool_for_export, &audit_export.config).await {
+                match spacebot::audit::export::export_audit(&pool_for_export, &audit_export.config)
+                    .await
+                {
                     Ok(result) if result.rows_exported > 0 => {
                         tracing::info!(
                             mode = mode_label,

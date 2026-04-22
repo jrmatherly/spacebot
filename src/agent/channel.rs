@@ -1575,7 +1575,9 @@ impl Channel {
         //
         // SAFETY of `.expect`: guarded by `messages.is_empty()` check above;
         // unreachable path.
-        let first = messages.first().expect("non-empty batch guaranteed by is_empty check");
+        let first = messages
+            .first()
+            .expect("non-empty batch guaranteed by is_empty check");
         let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
         for (index, other) in messages.iter().enumerate().skip(1) {
             let other_key = other.auth_context.as_ref().map(|ctx| ctx.principal_key());

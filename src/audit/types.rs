@@ -91,12 +91,7 @@ pub struct AuditRow {
 ///
 /// Newlines make human inspection possible without an off-by-one delimiter
 /// hazard. JSON canonicalization is strict: keys sorted, no whitespace.
-pub fn canonical_bytes(
-    event: &AuditEvent,
-    seq: i64,
-    timestamp: &str,
-    prev_hash: &str,
-) -> Vec<u8> {
+pub fn canonical_bytes(event: &AuditEvent, seq: i64, timestamp: &str, prev_hash: &str) -> Vec<u8> {
     let meta_canonical = canonicalize_json(&event.metadata);
     let parts = [
         seq.to_string(),
@@ -123,8 +118,15 @@ fn canonicalize_json(v: &serde_json::Value) -> String {
         Value::Object(map) => {
             let mut entries: Vec<_> = map.iter().collect();
             entries.sort_by(|a, b| a.0.cmp(b.0));
-            let body: Vec<String> = entries.into_iter()
-                .map(|(k, v)| format!("{}:{}", serde_json::to_string(k).unwrap(), canonicalize_json(v)))
+            let body: Vec<String> = entries
+                .into_iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(k).unwrap(),
+                        canonicalize_json(v)
+                    )
+                })
                 .collect();
             format!("{{{}}}", body.join(","))
         }

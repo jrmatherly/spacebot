@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::audit::types::{canonical_bytes, sha256_hex, AuditEvent, AuditRow};
+use crate::audit::types::{AuditEvent, AuditRow, canonical_bytes, sha256_hex};
 
 pub struct AuditAppender {
     pool: SqlitePool,
@@ -55,11 +55,11 @@ impl AuditAppender {
         // compute the canonical bytes. Phase 0 Task 0.6 installed the JWT
         // regex in `src/secrets/scrub.rs::LEAK_PATTERNS`. A-01: we use
         // `scrub_leaks` (1-arg), not `scrub_secrets` (2-arg exact-match).
-        let metadata_scrubbed: serde_json::Value = serde_json::from_str(
-            &crate::secrets::scrub::scrub_leaks(
-                &serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into())
-            )
-        ).unwrap_or(event.metadata.clone());
+        let metadata_scrubbed: serde_json::Value =
+            serde_json::from_str(&crate::secrets::scrub::scrub_leaks(
+                &serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into()),
+            ))
+            .unwrap_or(event.metadata.clone());
         let event = AuditEvent {
             metadata: metadata_scrubbed,
             ..event
@@ -68,45 +68,55 @@ impl AuditAppender {
         let mut tx = self.pool.begin().await?;
 
         // Prior row → prev_hash.
-        let prior: Option<(i64, String)> = sqlx::query_as(
-            "SELECT seq, row_hash FROM audit_events ORDER BY seq DESC LIMIT 1"
-        ).fetch_optional(&mut *tx).await?;
+        let prior: Option<(i64, String)> =
+            sqlx::query_as("SELECT seq, row_hash FROM audit_events ORDER BY seq DESC LIMIT 1")
+                .fetch_optional(&mut *tx)
+                .await?;
         let (prev_seq, prev_hash) = prior.unwrap_or((0, "0".repeat(64)));
         let seq = prev_seq + 1;
 
         let id = uuid::Uuid::now_v7().to_string();
         let timestamp = chrono::Utc::now()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
 
         let canon = canonical_bytes(&event, seq, &timestamp, &prev_hash);
         let row_hash = sha256_hex(&canon);
 
-        let metadata_json = serde_json::to_string(&event.metadata)
-            .unwrap_or_else(|_| "{}".into());
+        let metadata_json = serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into());
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO audit_events (
                 id, seq, timestamp, principal_key, principal_type, action,
                 resource_type, resource_id, result, source_ip, request_id,
                 metadata_json, prev_hash, row_hash
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        "#)
-            .bind(&id).bind(seq).bind(&timestamp)
-            .bind(&event.principal_key).bind(&event.principal_type)
-            .bind(event.action.as_str())
-            .bind(event.resource_type.as_deref())
-            .bind(event.resource_id.as_deref())
-            .bind(&event.result)
-            .bind(event.source_ip.as_deref())
-            .bind(event.request_id.as_deref())
-            .bind(&metadata_json)
-            .bind(&prev_hash).bind(&row_hash)
-            .execute(&mut *tx).await?;
+        "#,
+        )
+        .bind(&id)
+        .bind(seq)
+        .bind(&timestamp)
+        .bind(&event.principal_key)
+        .bind(&event.principal_type)
+        .bind(event.action.as_str())
+        .bind(event.resource_type.as_deref())
+        .bind(event.resource_id.as_deref())
+        .bind(&event.result)
+        .bind(event.source_ip.as_deref())
+        .bind(event.request_id.as_deref())
+        .bind(&metadata_json)
+        .bind(&prev_hash)
+        .bind(&row_hash)
+        .execute(&mut *tx)
+        .await?;
 
         tx.commit().await?;
 
         Ok(AuditRow {
-            id, seq, timestamp,
+            id,
+            seq,
+            timestamp,
             principal_key: event.principal_key,
             principal_type: event.principal_type,
             action: event.action.as_str().to_string(),
@@ -116,7 +126,8 @@ impl AuditAppender {
             source_ip: event.source_ip,
             request_id: event.request_id,
             metadata_json,
-            prev_hash, row_hash,
+            prev_hash,
+            row_hash,
         })
     }
 
@@ -127,9 +138,9 @@ impl AuditAppender {
         // this guard, a row inserted mid-SELECT can make verify() return
         // spurious false-negatives. (Per 2026-04-22 Phase 5 audit IMPORTANT 8.)
         let _guard = self.write_mutex.lock().await;
-        let rows: Vec<AuditRow> = sqlx::query_as(
-            "SELECT * FROM audit_events ORDER BY seq"
-        ).fetch_all(&self.pool).await?;
+        let rows: Vec<AuditRow> = sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
+            .fetch_all(&self.pool)
+            .await?;
         let total = rows.len() as i64;
         let mut prev_hash = "0".repeat(64);
         for row in &rows {
@@ -156,11 +167,13 @@ impl AuditAppender {
                     "authz_denied" => crate::audit::types::AuditAction::AuthzDenied,
                     "orphan_detected" => crate::audit::types::AuditAction::OrphanDetected,
                     "export_run" => crate::audit::types::AuditAction::ExportRun,
-                    _ => return Ok(ChainVerifyResult {
-                        valid: false,
-                        first_mismatch_seq: Some(row.seq),
-                        total_rows: total,
-                    }),
+                    _ => {
+                        return Ok(ChainVerifyResult {
+                            valid: false,
+                            first_mismatch_seq: Some(row.seq),
+                            total_rows: total,
+                        });
+                    }
                 },
                 resource_type: row.resource_type.clone(),
                 resource_id: row.resource_id.clone(),
@@ -170,7 +183,12 @@ impl AuditAppender {
                 metadata: serde_json::from_str(&row.metadata_json)
                     .unwrap_or(serde_json::Value::Null),
             };
-            let computed = sha256_hex(&canonical_bytes(&event, row.seq, &row.timestamp, &row.prev_hash));
+            let computed = sha256_hex(&canonical_bytes(
+                &event,
+                row.seq,
+                &row.timestamp,
+                &row.prev_hash,
+            ));
             if computed != row.row_hash {
                 return Ok(ChainVerifyResult {
                     valid: false,
@@ -180,6 +198,10 @@ impl AuditAppender {
             }
             prev_hash = row.row_hash.clone();
         }
-        Ok(ChainVerifyResult { valid: true, first_mismatch_seq: None, total_rows: total })
+        Ok(ChainVerifyResult {
+            valid: true,
+            first_mismatch_seq: None,
+            total_rows: total,
+        })
     }
 }

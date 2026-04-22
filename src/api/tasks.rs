@@ -255,12 +255,7 @@ pub(super) async fn list_tasks(
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
             if !access.is_allowed() {
-                crate::auth::policy::fire_denied_audit(
-                    &state.audit,
-                    &auth_ctx,
-                    "agent",
-                    agent_id,
-                );
+                crate::auth::policy::fire_denied_audit(&state.audit, &auth_ctx, "agent", agent_id);
                 return Err(access.to_status());
             }
             if admin_override {
