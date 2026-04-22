@@ -2835,6 +2835,32 @@ fn load_human_md(human_dir: &std::path::Path) -> Option<String> {
 /// 'user' | 'service_principal' | 'system') by using 'system'; the
 /// row exists solely to anchor FK constraints for pre-Entra resources
 /// backfilled per §11.3. Idempotent (`INSERT OR IGNORE`).
+///
+/// **Synthetic sentinel for Phase 5/9/10 queries.** The overload of
+/// `principal_type='system'` is load-bearing but syntactically
+/// ambiguous: future audit-log ("who acted?") and admin-claim UIs
+/// must distinguish the legitimate System principal (cortex +
+/// scheduled work) from this backfill sentinel. The detection
+/// contract is:
+///
+///   `principal_type = 'system' AND principal_key = 'legacy-static'`
+///
+/// i.e. the composite of principal_type+principal_key, not
+/// principal_type alone. Queries that need to exclude the synthetic
+/// row (e.g. "list all System actors") must add
+/// `AND principal_key <> 'legacy-static'`.
+///
+/// Alternatives considered and deferred:
+///
+/// - Add `SyntheticLegacy` as a fourth CHECK variant via migration.
+///   Cleaner semantics but requires a migration, a `PrincipalType`
+///   enum variant, and call-site updates across the auth tree.
+///   Deferred to Phase 10 if the sentinel complicates audit-log
+///   authoring materially.
+///
+/// - Use `tenant_id = ''` as an orthogonal sentinel. Already true
+///   here, but also true of the System principal (cortex has no
+///   Entra tenant), so it doesn't disambiguate alone.
 async fn ensure_legacy_static_user(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     sqlx::query(
         r#"

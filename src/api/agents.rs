@@ -594,9 +594,15 @@ pub(super) async fn trigger_warmup(
     auth_ctx: crate::auth::context::AuthContext,
     Json(request): Json<WarmupTriggerRequest>,
 ) -> Result<Json<WarmupTriggerResponse>, StatusCode> {
-    // Gate only when a specific agent_id was requested. Unfiltered
-    // warmup triggers are admin-broad by nature; Phase-5 follow-up
-    // adds per-row gating (see also list_agents / instance_overview).
+    // Two gating modes:
+    //
+    // 1. Specific agent_id supplied → per-resource `check_write` against
+    //    that agent.
+    // 2. No agent_id → warmup fires for EVERY agent on the instance; this
+    //    is an admin-broad operation and requires role-Admin / System /
+    //    LegacyStatic (see `crate::auth::is_admin`). A non-admin caller
+    //    with no agent_id is rejected 403 to prevent un-owned principals
+    //    from launching warmup coroutines for agents they cannot read.
     if let Some(agent_id) = request.agent_id.as_deref() {
         if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
             let access = crate::auth::check_write(&pool, &auth_ctx, "agent", agent_id)
@@ -626,6 +632,12 @@ pub(super) async fn trigger_warmup(
                 "authz skipped: instance_pool not attached (boot window or startup-ordering bug)"
             );
         }
+    } else if !crate::auth::is_admin(&auth_ctx) {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            "unfiltered warmup trigger rejected: non-admin principal cannot launch warmup for all agents"
+        );
+        return Err(StatusCode::FORBIDDEN);
     }
 
     let llm_manager = {

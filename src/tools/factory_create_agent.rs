@@ -214,6 +214,44 @@ impl Tool for FactoryCreateAgentTool {
             )));
         }
 
+        // Register ownership. The HTTP handler (src/api/agents.rs::create_agent)
+        // does this itself via the same helper; the factory tool path must do
+        // the same or the new agent lands ownership-orphaned and is invisible
+        // to every principal (including its creator) until the next daemon
+        // restart runs `reconcile_toml_agents_with_ownership`. Factory-path
+        // creations run under `AuthContext::legacy_static()` because the
+        // calling tool doesn't carry a human principal; the reconciliation
+        // helper would have written the same row at restart, so pre-landing
+        // it here closes the orphan window.
+        if let Some(pool) = self
+            .state
+            .instance_pool
+            .load()
+            .as_ref()
+            .as_ref()
+            .cloned()
+        {
+            let legacy_ctx = crate::auth::context::AuthContext::legacy_static();
+            if let Err(error) = crate::api::agents::register_agent_ownership(
+                &pool,
+                &legacy_ctx,
+                &create_result.agent_id,
+            )
+            .await
+            {
+                tracing::warn!(
+                    %error,
+                    agent_id = %create_result.agent_id,
+                    "factory-created agent: ownership registration failed; reconciliation at next restart will backfill"
+                );
+            }
+        } else {
+            tracing::warn!(
+                agent_id = %create_result.agent_id,
+                "factory-created agent: instance_pool unavailable; ownership will be backfilled by reconcile_toml_agents_with_ownership at next restart"
+            );
+        }
+
         // Step 2: Write identity files to the agent's workspace.
         // Files are written best-effort: partial failures are reported but don't
         // abort the entire creation (the agent is already running with scaffold
