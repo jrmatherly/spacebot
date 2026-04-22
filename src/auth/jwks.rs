@@ -241,3 +241,55 @@ fn map_authorizer_err(e: jwt_authorizer::error::AuthError) -> AuthError {
         JE::NoAuthorizer() | JE::NoAuthorizerLayer() => AuthError::JwksUnreachable,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::context::PrincipalType;
+    use crate::auth::testing::{MockValidator, mint_mock_token};
+
+    /// Regression guard for the `JwtValidator` / `DynJwtValidator` split.
+    /// Asserts that `Arc<MockValidator>` unsize-coerces to
+    /// `Arc<dyn DynJwtValidator>` via the blanket impl at
+    /// `impl<T: JwtValidator + ?Sized> DynJwtValidator for T`, and that
+    /// `validate_dyn` routes back to `JwtValidator::validate` identically
+    /// to calling the concrete type directly.
+    ///
+    /// Production wires exactly this path at `src/main.rs` via
+    /// `set_entra_auth(Arc::new(validator))`: the compiler does the
+    /// coercion implicitly, and the middleware calls `.validate_dyn(...)`.
+    /// Without this test, a regression in the blanket impl (e.g. a future
+    /// `impl<T: SomeBound> JwtValidator for T` that breaks object safety)
+    /// would only surface at production token-validation time.
+    #[tokio::test]
+    async fn dyn_jwt_validator_routes_through_blanket_impl() {
+        use std::sync::Arc;
+
+        let ctx = AuthContext {
+            principal_type: PrincipalType::User,
+            tid: Arc::from("t1"),
+            oid: Arc::from("alice"),
+            roles: vec![],
+            groups: vec![],
+            groups_overage: false,
+            display_email: None,
+            display_name: None,
+        };
+        let token = mint_mock_token(&ctx);
+
+        // The coercion step this test exists to guard: concrete
+        // Arc<MockValidator> -> Arc<dyn DynJwtValidator>.
+        let concrete: Arc<MockValidator> = Arc::new(MockValidator::new());
+        let erased: Arc<dyn DynJwtValidator> = concrete.clone();
+
+        // Two independent validate calls: one through the concrete
+        // inherent method, one through the dyn-erased trait object.
+        // They must return identical AuthContext values.
+        let direct = concrete.validate(&token).await.unwrap();
+        let via_dyn = erased.validate_dyn(&token).await.unwrap();
+
+        assert_eq!(direct.oid.as_ref(), via_dyn.oid.as_ref());
+        assert_eq!(direct.tid.as_ref(), via_dyn.tid.as_ref());
+        assert_eq!(direct.principal_type, via_dyn.principal_type);
+    }
+}

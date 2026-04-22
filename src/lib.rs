@@ -465,10 +465,13 @@ impl AgentDeps {
         &self.auth_context
     }
 
-    /// Produce a turn-local clone with a specific auth context. Called by
-    /// the Channel when dispatching a new inbound message so spawned
-    /// Branches and Workers carry the originator's identity into the
-    /// agentic loop.
+    /// Produce a turn-local clone with a specific auth context. PR 1
+    /// (Phase 4) ships the builder with no live call site; PR 2 wires the
+    /// Channel-side caller so each turn's spawned Branches and Workers
+    /// carry the originating principal. Until then, `AgentDeps` uses the
+    /// [`AuthContext::legacy_static`] default from `AgentDeps` construction,
+    /// which sits in the admin-bypass set. **Do not rely on Branch/Worker
+    /// inheritance propagating a real user identity in production today.**
     pub fn for_turn(&self, ctx: auth::context::AuthContext) -> Self {
         let mut next = self.clone();
         next.auth_context = ctx;
