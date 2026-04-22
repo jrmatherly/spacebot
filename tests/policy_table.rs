@@ -422,10 +422,7 @@ async fn system_read_does_not_set_audit_flag() {
         .await
         .unwrap();
     assert!(matches!(decision, Access::Allowed));
-    assert!(
-        !admin_override,
-        "System bypass must NOT set admin_override"
-    );
+    assert!(!admin_override, "System bypass must NOT set admin_override");
 }
 
 #[tokio::test]
