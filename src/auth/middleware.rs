@@ -138,13 +138,27 @@ pub async fn entra_auth_middleware(
                     // depend on whether the installed validator is the real
                     // `EntraValidator` or a `MockValidator`. Mocks leave this
                     // None and the middleware falls back to the 300s default.
-                    let ttl_secs = state
-                        .entra_config
-                        .load()
-                        .as_ref()
-                        .as_ref()
-                        .map(|c| c.group_cache_ttl_secs)
-                        .unwrap_or(300);
+                    //
+                    // If `entra_config` is None but `entra_auth` was verified
+                    // above (validator.validate_dyn succeeded), we hit a
+                    // startup-ordering bug: `set_entra_auth` ran but
+                    // `set_entra_auth_config` did not. Production deploys
+                    // should never see this; a `tracing::warn!` surfaces the
+                    // divergence so an operator who configured a 3600s TTL
+                    // and is seeing 300s Graph traffic can trace it here.
+                    let ttl_secs = match state.entra_config.load().as_ref().as_ref() {
+                        Some(cfg) => cfg.group_cache_ttl_secs,
+                        None => {
+                            tracing::warn!(
+                                principal_key = %ctx.principal_key(),
+                                "entra_config not attached; falling back to 300s \
+                                 group-cache TTL. Mock validator paths hit this \
+                                 branch by design; production Entra paths hitting \
+                                 it indicate a set_entra_auth_config ordering bug"
+                            );
+                            300
+                        }
+                    };
 
                     // Pre-compute principal_key once so both spawns carry it
                     // inline on their `warn!` sites. Tracing spans already

@@ -105,27 +105,35 @@ async fn decide_user_read(
         return Ok(Access::Allowed);
     }
     let Some(vis) = own.visibility_enum() else {
-        // Invalid visibility string in DB. CHECK constraint should have
-        // prevented this; log and deny.
-        tracing::warn!(
-            resource_type = %own.resource_type,
-            resource_id = %own.resource_id,
-            visibility = %own.visibility,
-            "invalid visibility value in resource_ownership row"
-        );
-        return Ok(Access::Denied(DenyReason::NotYours));
+        // Invalid visibility string in DB. The CHECK constraint at
+        // `migrations/global/20260420120003_resource_ownership.sql` should
+        // prevent this, so reaching this branch means migration skew, DB
+        // tampering, or a sqlite feature-flag difference. Surfacing as 500
+        // instead of Denied(NotYours) converts an integrity bug into a
+        // visible operator alert rather than a silent "resource not found"
+        // UX bug that would take weeks of debugging to attribute.
+        return Err(anyhow::anyhow!(
+            "resource_ownership integrity violation: invalid visibility \
+             value {:?} for {}:{}",
+            own.visibility,
+            own.resource_type,
+            own.resource_id,
+        ));
     };
     match vis {
         Visibility::Personal => Ok(Access::Denied(DenyReason::NotYours)),
         Visibility::Org => Ok(Access::Allowed),
         Visibility::Team => {
             let Some(team_id) = own.shared_with_team_id.as_ref() else {
-                tracing::warn!(
-                    resource_type = %own.resource_type,
-                    resource_id = %own.resource_id,
-                    "team visibility with no team_id (CHECK constraint should have prevented)"
-                );
-                return Ok(Access::Denied(DenyReason::NotYours));
+                // Same reasoning: the CHECK constraint enforces team_id
+                // presence when visibility = 'team'. Missing team_id here
+                // is an integrity bug, not a deny.
+                return Err(anyhow::anyhow!(
+                    "resource_ownership integrity violation: Team visibility \
+                     with null shared_with_team_id for {}:{}",
+                    own.resource_type,
+                    own.resource_id,
+                ));
             };
             let found: Option<i64> = sqlx::query_scalar(
                 r#"
