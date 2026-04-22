@@ -55,11 +55,23 @@ impl AuditAppender {
         // compute the canonical bytes. Phase 0 Task 0.6 installed the JWT
         // regex in `src/secrets/scrub.rs::LEAK_PATTERNS`. A-01: we use
         // `scrub_leaks` (1-arg), not `scrub_secrets` (2-arg exact-match).
-        let metadata_scrubbed: serde_json::Value =
-            serde_json::from_str(&crate::secrets::scrub::scrub_leaks(
-                &serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into()),
-            ))
-            .unwrap_or(event.metadata.clone());
+        //
+        // PR #106 I9: log fallback paths explicitly. serde_json::to_string on
+        // a serde_json::Value cannot fail today (Value is always serializable),
+        // so these tracing::warn! calls are defense-in-depth. If a future
+        // refactor changes metadata's type to something fallible, operators
+        // see the failure instead of silently getting "{}"/Null.
+        let metadata_str =
+            serde_json::to_string(&event.metadata).unwrap_or_else(|error| {
+                tracing::warn!(%error, "metadata serialization failed; emitting empty object into scrubber");
+                "{}".into()
+            });
+        let scrubbed_str = crate::secrets::scrub::scrub_leaks(&metadata_str);
+        let metadata_scrubbed: serde_json::Value = serde_json::from_str(&scrubbed_str)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "scrubbed metadata failed to re-parse as JSON; falling back to original");
+                event.metadata.clone()
+            });
         let event = AuditEvent {
             metadata: metadata_scrubbed,
             ..event
@@ -83,7 +95,12 @@ impl AuditAppender {
         let canon = canonical_bytes(&event, seq, &timestamp, &prev_hash);
         let row_hash = sha256_hex(&canon);
 
-        let metadata_json = serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into());
+        // PR #106 I9: same serialization-is-infallible invariant as above;
+        // log explicitly if it ever breaks rather than silently storing "{}".
+        let metadata_json = serde_json::to_string(&event.metadata).unwrap_or_else(|error| {
+            tracing::warn!(%error, "scrubbed metadata serialization failed; storing empty object");
+            "{}".into()
+        });
 
         sqlx::query(
             r#"

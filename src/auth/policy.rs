@@ -267,13 +267,17 @@ pub fn fire_admin_read_audit(
 ) {
     if let Some(audit) = audit.load().as_ref().as_ref().cloned() {
         let principal_key = ctx.principal_key();
+        // PR #106 I1: source principal_type from PrincipalType::as_canonical_str
+        // so ServicePrincipal admins (app-role assignments) are correctly
+        // attributed as "service_principal" instead of hardcoded "user".
+        let principal_type = ctx.principal_type.as_canonical_str().to_string();
         let resource_type = resource_type.to_string();
         let resource_id = resource_id.to_string();
         tokio::spawn(async move {
             if let Err(error) = audit
                 .append(crate::audit::AuditEvent {
                     principal_key,
-                    principal_type: "user".into(),
+                    principal_type,
                     action: crate::audit::AuditAction::AdminRead,
                     resource_type: Some(resource_type),
                     resource_id: Some(resource_id),
@@ -300,13 +304,15 @@ pub fn fire_denied_audit(
 ) {
     if let Some(audit) = audit.load().as_ref().as_ref().cloned() {
         let principal_key = ctx.principal_key();
+        // PR #106 I1: see fire_admin_read_audit for the snake_case sourcing rationale.
+        let principal_type = ctx.principal_type.as_canonical_str().to_string();
         let resource_type = resource_type.to_string();
         let resource_id = resource_id.to_string();
         tokio::spawn(async move {
             if let Err(error) = audit
                 .append(crate::audit::AuditEvent {
                     principal_key,
-                    principal_type: "user".into(),
+                    principal_type,
                     action: crate::audit::AuditAction::AuthzDenied,
                     resource_type: Some(resource_type),
                     resource_id: Some(resource_id),

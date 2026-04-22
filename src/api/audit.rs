@@ -114,19 +114,19 @@ pub(super) async fn list_audit_events(
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if accept.contains("text/csv") {
+    if accept_prefers_csv(accept) {
         let mut body = String::new();
         body.push_str("seq,timestamp,principal_key,action,resource_type,resource_id,result\n");
         for r in &rows {
             body.push_str(&format!(
                 "{},{},{},{},{},{},{}\n",
                 r.seq,
-                r.timestamp,
-                r.principal_key,
-                r.action,
-                r.resource_type.as_deref().unwrap_or(""),
-                r.resource_id.as_deref().unwrap_or(""),
-                r.result,
+                csv_escape(&r.timestamp),
+                csv_escape(&r.principal_key),
+                csv_escape(&r.action),
+                csv_escape(r.resource_type.as_deref().unwrap_or("")),
+                csv_escape(r.resource_id.as_deref().unwrap_or("")),
+                csv_escape(&r.result),
             ));
         }
         Ok(([(header::CONTENT_TYPE, "text/csv")], body).into_response())
@@ -194,4 +194,111 @@ pub(super) async fn verify_audit_chain(
         first_mismatch_seq: result.first_mismatch_seq,
         total_rows: result.total_rows,
     }))
+}
+
+/// RFC 4180 CSV field escaping + Excel formula-injection guard.
+/// PR #106 remediation C2: the admin audit CSV export is consumed by
+/// compliance tooling and sometimes opened in spreadsheet apps; both
+/// paths require escaping.
+///
+/// Quote and double-embedded-quote the field if it contains any of:
+/// comma, double-quote, CR, or LF (RFC 4180 rule).
+///
+/// Prepend a single-quote sigil when the raw field starts with
+/// `=`, `+`, `-`, `@`, CR, or LF (Excel formula-injection guard per
+/// OWASP). The sigil is inside the quoted value so Excel sees it as
+/// a leading text character and refuses to evaluate the cell. The
+/// character is visible in the rendered CSV but not in tools that
+/// post-process with a proper CSV parser.
+fn csv_escape(field: &str) -> String {
+    // Formula-injection guard first; then RFC 4180 quoting covers the
+    // (possibly-prefixed) value uniformly.
+    let needs_formula_guard = field
+        .as_bytes()
+        .first()
+        .is_some_and(|b| matches!(*b, b'=' | b'+' | b'-' | b'@' | b'\r' | b'\n'));
+    let needs_quotes = needs_formula_guard
+        || field
+            .as_bytes()
+            .iter()
+            .any(|b| matches!(*b, b',' | b'"' | b'\r' | b'\n'));
+    if !needs_quotes {
+        return field.to_string();
+    }
+    let escaped = field.replace('"', "\"\"");
+    if needs_formula_guard {
+        format!("\"'{escaped}\"")
+    } else {
+        format!("\"{escaped}\"")
+    }
+}
+
+/// Accept-header parsing that correctly handles quality values and
+/// multiple accepted types. PR #106 remediation I5: the prior
+/// `.contains("text/csv")` would match `Accept: application/x-ndjson;q=1.0, text/csv;q=0.1`
+/// and incorrectly downgrade to CSV.
+///
+/// Semantics kept intentionally narrow: if CSV appears ahead of NDJSON
+/// in the header (or NDJSON is absent), prefer CSV. Otherwise NDJSON is
+/// the default. Quality weights are ignored for simplicity — operator
+/// tooling that wants CSV will send `Accept: text/csv` unambiguously.
+fn accept_prefers_csv(accept: &str) -> bool {
+    // Look at the first matching media type. Split on comma, trim, take
+    // the part before any parameter (`;`).
+    for raw in accept.split(',') {
+        let media = raw.split(';').next().unwrap_or("").trim();
+        if media.eq_ignore_ascii_case("text/csv") {
+            return true;
+        }
+        if media.eq_ignore_ascii_case("application/x-ndjson")
+            || media.eq_ignore_ascii_case("application/json")
+        {
+            return false;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{accept_prefers_csv, csv_escape};
+
+    #[test]
+    fn csv_escape_passes_through_plain_fields() {
+        assert_eq!(csv_escape("alice"), "alice");
+        assert_eq!(csv_escape("2026-04-22T12:00:00Z"), "2026-04-22T12:00:00Z");
+    }
+
+    #[test]
+    fn csv_escape_quotes_and_doubles_embedded_commas_and_quotes() {
+        assert_eq!(csv_escape("a,b"), "\"a,b\"");
+        assert_eq!(csv_escape("a\"b"), "\"a\"\"b\"");
+        assert_eq!(csv_escape("a\nb"), "\"a\nb\"");
+    }
+
+    #[test]
+    fn csv_escape_guards_formula_injection() {
+        // Leading =, +, -, @, CR, LF must be prefixed with a sigil and quoted.
+        assert_eq!(csv_escape("=1+1"), "\"'=1+1\"");
+        assert_eq!(csv_escape("+abc"), "\"'+abc\"");
+        assert_eq!(csv_escape("-42"), "\"'-42\"");
+        assert_eq!(csv_escape("@SUM(A1)"), "\"'@SUM(A1)\"");
+    }
+
+    #[test]
+    fn accept_prefers_csv_first_token_wins() {
+        assert!(accept_prefers_csv("text/csv"));
+        assert!(accept_prefers_csv("text/csv;q=1.0"));
+        assert!(accept_prefers_csv("text/csv, application/x-ndjson"));
+        assert!(!accept_prefers_csv("application/x-ndjson, text/csv"));
+        assert!(!accept_prefers_csv("application/x-ndjson;q=1.0, text/csv;q=0.1"));
+        assert!(!accept_prefers_csv(""));
+        assert!(!accept_prefers_csv("application/json"));
+    }
+
+    #[test]
+    fn accept_prefers_csv_is_case_insensitive() {
+        assert!(accept_prefers_csv("TEXT/CSV"));
+        assert!(accept_prefers_csv("Text/Csv"));
+    }
 }

@@ -714,11 +714,28 @@ impl Channel {
     ///
     /// Restore-on-return discipline (Phase 5 Task 5.7b): pair every
     /// `install_turn_deps` call with a `restore_turn_deps(prior)` before
-    /// the turn returns (Ok or Err). Panic path is not restored because
-    /// the channel task dies on panic (see `src/main.rs:~2247` — bare
-    /// `tokio::spawn` with no `catch_unwind` wrap), making restore
-    /// decorative on that branch. `#[must_use]` on `PriorTurnDeps`
+    /// the turn returns (Ok or Err). `#[must_use]` on `PriorTurnDeps`
     /// enforces the invariant at the type-system level.
+    ///
+    /// **Paths where restore does NOT run (PR #106 C1 explicit callout):**
+    ///
+    /// - **Panic** — `Channel::run` is spawned in a bare `tokio::spawn`
+    ///   from `src/main.rs` with no `catch_unwind` wrap, so a panic
+    ///   inside the turn body kills the whole channel task. The `self`
+    ///   struct drops; restore would be decorative.
+    /// - **Async cancellation** — if a future caller ever wraps
+    ///   `handle_message(&mut self, ..)` in a cancelable `tokio::select!`
+    ///   (shutdown deadlines, per-turn timeouts), dropping the future
+    ///   mid-`.await` skips the `restore_turn_deps` line. No caller today
+    ///   does this (the event loop at `~:1363` calls `.await?` directly),
+    ///   but any future cancelable wrapper MUST either accept this
+    ///   leak-until-next-install window OR convert this helper into a
+    ///   `Drop`-based RAII guard (requires interior mutability on
+    ///   `self.deps` or a raw-pointer pattern; see
+    ///   `.scratchpad/plans/entraid-auth/phase-5-audit-log.md` § Task 5.7b
+    ///   execution-time correction note for why the `scopeguard::ScopeGuard`
+    ///   pattern the original plan specified is not implementable under
+    ///   Rust's borrow checker for this shape).
     fn install_turn_deps(&mut self, message: &InboundMessage) -> PriorTurnDeps {
         let prior = PriorTurnDeps {
             deps: self.deps.clone(),

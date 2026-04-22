@@ -317,19 +317,13 @@ pub async fn entra_auth_middleware(
 
             // Phase 5 Task 5.6: emit AuthSuccess audit event. Fire-and-forget
             // via tokio::spawn; append failures surface via tracing::warn! per
-            // rust-essentials.md (no let _ = on Result). Uses the canonical
-            // snake_case principal_type strings from src/auth/repository.rs:62-64
-            // (NOT `{:?}`.to_lowercase(), which would produce "serviceprincipal"
-            // instead of "service_principal").
+            // rust-essentials.md (no let _ = on Result). principal_type is
+            // sourced from `PrincipalType::as_canonical_str` so middleware +
+            // policy helpers + repository + test fixtures all agree on the
+            // snake_case form (PR #106 remediation I1).
             if let Some(audit) = state.audit.load().as_ref().as_ref().cloned() {
                 let principal_key = ctx.principal_key();
-                let principal_type = match ctx.principal_type {
-                    crate::auth::PrincipalType::User => "user",
-                    crate::auth::PrincipalType::ServicePrincipal => "service_principal",
-                    crate::auth::PrincipalType::System => "system",
-                    crate::auth::PrincipalType::LegacyStatic => "legacy_static",
-                }
-                .to_string();
+                let principal_type = ctx.principal_type.as_canonical_str().to_string();
                 let source_ip = request
                     .headers()
                     .get("x-forwarded-for")
