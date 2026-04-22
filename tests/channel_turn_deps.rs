@@ -2,15 +2,30 @@
 //! `Channel::install_turn_deps` + `restore_turn_deps` preserve the
 //! originating `auth_context` across a turn's exit (normal-path Ok / Err
 //! return). Panic path is not restored; see `install_turn_deps` doc for
-//! why that's deliberate (`src/main.rs:~2247` runs `channel.run().await`
-//! inside a bare `tokio::spawn` with no `catch_unwind` wrap, so a
-//! panicked turn kills the whole channel task and the restore would be
-//! operating on a dead struct).
+//! why that's deliberate (the channel spawn site in `src/main.rs` is a
+//! bare `tokio::spawn` without `catch_unwind`, so a panicked turn kills
+//! the whole channel task and the restore would be operating on a dead
+//! struct).
 //!
-//! Full behavioral coverage (HTTP → Channel → Branch with principal
-//! round-trip) lives in `tests/api_memories_authz.rs`. This file
-//! asserts only the structural invariant that drives the install/restore
-//! pair: save + mutate + restore yields the original.
+//! **How the wrapper-call invariant is enforced (PR #106 remediation T1).**
+//! The Task 5.7b refactor splits `handle_message` into a thin outer
+//! wrapper and an inner body; the wrapper's shape is:
+//!
+//! ```ignore
+//! let prior = self.install_turn_deps(&message);
+//! let result = self.handle_message_inner(message).await;
+//! self.restore_turn_deps(prior);
+//! result
+//! ```
+//!
+//! `PriorTurnDeps` carries `#[must_use = "..."]` so a contributor who
+//! deletes the restore call or drops the prior on the floor gets a
+//! compile-time warning (elevated to error under `RUSTFLAGS=-Dwarnings`
+//! in `just gate-pr`). The restore-is-actually-called invariant is
+//! therefore enforced by the type system, not by a runtime test. This
+//! file asserts the complementary data-level property: IF restore is
+//! called with the captured prior, the round-trip preserves
+//! `auth_context`.
 //!
 //! `PriorTurnDeps` is a private struct inside `src/agent/channel.rs` by
 //! design (A-13-style module-boundary discipline), so we can't reach
