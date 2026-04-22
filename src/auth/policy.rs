@@ -152,6 +152,15 @@ async fn decide_user_read(
 /// and the decision is `Allowed`, emit an `admin_<verb>` event per the
 /// matrix at `docs/design-docs/entra-role-permission-matrix.md`.
 ///
+/// `admin_override` is set ONLY when a principal with the `SpacebotAdmin`
+/// role reads another user's resource. `LegacyStatic` (pre-Entra CI and
+/// scripts) and `System` (Cortex-initiated) bypass `check_read` via
+/// [`is_admin`] but MUST NOT trip the audit flag: the matrix lists those
+/// principals as plain "yes" while `Admin` is "yes (audited)". Mis-setting
+/// `admin_override` here would pollute the quarterly access review with
+/// continuous false-positive break-glass entries once Phase 5 wires
+/// `AuditAppender::append`.
+///
 /// Phase 4 stubs the audit side at `tracing::info!`. Phase 5 replaces
 /// that with an `AuditAppender` call against the hash-chained audit log.
 pub async fn check_read_with_audit(
@@ -165,7 +174,8 @@ pub async fn check_read_with_audit(
         return Ok((Access::Denied(DenyReason::NotOwned), false));
     };
     let is_owner = own.owner_principal_key == ctx.principal_key();
-    let admin_override = is_admin(ctx) && !is_owner;
+    // Role-Admin only: Legacy/System bypass without audit. See doc above.
+    let admin_override = ctx.has_role(crate::auth::roles::ROLE_ADMIN) && !is_owner;
 
     let decision = if is_admin(ctx) {
         Access::Allowed

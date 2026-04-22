@@ -315,6 +315,99 @@ async fn owner_read_does_not_set_audit_flag() {
 }
 
 #[tokio::test]
+async fn legacy_static_read_does_not_set_audit_flag() {
+    // LegacyStatic bypasses check_read via is_admin, but it represents
+    // pre-Entra CI and scripts. Every HTTP request from that branch would
+    // otherwise trip admin_override and pollute the quarterly access
+    // review. admin_override must be gated on the SpacebotAdmin role, not
+    // on is_admin(). Regression guard for the Phase 4 PR #104 review.
+    let pool = setup_pool().await;
+    let alice = user("alice", vec![ROLE_USER], vec![]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let legacy = AuthContext::legacy_static();
+    let (decision, admin_override) = check_read_with_audit(&pool, &legacy, "memory", "m1")
+        .await
+        .unwrap();
+    assert!(matches!(decision, Access::Allowed));
+    assert!(
+        !admin_override,
+        "LegacyStatic bypass must NOT set admin_override"
+    );
+}
+
+#[tokio::test]
+async fn system_read_does_not_set_audit_flag() {
+    // Same invariant for System (Cortex-initiated). Non-admin bypass path.
+    let pool = setup_pool().await;
+    let alice = user("alice", vec![ROLE_USER], vec![]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let system = AuthContext {
+        principal_type: PrincipalType::System,
+        tid: Arc::from(""),
+        oid: Arc::from(""),
+        roles: vec![],
+        groups: vec![],
+        groups_overage: false,
+        display_email: None,
+        display_name: None,
+    };
+    let (decision, admin_override) = check_read_with_audit(&pool, &system, "memory", "m1")
+        .await
+        .unwrap();
+    assert!(matches!(decision, Access::Allowed));
+    assert!(
+        !admin_override,
+        "System bypass must NOT set admin_override"
+    );
+}
+
+#[tokio::test]
+async fn admin_read_of_missing_resource_does_not_set_override() {
+    // When the resource has no ownership row, check_read_with_audit
+    // returns (Denied(NotOwned), false) BEFORE evaluating admin_override.
+    // Nothing exists to break into, so no audit event should fire.
+    // Regression guard: Phase 5's audit contract keys off admin_override
+    // for the admin_read vs read event discriminator.
+    let pool = setup_pool().await;
+    let admin = user("admin-carol", vec![ROLE_ADMIN], vec![]);
+    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    // NO set_ownership call: the resource has no row.
+
+    let (decision, admin_override) = check_read_with_audit(&pool, &admin, "memory", "m-ghost")
+        .await
+        .unwrap();
+    assert!(matches!(decision, Access::Denied(DenyReason::NotOwned)));
+    assert!(
+        !admin_override,
+        "NotOwned must NOT set admin_override (nothing to break into)"
+    );
+}
+
+#[tokio::test]
 async fn legacy_static_bypasses_all_checks() {
     let pool = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
