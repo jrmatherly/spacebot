@@ -40,9 +40,7 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 
 fn req_list_memories(agent_id: &str, token: &str) -> Request<Body> {
     Request::builder()
-        .uri(format!(
-            "/api/agents/memories?agent_id={agent_id}&limit=10"
-        ))
+        .uri(format!("/api/agents/memories?agent_id={agent_id}&limit=10"))
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap()

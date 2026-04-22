@@ -291,7 +291,9 @@ mod tests {
         assert!(accept_prefers_csv("text/csv;q=1.0"));
         assert!(accept_prefers_csv("text/csv, application/x-ndjson"));
         assert!(!accept_prefers_csv("application/x-ndjson, text/csv"));
-        assert!(!accept_prefers_csv("application/x-ndjson;q=1.0, text/csv;q=0.1"));
+        assert!(!accept_prefers_csv(
+            "application/x-ndjson;q=1.0, text/csv;q=0.1"
+        ));
         assert!(!accept_prefers_csv(""));
         assert!(!accept_prefers_csv("application/json"));
     }

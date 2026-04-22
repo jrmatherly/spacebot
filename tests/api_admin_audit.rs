@@ -118,7 +118,9 @@ async fn admin_gets_csv_when_accept_csv() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(
-        res.headers().get(header::CONTENT_TYPE).map(|v| v.as_bytes()),
+        res.headers()
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.as_bytes()),
         Some(&b"text/csv"[..]),
         "Content-Type should be text/csv when Accept: text/csv"
     );
