@@ -5,9 +5,9 @@
 //! `check_write`, policy module against a real `resource_ownership` row).
 //! Six cron handlers share a single ~45-line inline gate; non-owner read
 //! (executions) + non-owner write (trigger) + admin bypass + owner-200 +
-//! System-bypass regression + create-ownership (direct-call proof) cover
-//! the enforcement surface without re-covering the policy module, which
-//! has its own tests in `tests/policy_table.rs`.
+//! System-bypass regression + create-ownership (direct-call proof) +
+//! pool-None skip cover the enforcement surface without re-covering
+//! the policy module, which has its own tests in `tests/policy_table.rs`.
 //!
 //! Cron stores and ownership rows live in **different** SQLite databases:
 //! `cron_jobs` sits in the per-agent schema under `migrations/`, while
@@ -418,4 +418,33 @@ async fn create_cron_assigns_ownership() {
     );
     assert_eq!(own.visibility, "personal");
     assert_eq!(own.owner_agent_id.as_deref(), Some("agent-alice-1"));
+}
+
+#[tokio::test]
+async fn pool_none_skip_get_cron() {
+    // Regression guard for the early-startup / static-token fallback path.
+    // When instance_pool is not attached, the get-cron-executions gate
+    // skips and the handler proceeds past authz. Assertion: not 401
+    // (mock token authenticates) and not 403 (authz skip does not deny),
+    // proving the request passed middleware + the no-op authz skip.
+    let state = ApiState::new_test_state_with_mock_entra_no_pool();
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_cron_executions("agent-alice-1", "cron-1", &token))
+        .await
+        .unwrap();
+
+    assert_ne!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "mock token must authenticate successfully"
+    );
+    assert_ne!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "authz skip must not cause a 403"
+    );
 }

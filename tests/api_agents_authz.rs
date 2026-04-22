@@ -12,10 +12,14 @@
 //! 16 tests in `tests/policy_table.rs`.
 //!
 //! The "create assigns ownership" case bypasses
-//! `create_agent_internal` — that path requires a full instance setup
+//! `create_agent_internal`: that path requires a full instance setup
 //! (config.toml on disk, LLM manager, MCP managers, sandboxes). Instead
 //! the test exercises `register_agent_ownership`, the shared helper
 //! both the HTTP wrapper and the TOML reconciliation call.
+//!
+//! `pool_none_skip_agent_overview` covers Gate 5 (the early-startup
+//! fallback path). `trigger_warmup_user_role_unfiltered_is_403`
+//! covers the T4.12 I2 review fix: unfiltered warmup is admin-only.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -321,5 +325,77 @@ async fn toml_reconciliation_assigns_legacy_static_ownership() {
     assert_eq!(
         reconciled_again, 0,
         "existing ownership rows must be left untouched"
+    );
+}
+
+#[tokio::test]
+async fn pool_none_skip_agent_overview() {
+    // Regression guard for the early-startup / static-token fallback path.
+    // When instance_pool is not attached, the agent_overview gate skips
+    // and the handler proceeds past authz. Assertion: not 401 (mock
+    // token authenticates) and not 403 (authz skip does not deny),
+    // proving the request passed middleware + the no-op authz skip.
+    let state = ApiState::new_test_state_with_mock_entra_no_pool();
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_agent_overview("agent-alice-1", &token))
+        .await
+        .unwrap();
+
+    assert_ne!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "mock token must authenticate successfully"
+    );
+    assert_ne!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "authz skip must not cause a 403"
+    );
+}
+
+fn req_trigger_warmup(agent_id: Option<&str>, force: bool, bearer: &str) -> Request<Body> {
+    let body = if let Some(aid) = agent_id {
+        serde_json::json!({ "agent_id": aid, "force": force })
+    } else {
+        serde_json::json!({ "force": force })
+    };
+    Request::builder()
+        .method("POST")
+        .uri("/api/agents/warmup/trigger")
+        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn trigger_warmup_user_role_unfiltered_is_403() {
+    // T4.12 I2 regression guard: `trigger_warmup` with no `agent_id` is
+    // an admin-broad operation that launches warmup coroutines for every
+    // agent on the instance. Non-admin callers must be rejected with 403
+    // to prevent un-owned principals from fanning out background work
+    // they cannot read the output of. If the `!is_admin` check at
+    // `src/api/agents.rs:635` were inverted (deny admins, allow users),
+    // every agent-id-specific test would still pass; this test is the
+    // only coverage of the unfiltered branch.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&bob);
+    let res = app
+        .oneshot(req_trigger_warmup(None, false, &token))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "non-admin user calling unfiltered warmup must receive 403, not 200"
     );
 }

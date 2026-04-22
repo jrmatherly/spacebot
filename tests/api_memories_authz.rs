@@ -12,6 +12,18 @@
 //! 2. Admin (SpacebotAdmin role) bypasses per-resource ownership.
 //! 3. Missing ownership row is a 404 (default deny for pre-Entra data).
 //!
+//! No `create_memory_assigns_ownership` test exists because `src/api/memories.rs`
+//! has no user-facing POST endpoint. Memory rows are created by agent
+//! processes (Channel/Branch/Worker) via `crate::memory::MemoryStore` and
+//! LanceDB as a side effect of the agentic loop, not by HTTP callers. The
+//! gate contract for memories is read-only access control on memories the
+//! process has already stored on behalf of its agent; the ownership row
+//! for memories keys on the memory's `agent_id` owner (read via the
+//! agent's `resource_ownership` row, per the module doc in
+//! `src/api/memories.rs`). Write-path ownership therefore lives in the
+//! agent-creation path, covered by
+//! `tests/api_agents_authz.rs::register_agent_ownership_helper_inserts_personal_row`.
+//!
 //! For the success path when alice reads her own agent, the handler
 //! passes the authz gate then hits `state.memory_searches.get(...)` which
 //! returns None (the test fixture doesn't register a real MemorySearch) —

@@ -159,3 +159,117 @@ async fn send_agent_message_skips_policy_when_pool_none() {
         );
     }
 }
+
+fn system_ctx() -> AuthContext {
+    AuthContext {
+        principal_type: PrincipalType::System,
+        tid: Arc::from(""),
+        oid: Arc::from(""),
+        roles: vec![],
+        groups: vec![],
+        groups_overage: false,
+        display_email: None,
+        display_name: None,
+    }
+}
+
+#[tokio::test]
+async fn send_agent_message_owner_of_both_agents_passes_policy_gate() {
+    // Positive-path: Alice owns both agent-a (sender) and agent-b (target).
+    // `can_link_channel` returns true. The policy gate passes; the tool
+    // then proceeds to link lookup and downstream dispatch. We do NOT
+    // assert full success here because the downstream path requires a
+    // live messaging stack we do not build in this integration test.
+    // The assertion is that the error, if any, is a non-policy error.
+    let pool = setup_pool().await;
+    let alice = user("alice");
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-b",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let tool = SendAgentMessageTool::new(
+        Arc::from("agent-a"),
+        link("agent-a", "agent-b"),
+        agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
+        Arc::new(TaskStore::new(pool.clone())),
+        ConversationLogger::new(pool.clone()),
+        Some(pool.clone()),
+        alice,
+    );
+
+    let result = tool
+        .call(SendAgentMessageArgs {
+            target: "agent-b".to_string(),
+            message: "do a thing".to_string(),
+        })
+        .await;
+
+    // If the tool errors, the error must NOT be the policy denial. A
+    // downstream infra error (no conversation manager, no messaging
+    // stack) is acceptable proof that we passed the policy gate.
+    if let Err(err) = result {
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("denied by policy"),
+            "owner-of-both must pass policy, got policy denial: {msg}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn send_agent_message_system_principal_bypasses_policy() {
+    // System-bypass: `is_admin` returns true for PrincipalType::System,
+    // so `can_link_channel` composes two `check_read` calls that both
+    // short-circuit allow. The policy gate must pass without requiring
+    // ownership rows on either agent. Cortex retriggers and internal
+    // adapters build `AuthContext::system()`-style contexts, and this
+    // path must traverse link policy without surfacing "denied by policy".
+    let pool = setup_pool().await;
+    // Deliberately no ownership rows seeded: System bypass should not
+    // depend on them.
+
+    let tool = SendAgentMessageTool::new(
+        Arc::from("agent-a"),
+        link("agent-a", "agent-b"),
+        agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
+        Arc::new(TaskStore::new(pool.clone())),
+        ConversationLogger::new(pool.clone()),
+        Some(pool.clone()),
+        system_ctx(),
+    );
+
+    let result = tool
+        .call(SendAgentMessageArgs {
+            target: "agent-b".to_string(),
+            message: "do a thing".to_string(),
+        })
+        .await;
+
+    if let Err(err) = result {
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("denied by policy"),
+            "system-principal must bypass policy, got policy denial: {msg}"
+        );
+    }
+}
