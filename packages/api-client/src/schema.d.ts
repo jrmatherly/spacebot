@@ -357,10 +357,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /agents/projects — list projects. */
+        /** GET /agents/projects: list projects. */
         get: operations["list_projects"];
         put?: never;
-        /** POST /agents/projects — create a new project. */
+        /** POST /agents/projects: create a new project. */
         post: operations["create_project"];
         delete?: never;
         options?: never;
@@ -376,7 +376,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** PUT /agents/projects/reorder — update the sort order of all projects. */
+        /** PUT /agents/projects/reorder: update the sort order of all projects. */
         put: operations["reorder_projects"];
         post?: never;
         delete?: never;
@@ -392,12 +392,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /agents/projects/{id} — get a project with repos and worktrees. */
+        /** GET /agents/projects/{id}: get a project with repos and worktrees. */
         get: operations["get_project"];
-        /** PUT /agents/projects/{id} — update a project. */
+        /** PUT /agents/projects/{id}: update a project. */
         put: operations["update_project"];
         post?: never;
-        /** DELETE /agents/projects/{id} — delete a project (DB records only). */
+        /** DELETE /agents/projects/{id}: delete a project (DB records only). */
         delete: operations["delete_project"];
         options?: never;
         head?: never;
@@ -411,7 +411,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /agents/projects/{id}/disk-usage — calculate disk usage for a project. */
+        /** GET /agents/projects/{id}/disk-usage: calculate disk usage for a project. */
         get: operations["disk_usage"];
         put?: never;
         post?: never;
@@ -428,7 +428,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /agents/projects/{id}/logo — serve the detected project logo. */
+        /** GET /agents/projects/{id}/logo: serve the detected project logo. */
         get: operations["serve_logo"];
         put?: never;
         post?: never;
@@ -447,7 +447,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /agents/projects/{id}/repos — add a repo to a project. */
+        /** POST /agents/projects/{id}/repos: add a repo to a project. */
         post: operations["create_repo"];
         delete?: never;
         options?: never;
@@ -464,7 +464,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /agents/projects/{id}/scan — re-scan project root for repos and worktrees. */
+        /** POST /agents/projects/{id}/scan: re-scan project root for repos and worktrees. */
         post: operations["scan_project"];
         delete?: never;
         options?: never;
@@ -481,7 +481,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /agents/projects/{id}/worktrees — create a worktree. */
+        /** POST /agents/projects/{id}/worktrees: create a worktree. */
         post: operations["create_worktree"];
         delete?: never;
         options?: never;
@@ -499,7 +499,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** DELETE /agents/projects/{project_id}/repos/{repo_id} — remove a repo. */
+        /** DELETE /agents/projects/{project_id}/repos/{repo_id}: remove a repo. */
         delete: operations["delete_repo"];
         options?: never;
         head?: never;
@@ -516,7 +516,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** DELETE /agents/projects/{project_id}/worktrees/{worktree_id} — remove a worktree. */
+        /** DELETE /agents/projects/{project_id}/worktrees/{worktree_id}: remove a worktree. */
         delete: operations["delete_worktree"];
         options?: never;
         head?: never;
@@ -872,7 +872,7 @@ export interface paths {
         /**
          * Render the full prompt that the LLM would see on the next turn for a
          *     given channel. Returns the rendered system prompt and conversation
-         *     history — useful for debugging prompt construction, coalescing,
+         *     history. Useful for debugging prompt construction, coalescing,
          *     status block content, and context window usage.
          */
         get: operations["inspect_prompt"];
@@ -1287,11 +1287,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /api/mcp/servers — list all configured MCP servers from config.toml. */
+        /** GET /api/mcp/servers: list all configured MCP servers from config.toml. */
         get: operations["list_mcp_servers"];
-        /** PUT /api/mcp/servers — update an existing MCP server definition. */
+        /** PUT /api/mcp/servers: update an existing MCP server definition. */
         put: operations["update_mcp_server"];
-        /** POST /api/mcp/servers — add a new MCP server definition to config.toml. */
+        /** POST /api/mcp/servers: add a new MCP server definition to config.toml. */
         post: operations["create_mcp_server"];
         delete?: never;
         options?: never;
@@ -1309,7 +1309,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** DELETE /api/mcp/servers/{name} — remove a server definition from config.toml. */
+        /** DELETE /api/mcp/servers/{name}: remove a server definition from config.toml. */
         delete: operations["delete_mcp_server"];
         options?: never;
         head?: never;
@@ -1325,7 +1325,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /api/mcp/servers/{name}/reconnect — force-reconnect a specific server. */
+        /** POST /api/mcp/servers/{name}/reconnect: force-reconnect a specific server. */
         post: operations["reconnect_mcp_server"];
         delete?: never;
         options?: never;
@@ -1340,7 +1340,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /api/mcp/status — per-agent MCP connection status. */
+        /** GET /api/mcp/status: per-agent MCP connection status. */
         get: operations["mcp_status"];
         put?: never;
         post?: never;
@@ -2020,7 +2020,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** PUT /api/ssh/authorized-key — write the public key for SSH access. */
+        /** PUT /api/ssh/authorized-key: write the public key for SSH access. */
         put: operations["set_authorized_key"];
         post?: never;
         delete?: never;
@@ -2036,7 +2036,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /api/ssh/status — check if SSH is available. */
+        /** GET /api/ssh/status: check if SSH is available. */
         get: operations["ssh_status"];
         put?: never;
         post?: never;
@@ -2311,10 +2311,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /wiki — list all wiki pages */
+        /** GET /wiki: list all wiki pages */
         get: operations["list_pages"];
         put?: never;
-        /** POST /wiki — create a new wiki page */
+        /** POST /wiki: create a new wiki page */
         post: operations["create_page"];
         delete?: never;
         options?: never;
@@ -2329,7 +2329,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /wiki/search — search wiki pages */
+        /** GET /wiki/search: search wiki pages */
         get: operations["search_pages"];
         put?: never;
         post?: never;
@@ -2346,11 +2346,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /wiki/:slug — read a wiki page */
+        /** GET /wiki/:slug: read a wiki page */
         get: operations["get_page"];
         put?: never;
         post?: never;
-        /** DELETE /wiki/:slug — archive a page */
+        /** DELETE /wiki/:slug: archive a page */
         delete: operations["archive_page"];
         options?: never;
         head?: never;
@@ -2366,7 +2366,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /wiki/:slug/edit — apply a partial edit */
+        /** POST /wiki/:slug/edit: apply a partial edit */
         post: operations["edit_page"];
         delete?: never;
         options?: never;
@@ -2381,7 +2381,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** GET /wiki/:slug/history — list version history */
+        /** GET /wiki/:slug/history: list version history */
         get: operations["get_history"];
         put?: never;
         post?: never;
@@ -2400,7 +2400,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** POST /wiki/:slug/restore — restore to a historical version */
+        /** POST /wiki/:slug/restore: restore to a historical version */
         post: operations["restore_version"];
         delete?: never;
         options?: never;
@@ -6370,7 +6370,7 @@ export interface operations {
                 download?: boolean;
                 /**
                  * @description When true, serve a thumbnail-sized version (for display in the UI).
-                 *     Currently serves the full file — thumbnail generation is a future enhancement.
+                 *     Currently serves the full file; thumbnail generation is a future enhancement.
                  */
                 thumbnail?: boolean;
             };
