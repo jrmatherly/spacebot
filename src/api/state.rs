@@ -121,6 +121,12 @@ pub struct ApiState {
     /// the store wrappers above so the Entra middleware can upsert user rows
     /// on successful auth without having to route through a store.
     pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
+    /// Instance-level audit appender. Attached atomically with the instance
+    /// pool via `set_instance_pool` (A-13: production construction lives at
+    /// that one call-site). `None` during the startup window before the pool
+    /// attaches; reads use `.load().as_ref().as_ref().cloned()` with graceful
+    /// no-op on the None branch.
+    pub audit: ArcSwap<Option<Arc<crate::audit::AuditAppender>>>,
     /// One-shot guard for the `entra_config not attached` warn in
     /// `entra_auth_middleware`. Set to `true` after the first emission so
     /// mock-validator integration tests (which leave `entra_config` None by
@@ -383,6 +389,7 @@ impl ApiState {
             project_store: ArcSwap::from_pointee(None),
             notification_store: ArcSwap::from_pointee(None),
             instance_pool: ArcSwap::from_pointee(None),
+            audit: ArcSwap::from_pointee(None),
             runtime_configs: ArcSwap::from_pointee(HashMap::new()),
             mcp_managers: ArcSwap::from_pointee(HashMap::new()),
             sandboxes: ArcSwap::from_pointee(HashMap::new()),
@@ -1037,6 +1044,15 @@ impl ApiState {
     /// reach the instance database via the typed stores (TaskStore, etc.)
     /// rather than this raw pool.
     pub fn set_instance_pool(&self, pool: sqlx::SqlitePool) {
+        // A-13: the AuditAppender singleton is constructed here, the only
+        // call-site where both ApiState and a pool are in scope. The
+        // pub(crate) constructor at crate::audit::AuditAppender::new enforces
+        // this at the module boundary. Attach the appender BEFORE the pool
+        // so any early-bound middleware path that races the store sees either
+        // (audit=Some, pool=None) — benign, the audit append would fail
+        // cleanly on a missing pool — or the fully-attached pair.
+        let appender = Arc::new(crate::audit::AuditAppender::new(pool.clone()));
+        self.audit.store(Arc::new(Some(appender)));
         self.instance_pool.store(Arc::new(Some(pool)));
     }
 
