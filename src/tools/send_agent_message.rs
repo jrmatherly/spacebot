@@ -35,18 +35,18 @@ pub struct SendAgentMessageTool {
     task_store: Arc<TaskStore>,
     /// Per-agent conversation logger for writing link channel audit records.
     conversation_logger: ConversationLogger,
-    /// Per-turn skip flag. When set after delegation, the channel turn ends immediately.
-    skip_flag: Option<SkipFlag>,
-    /// The originating channel (conversation_id) where the user request came from.
-    /// Set per-turn so task completion notifications route back to the right place.
-    originating_channel: Option<String>,
-    working_memory: Option<Arc<crate::memory::WorkingMemoryStore>>,
     /// Instance-wide SQLite pool for resource_ownership + team_memberships
     /// lookups in `can_link_channel`. `None` until Phase 4 wires it via
     /// the construction site; when `None`, the policy check is skipped with
     /// a `tracing::warn!` + `spacebot_authz_skipped_total{handler="send_agent_message"}`
     /// increment so the gap is operationally visible.
     instance_pool: Option<sqlx::SqlitePool>,
+    /// Per-turn skip flag. When set after delegation, the channel turn ends immediately.
+    skip_flag: Option<SkipFlag>,
+    /// The originating channel (conversation_id) where the user request came from.
+    /// Set per-turn so task completion notifications route back to the right place.
+    originating_channel: Option<String>,
+    working_memory: Option<Arc<crate::memory::WorkingMemoryStore>>,
     /// Per-turn originating principal. Installed at the per-turn
     /// `with_auth_context` chain in `Channel::run_agent_turn` from the
     /// Channel's turn-local `AgentDeps.auth_context` (written by
