@@ -216,9 +216,7 @@ impl Tool for SendAgentMessageTool {
                 target_agent_id.as_str(),
             )
             .await
-            .map_err(|error| {
-                SendAgentMessageError(format!("link policy check failed: {error}"))
-            })?;
+            .map_err(|error| SendAgentMessageError(format!("link policy check failed: {error}")))?;
 
             if !allowed {
                 tracing::warn!(

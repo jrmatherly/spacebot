@@ -1527,15 +1527,9 @@ impl Channel {
         // itself needs auditing, not that the dispatcher should absorb
         // the inconsistency silently.
         if let Some(first) = messages.first() {
-            let first_key = first
-                .auth_context
-                .as_ref()
-                .map(|ctx| ctx.principal_key());
+            let first_key = first.auth_context.as_ref().map(|ctx| ctx.principal_key());
             for (index, other) in messages.iter().enumerate().skip(1) {
-                let other_key = other
-                    .auth_context
-                    .as_ref()
-                    .map(|ctx| ctx.principal_key());
+                let other_key = other.auth_context.as_ref().map(|ctx| ctx.principal_key());
                 if other_key != first_key {
                     tracing::warn!(
                         channel_id = %self.id,

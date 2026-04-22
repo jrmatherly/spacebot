@@ -277,10 +277,7 @@ async fn non_owner_delete_task_returns_404() {
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
-    let res = app
-        .oneshot(req_delete_task(number, &token))
-        .await
-        .unwrap();
+    let res = app.oneshot(req_delete_task(number, &token)).await.unwrap();
 
     assert_eq!(
         res.status(),

@@ -469,13 +469,11 @@ impl TaskStore {
         // read must succeed. A missing row here implies a concurrent DELETE
         // or a silent transaction rollback — surface it as an error rather
         // than an `Option::None` that callers would silently coerce into 404.
-        self.get_by_number(task_number)
-            .await?
-            .ok_or_else(|| {
-                crate::error::Error::Other(anyhow::anyhow!(
-                    "task {task_number} vanished between UPDATE and read-back"
-                ))
-            })
+        self.get_by_number(task_number).await?.ok_or_else(|| {
+            crate::error::Error::Other(anyhow::anyhow!(
+                "task {task_number} vanished between UPDATE and read-back"
+            ))
+        })
     }
 
     pub async fn delete(&self, task_number: i64) -> Result<bool> {
