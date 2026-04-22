@@ -2,9 +2,10 @@
 
 use super::state::ApiState;
 use super::{
-    activity, agents, attachments, bindings, channels, config, cortex, cron, factory, ingest,
-    links, mcp, memories, messaging, models, notifications, opencode_proxy, portal, projects,
-    providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki, workers,
+    activity, agents, attachments, audit, bindings, channels, config, cortex, cron, factory,
+    ingest, links, mcp, memories, messaging, models, notifications, opencode_proxy, portal,
+    projects, providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
+    workers,
 };
 
 use axum::Json;
@@ -265,6 +266,9 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Factory routes
         .routes(routes!(factory::list_presets))
         .routes(routes!(factory::get_preset))
+        // Audit routes (admin-only, Phase 5)
+        .routes(routes!(audit::list_audit_events))
+        .routes(routes!(audit::verify_audit_chain))
 }
 
 /// Start the HTTP server on the given address.

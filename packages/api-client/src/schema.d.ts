@@ -21,6 +21,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin-only paginated audit read. NDJSON by default; `Accept: text/csv`
+         *     returns CSV with a fixed column order.
+         */
+        get: operations["list_audit_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/audit/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin-only chain integrity probe. Returns `503` if the instance-level
+         *     appender is not yet attached (startup window before
+         *     `set_instance_pool`).
+         */
+        get: operations["verify_audit_chain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents": {
         parameters: {
             query?: never;
@@ -4359,6 +4400,18 @@ export interface components {
             /** Format: int64 */
             request_count: number;
         };
+        /**
+         * @description Response body of `GET /api/admin/audit/verify`. Matches the fields of
+         *     [`crate::audit::appender::ChainVerifyResult`]; when the chain is
+         *     intact `first_mismatch_seq` is `None`.
+         */
+        VerifyChainResponse: {
+            /** Format: int64 */
+            first_mismatch_seq?: number | null;
+            /** Format: int64 */
+            total_rows: number;
+            valid: boolean;
+        };
         WarmupSection: {
             eager_embedding_load: boolean;
             enabled: boolean;
@@ -4580,6 +4633,86 @@ export interface operations {
             };
             /** @description Internal server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_audit_events: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                principal?: string | null;
+                action?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description NDJSON (or CSV) stream of audit rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable or query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verify_audit_chain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chain integrity result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyChainResponse"];
+                };
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Verify query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Audit appender not yet attached */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
