@@ -253,6 +253,83 @@ async fn rotation_preserves_owner_agent_id() {
 }
 
 #[tokio::test]
+async fn owner_can_rebind_team_id() {
+    // S3 (pr-test-analyzer): Team -> Team rotation rebinds
+    // shared_with_team_id. Pre-fix this was covered only indirectly;
+    // this asserts the UPDATE path preserves the rebind result.
+    let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let alice = user("alice", vec!["SpacebotUser"]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team_a = upsert_team(&pool, "grp-a", "Alpha").await.unwrap();
+    let team_b = upsert_team(&pool, "grp-b", "Beta").await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m-rebind",
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team_a.id),
+    )
+    .await
+    .unwrap();
+    let app = build_test_router_entra(state);
+
+    let body = serde_json::json!({
+        "visibility": "team",
+        "shared_with_team_id": team_b.id,
+    })
+    .to_string();
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/resources/memory/m-rebind/visibility")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", mint_mock_token(&alice)),
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let own = spacebot::auth::repository::get_ownership(&pool, "memory", "m-rebind")
+        .await
+        .unwrap()
+        .expect("row exists");
+    assert_eq!(own.visibility.as_str(), "team");
+    assert_eq!(
+        own.shared_with_team_id.as_deref(),
+        Some(team_b.id.as_str()),
+        "team_id rebound from team-a to team-b"
+    );
+}
+
+#[tokio::test]
+async fn unauthenticated_returns_401() {
+    // S4 (pr-test-analyzer): If a router refactor drops the auth layer
+    // from PUT /api/resources/..., every existing test would still pass
+    // (AuthContext::legacy_static + check_write -> 404). This test
+    // omits the Authorization header so unauth returns 401 explicitly.
+    let (state, _pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let app = build_test_router_entra(state);
+
+    let body = serde_json::json!({"visibility": "org"}).to_string();
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/resources/memory/any-id/visibility")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "missing Authorization header must fail as 401, not 404"
+    );
+}
+
+#[tokio::test]
 async fn invalid_visibility_value_rejected() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
     let alice = user("alice", vec!["SpacebotUser"]);

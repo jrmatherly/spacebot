@@ -891,3 +891,72 @@ pub(super) async fn toggle_cron(
         message: format!("Cron job '{}' {}", request.cron_id, status),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CronJobWithStats;
+
+    /// S5 (pr-test-analyzer): pin the CronJobWithStats wire shape for
+    /// the Phase 7 enrichment fields. CronJobWithStats inlines
+    /// `visibility` + `team_name` directly instead of flattening a
+    /// VisibilityTag; a future refactor to the wrapper pattern would
+    /// silently change the wire shape. This test freezes the
+    /// skip_serializing_if contract on both fields.
+    #[test]
+    fn visibility_fields_omitted_when_none() {
+        let job = CronJobWithStats {
+            id: "c-1".into(),
+            prompt: "do the thing".into(),
+            cron_expr: None,
+            interval_secs: 60,
+            delivery_target: "bulletin".into(),
+            enabled: true,
+            run_once: false,
+            active_hours: None,
+            timeout_secs: None,
+            execution_success_count: 0,
+            execution_failure_count: 0,
+            delivery_success_count: 0,
+            delivery_failure_count: 0,
+            delivery_skipped_count: 0,
+            last_executed_at: None,
+            visibility: None,
+            team_name: None,
+        };
+        let json = serde_json::to_string(&job).unwrap();
+        assert!(
+            !json.contains("\"visibility\""),
+            "visibility: None must be omitted from wire: {json}"
+        );
+        assert!(
+            !json.contains("\"team_name\""),
+            "team_name: None must be omitted from wire: {json}"
+        );
+    }
+
+    #[test]
+    fn visibility_fields_present_when_some() {
+        let job = CronJobWithStats {
+            id: "c-2".into(),
+            prompt: "do the thing".into(),
+            cron_expr: None,
+            interval_secs: 60,
+            delivery_target: "bulletin".into(),
+            enabled: true,
+            run_once: false,
+            active_hours: None,
+            timeout_secs: None,
+            execution_success_count: 0,
+            execution_failure_count: 0,
+            delivery_success_count: 0,
+            delivery_failure_count: 0,
+            delivery_skipped_count: 0,
+            last_executed_at: None,
+            visibility: Some("team".into()),
+            team_name: Some("Platform".into()),
+        };
+        let json = serde_json::to_string(&job).unwrap();
+        assert!(json.contains("\"visibility\":\"team\""));
+        assert!(json.contains("\"team_name\":\"Platform\""));
+    }
+}
