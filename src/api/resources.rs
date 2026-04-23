@@ -33,16 +33,19 @@ use crate::auth::repository::{
 
 /// Per-item enrichment attached to list responses alongside the domain type.
 ///
-/// Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes "unowned/legacy"
-/// per the no-auto-broadening policy in `docs/design-docs/entra-backfill-
-/// strategy.md`. The SPA renders `None` as "Legacy" rather than defaulting
-/// to "personal" (which would contradict Phase 4 authz, where unowned
-/// resources are admin-only). Both fields are additive: handlers that do
-/// not enrich pass `VisibilityTag::default()`, which serializes to `{}`
-/// via `skip_serializing_if`.
+/// Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes an unowned resource
+/// (no `resource_ownership` row) per the no-auto-broadening policy in
+/// `docs/design-docs/entra-backfill-strategy.md`. The SPA's `VisibilityChip`
+/// renders `None` via its runtime fallback branch (`"Unknown"` with
+/// `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
+/// rather than defaulting to `"personal"`. Defaulting to personal would
+/// contradict Phase 4 authz, which treats unowned resources as admin-only.
+/// Both fields are additive: handlers that do not enrich pass
+/// `VisibilityTag::default()`, which serializes to `{}` via
+/// `skip_serializing_if`.
 #[derive(Debug, Clone, Default, Serialize, utoipa::ToSchema)]
 pub struct VisibilityTag {
-    /// `"personal"`, `"team"`, `"org"`, or absent (unowned/legacy).
+    /// `"personal"`, `"team"`, `"org"`, or absent for unowned resources.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<String>,
     /// Team display name when `visibility == Some("team")`; absent otherwise.
@@ -54,9 +57,12 @@ pub struct VisibilityTag {
 /// a map from resource_id to VisibilityTag. Missing ids map to the default
 /// (both fields None) so the caller can `.unwrap_or_default()` safely.
 ///
-/// D36 pattern. Use when the backing store is per-agent or in-memory
-/// (memories, cron, agents); tasks can inline-JOIN instead since its
-/// `TaskStore` shares the instance pool.
+/// D36 pattern: cross-DB JOIN is impossible in SQLite, and 3 of 4 list
+/// handlers (memories, cron, agents) use per-agent pools or in-memory
+/// config, so enrichment must happen post-fetch against the instance pool.
+/// Tasks' `TaskStore` does share the instance pool and could inline-JOIN,
+/// but PR 1.5 chose post-fetch enrichment for all 4 handlers so readers
+/// do not context-switch on which storage backs which endpoint.
 pub(super) async fn enrich_visibility_tags(
     pool: &SqlitePool,
     resource_type: &str,
@@ -184,7 +190,9 @@ mod tests {
     async fn enrich_missing_ownership_row_returns_none_fields_not_personal_default() {
         // Pins the D36 policy correction. A resource without an ownership
         // row must NOT default to "personal" on the wire; it must surface
-        // as None so the SPA renders "Legacy" rather than lying.
+        // as None so the SPA renders the fallback branch (currently
+        // "Unknown" per VisibilityChip.tsx) rather than lying about
+        // a visibility the backend never recorded.
         let pool = setup_pool().await;
         let ids = vec!["orphan".to_string()];
         let tags = enrich_visibility_tags(&pool, "memory", &ids).await;

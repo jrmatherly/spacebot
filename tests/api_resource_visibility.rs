@@ -14,8 +14,15 @@
 //!   - `admin_can_change_any_visibility`: admin bypass.
 //!   - `team_visibility_without_team_id_rejected`: 400 guard fires BEFORE
 //!     the DB CHECK constraint would trip.
-//!   - `pool_none_returns_500`: startup-window safety. The endpoint
-//!     cannot silently no-op on a non-attached pool.
+//!   - `rotation_preserves_owner_agent_id`: C1 regression. Rotating
+//!     visibility must not clobber the agent link on the ownership row.
+//!   - `invalid_visibility_value_rejected`: unknown visibility string
+//!     fails as 400 before reaching the DB.
+//!
+//! Intentionally deferred: pool-None returns 500 is covered implicitly by
+//! the `check_write` pool-None branch used in the authz tests elsewhere;
+//! wiring a stubbed-pool test here would require bypassing
+//! `ApiState::new_test_state_with_mock_entra`, which always attaches a pool.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
