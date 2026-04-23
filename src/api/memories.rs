@@ -276,6 +276,16 @@ pub(super) async fn list_memories(
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await
     } else {
+        // I4: match the authz-skipped observability pattern above. A
+        // persistent pool-None on this path means enrichment is silently
+        // degraded — chips absent across every memories list — and no
+        // counter fires today. One grep-friendly message per handler so
+        // "boot window" vs "startup-ordering bug" is distinguishable.
+        tracing::warn!(
+            handler = "memories",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
         std::collections::HashMap::new()
     };
     let memories: Vec<MemoryListItem> = page

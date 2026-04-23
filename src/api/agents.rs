@@ -370,6 +370,12 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "agent", &ids).await
     } else {
+        // I4: mirror the authz-skipped pattern.
+        tracing::warn!(
+            handler = "agents",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
         std::collections::HashMap::new()
     };
     let agents: Vec<AgentListItem> = configs

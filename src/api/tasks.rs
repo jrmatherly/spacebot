@@ -325,6 +325,13 @@ pub(super) async fn list_tasks(
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
     } else {
+        // I4: mirror the authz-skipped pattern. Silent enrichment miss at
+        // the startup window would leave every task list unchipped.
+        tracing::warn!(
+            handler = "tasks",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
         std::collections::HashMap::new()
     };
     let tasks: Vec<TaskListItem> = tasks_raw

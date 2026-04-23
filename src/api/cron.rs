@@ -242,6 +242,12 @@ pub(super) async fn list_cron_jobs(
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "cron", &ids).await
     } else {
+        // I4: mirror the authz-skipped pattern.
+        tracing::warn!(
+            handler = "cron",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
         std::collections::HashMap::new()
     };
 

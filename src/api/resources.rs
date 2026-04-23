@@ -76,11 +76,17 @@ pub(super) async fn enrich_visibility_tags(
     let owns = list_ownerships_by_ids(pool, resource_type, resource_ids)
         .await
         .unwrap_or_else(|error| {
-            tracing::warn!(
+            // I3 elevation: sqlx-level failures mean the instance pool is
+            // broken (closed, migration mismatch, disk full). The list
+            // still returns 200 with chips absent — from the user's
+            // perspective a cosmetic degradation — so without error-level
+            // severity SRE alerts would not fire. Blast radius is every
+            // list response until the pool recovers.
+            tracing::error!(
                 %error,
                 resource_type = %resource_type,
                 count = resource_ids.len(),
-                "enrich_visibility_tags: list_ownerships_by_ids failed, returning empty map"
+                "enrich_visibility_tags: list_ownerships_by_ids failed, returning empty map (chips absent)"
             );
             HashMap::new()
         });
@@ -94,10 +100,11 @@ pub(super) async fn enrich_visibility_tags(
         get_teams_by_ids(pool, &team_ids)
             .await
             .unwrap_or_else(|error| {
-                tracing::warn!(
+                // I3 elevation: same rationale as the ownership lookup.
+                tracing::error!(
                     %error,
                     count = team_ids.len(),
-                    "enrich_visibility_tags: get_teams_by_ids failed, returning empty map"
+                    "enrich_visibility_tags: get_teams_by_ids failed, returning empty map (team names absent)"
                 );
                 HashMap::new()
             })
