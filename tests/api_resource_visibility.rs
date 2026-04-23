@@ -191,6 +191,61 @@ async fn team_visibility_without_team_id_rejected() {
 }
 
 #[tokio::test]
+async fn rotation_preserves_owner_agent_id() {
+    // C1 regression (PR #111 review). Before the fix, set_visibility
+    // called set_ownership with owner_agent_id = None, and the UPSERT's
+    // excluded.owner_agent_id overwrote any prior agent link to NULL.
+    // This test seeds a row with owner_agent_id = Some("agent-x"),
+    // rotates visibility, and asserts the agent link survives.
+    let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let alice = user("alice", vec!["SpacebotUser"]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m-agent-owned",
+        Some("agent-x"),
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    let app = build_test_router_entra(state);
+
+    let body = serde_json::json!({"visibility": "org"}).to_string();
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/resources/memory/m-agent-owned/visibility")
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", mint_mock_token(&alice)),
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // The agent link MUST still be there.
+    let own = spacebot::auth::repository::get_ownership(&pool, "memory", "m-agent-owned")
+        .await
+        .unwrap()
+        .expect("row still exists");
+    assert_eq!(
+        own.owner_agent_id.as_deref(),
+        Some("agent-x"),
+        "rotation preserves owner_agent_id"
+    );
+    assert_eq!(
+        own.owner_principal_key,
+        alice.principal_key(),
+        "rotation preserves owner_principal_key"
+    );
+    assert_eq!(own.visibility.as_str(), "org");
+}
+
+#[tokio::test]
 async fn invalid_visibility_value_rejected() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
     let alice = user("alice", vec!["SpacebotUser"]);

@@ -210,6 +210,48 @@ pub async fn set_ownership(
     Ok(())
 }
 
+/// Rotate only the visibility + team binding on an existing ownership row
+/// without touching `owner_agent_id` or `owner_principal_key`. Used by
+/// Phase 7 PR 1.5's `PUT /api/resources/{type}/{id}/visibility` endpoint.
+///
+/// Unlike [`set_ownership`] which UPSERTs all fields (correct at creation
+/// time), this helper is for "the owner or an admin is reclassifying an
+/// existing resource." Preserving `owner_agent_id` is critical because
+/// an admin rotating an agent-owned memory from Team to Org must not
+/// strip the agent link that allows the agent to keep reading the row.
+///
+/// Returns `Ok(false)` when no row exists for `(resource_type, resource_id)`
+/// so the caller can return 404 rather than accidentally creating an
+/// ownership row under the caller's principal (which would be a silent
+/// re-parent of a pre-existing unowned resource to the wrong owner).
+pub async fn update_visibility_only(
+    pool: &SqlitePool,
+    resource_type: &str,
+    resource_id: &str,
+    visibility: Visibility,
+    shared_with_team_id: Option<&str>,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"
+        UPDATE resource_ownership
+        SET visibility = ?,
+            shared_with_team_id = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE resource_type = ? AND resource_id = ?
+        "#,
+    )
+    .bind(visibility.as_str())
+    .bind(shared_with_team_id)
+    .bind(resource_type)
+    .bind(resource_id)
+    .execute(pool)
+    .await
+    .with_context(|| {
+        format!("update visibility resource={resource_type}:{resource_id}")
+    })?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Read ownership. Returns `None` if the resource is not owned-tracked (e.g.,
 /// pre-existing resource not yet backfilled). See
 /// `docs/design-docs/entra-backfill-strategy.md` for the Phase 4 policy.

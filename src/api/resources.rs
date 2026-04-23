@@ -27,7 +27,9 @@ use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::policy::check_write;
 use crate::auth::principals::Visibility;
-use crate::auth::repository::{get_teams_by_ids, list_ownerships_by_ids, set_ownership};
+use crate::auth::repository::{
+    get_teams_by_ids, list_ownerships_by_ids, update_visibility_only,
+};
 
 /// Per-item enrichment attached to list responses alongside the domain type.
 ///
@@ -290,12 +292,17 @@ pub(super) async fn set_visibility(
         return Err(access.to_status());
     }
 
-    set_ownership(
+    // C1 correction (PR #111 review): use `update_visibility_only` rather
+    // than `set_ownership` to preserve `owner_agent_id` + `owner_principal_key`.
+    // The previous UPSERT unconditionally clobbered `owner_agent_id` to None,
+    // silently re-parenting agent-owned resources on every rotation. The new
+    // helper UPDATEs only the visibility + team fields and returns false if
+    // the row does not exist (so non-owned resources surface as 404 rather
+    // than being silently claimed by the caller's principal).
+    let updated = update_visibility_only(
         &pool,
         &resource_type,
         &resource_id,
-        None,
-        &auth_ctx.principal_key(),
         vis,
         req.shared_with_team_id.as_deref(),
     )
@@ -306,10 +313,18 @@ pub(super) async fn set_visibility(
             actor = %auth_ctx.principal_key(),
             resource_type = %resource_type,
             resource_id = %resource_id,
-            "set_visibility: set_ownership failed"
+            "set_visibility: update_visibility_only failed"
         );
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    if !updated {
+        // `check_write` already passed, so the row must exist if we got
+        // here under normal conditions. A zero-row UPDATE after a passing
+        // check_write means a concurrent delete raced our rotation; treat
+        // as 404 so the SPA can re-fetch and show "resource gone".
+        return Err(StatusCode::NOT_FOUND);
+    }
 
     Ok(StatusCode::OK)
 }
