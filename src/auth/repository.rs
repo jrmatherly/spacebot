@@ -228,3 +228,71 @@ pub async fn get_ownership(
     .with_context(|| format!("read ownership resource={resource_type}:{resource_id}"))?;
     Ok(row)
 }
+
+/// Batch-read ownership rows for a list of resources of the same type. Used by
+/// Phase 7 list-handler enrichment where a single page of memories/cron/agents
+/// needs its visibility + team-binding looked up in one roundtrip. Returns a
+/// map keyed by `resource_id` so callers can `.get(&row.id)` during response
+/// assembly. Missing entries mean "no ownership row", and the handler decides
+/// how to render that. The SPA treats `None` as "Legacy" and never defaults
+/// to "personal" per the no-auto-broadening policy in
+/// `entra-backfill-strategy.md`.
+///
+/// Empty `resource_ids` returns an empty map without hitting the pool. Binds
+/// one placeholder per id, following the pattern proven in
+/// `src/memory/store.rs:462` for SQLite variadic IN clauses.
+pub async fn list_ownerships_by_ids(
+    pool: &SqlitePool,
+    resource_type: &str,
+    resource_ids: &[String],
+) -> anyhow::Result<std::collections::HashMap<String, ResourceOwnershipRecord>> {
+    if resource_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: String = resource_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let query_str = format!(
+        "SELECT * FROM resource_ownership \
+         WHERE resource_type = ? AND resource_id IN ({placeholders})"
+    );
+    let mut query = sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
+    for id in resource_ids {
+        query = query.bind(id);
+    }
+    let rows = query.fetch_all(pool).await.with_context(|| {
+        format!(
+            "batch read ownership resource_type={resource_type} count={}",
+            resource_ids.len()
+        )
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.resource_id.clone(), r))
+        .collect())
+}
+
+/// Batch-read team records by `id`. Used by Phase 7 list-handler enrichment
+/// to resolve `shared_with_team_id` references into display names. Returns a
+/// map keyed by `id`. Empty input short-circuits without a roundtrip.
+pub async fn get_teams_by_ids(
+    pool: &SqlitePool,
+    team_ids: &[String],
+) -> anyhow::Result<std::collections::HashMap<String, TeamRecord>> {
+    if team_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: String = team_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let query_str = format!("SELECT * FROM teams WHERE id IN ({placeholders})");
+    let mut query = sqlx::query_as::<_, TeamRecord>(&query_str);
+    for id in team_ids {
+        query = query.bind(id);
+    }
+    let rows = query
+        .fetch_all(pool)
+        .await
+        .with_context(|| format!("batch read teams count={}", team_ids.len()))?;
+    Ok(rows.into_iter().map(|r| (r.id.clone(), r)).collect())
+}

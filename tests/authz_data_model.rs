@@ -4,7 +4,8 @@
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{
-    RepositoryError, get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+    RepositoryError, get_ownership, get_teams_by_ids, list_ownerships_by_ids, set_ownership,
+    upsert_team, upsert_user_from_auth,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -281,4 +282,75 @@ async fn raw_team_memberships_insert_rejects_unknown_source() {
         result.is_err(),
         "CHECK constraint must reject team_memberships.source = 'manual_admin'"
     );
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_empty_short_circuits() {
+    let pool = setup_pool().await;
+    let result = list_ownerships_by_ids(&pool, "memory", &[]).await.unwrap();
+    assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-1", "oid-a");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+    let team = upsert_team(&pool, "grp-batch", "Batch Team").await.unwrap();
+
+    set_ownership(
+        &pool,
+        "memory",
+        "m-1",
+        Some("agent-1"),
+        &key,
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m-2",
+        Some("agent-1"),
+        &key,
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let ids = vec!["m-1".to_string(), "m-2".to_string(), "m-missing".to_string()];
+    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    assert_eq!(map.len(), 2, "only 2 ownership rows exist");
+    assert_eq!(
+        map.get("m-1").unwrap().visibility.as_str(),
+        Visibility::Personal.as_str()
+    );
+    let m2 = map.get("m-2").unwrap();
+    assert_eq!(m2.visibility.as_str(), Visibility::Team.as_str());
+    assert_eq!(m2.shared_with_team_id.as_deref(), Some(team.id.as_str()));
+    assert!(
+        !map.contains_key("m-missing"),
+        "missing ids must not appear in the map so callers can detect no-row state"
+    );
+}
+
+#[tokio::test]
+async fn get_teams_by_ids_returns_display_names() {
+    let pool = setup_pool().await;
+    let t1 = upsert_team(&pool, "grp-alpha", "Alpha").await.unwrap();
+    let t2 = upsert_team(&pool, "grp-beta", "Beta").await.unwrap();
+
+    let ids = vec![t1.id.clone(), t2.id.clone(), "team-missing".to_string()];
+    let map = get_teams_by_ids(&pool, &ids).await.unwrap();
+    assert_eq!(map.len(), 2);
+    assert_eq!(map.get(&t1.id).unwrap().display_name, "Alpha");
+    assert_eq!(map.get(&t2.id).unwrap().display_name, "Beta");
+    assert!(!map.contains_key("team-missing"));
+
+    let empty = get_teams_by_ids(&pool, &[]).await.unwrap();
+    assert!(empty.is_empty());
 }
