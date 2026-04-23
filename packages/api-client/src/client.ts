@@ -1350,7 +1350,7 @@ export interface ProjectListResponse {
 	projects: Project[];
 }
 
-/** GET /agents/projects/:id response — project fields are flattened */
+/** GET /agents/projects/:id response. Project fields are flattened. */
 export interface ProjectWithRelations extends Project {
 	repos: ProjectRepo[];
 	worktrees: ProjectWorktreeWithRepo[];
