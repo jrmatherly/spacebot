@@ -22,11 +22,11 @@ pub async fn entra_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Health + SPA-bootstrap bypass, matching the static-token middleware
-    // allowlist at src/api/server.rs. `/api/auth/config` is reachable before
-    // sign-in so the browser can discover Entra identifiers (Phase 6 Task 6.A.2).
     let path = request.uri().path().to_string();
-    if path == "/api/health" || path == "/health" || path == "/api/auth/config" {
+    // Auth-bypass allowlist shared with the static-token branch
+    // (src/api/server.rs `api_auth_middleware`). See `crate::auth::bypass`
+    // for the full list and the invariant (sorted, unique, exact-match only).
+    if crate::auth::bypass::is_auth_bypassed(&path) {
         return next.run(request).await;
     }
 

@@ -379,13 +379,11 @@ async fn api_auth_middleware(
         return next.run(request).await;
     };
 
-    let path = request.uri().path();
-    // Phase 6 Task 6.A.2: `/api/auth/config` is the SPA's bootstrap endpoint.
-    // The browser fetches it before MSAL has a token, so it must bypass the
-    // bearer-token check. Payload is whitelisted to non-secret identifiers
-    // (see src/api/auth_config.rs). Keep this in sync with the companion
-    // bypass in src/auth/middleware.rs.
-    if path == "/api/health" || path == "/health" || path == "/api/auth/config" {
+    let path = request.uri().path().to_string();
+    // Auth-bypass allowlist is centralized in `crate::auth::bypass` so both
+    // this branch and the Entra JWT branch (src/auth/middleware.rs) consult
+    // a single list. Adding a fourth entry requires editing one place.
+    if crate::auth::bypass::is_auth_bypassed(&path) {
         return next.run(request).await;
     }
 

@@ -5,6 +5,7 @@
 //! persistence. Phase 3: Microsoft Graph client for group resolution and
 //! display-photo fetch. Authorization helpers land in Phase 4.
 
+pub mod bypass;
 pub mod config;
 pub mod context;
 pub mod errors;
