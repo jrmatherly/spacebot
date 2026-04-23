@@ -52,3 +52,12 @@ export function useRole(role: RoleLike): boolean {
 	const { data } = useMe();
 	return Boolean(data?.roles.includes(role));
 }
+
+/**
+ * Consolidated principal-key helper. Draws from the same /api/me cache
+ * as useMe + useRole, so a sign-out invalidates all three together.
+ */
+export function useMyPrincipalKey(): string | null {
+	const { data } = useMe();
+	return data?.principal_key ?? null;
+}

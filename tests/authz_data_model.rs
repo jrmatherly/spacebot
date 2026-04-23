@@ -4,7 +4,8 @@
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{
-    RepositoryError, get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+    RepositoryError, get_ownership, get_teams_by_ids, list_ownerships_by_ids, set_ownership,
+    upsert_team, upsert_user_from_auth,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -281,4 +282,163 @@ async fn raw_team_memberships_insert_rejects_unknown_source() {
         result.is_err(),
         "CHECK constraint must reject team_memberships.source = 'manual_admin'"
     );
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_empty_short_circuits() {
+    let pool = setup_pool().await;
+    let result = list_ownerships_by_ids(&pool, "memory", &[]).await.unwrap();
+    assert!(result.is_empty());
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-1", "oid-a");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+    let team = upsert_team(&pool, "grp-batch", "Batch Team").await.unwrap();
+
+    set_ownership(
+        &pool,
+        "memory",
+        "m-1",
+        Some("agent-1"),
+        &key,
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "m-2",
+        Some("agent-1"),
+        &key,
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let ids = vec![
+        "m-1".to_string(),
+        "m-2".to_string(),
+        "m-missing".to_string(),
+    ];
+    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    assert_eq!(map.len(), 2, "only 2 ownership rows exist");
+    assert_eq!(
+        map.get("m-1").unwrap().visibility.as_str(),
+        Visibility::Personal.as_str()
+    );
+    let m2 = map.get("m-2").unwrap();
+    assert_eq!(m2.visibility.as_str(), Visibility::Team.as_str());
+    assert_eq!(m2.shared_with_team_id.as_deref(), Some(team.id.as_str()));
+    assert!(
+        !map.contains_key("m-missing"),
+        "missing ids must not appear in the map so callers can detect no-row state"
+    );
+}
+
+#[tokio::test]
+async fn get_teams_by_ids_returns_display_names() {
+    let pool = setup_pool().await;
+    let t1 = upsert_team(&pool, "grp-alpha", "Alpha").await.unwrap();
+    let t2 = upsert_team(&pool, "grp-beta", "Beta").await.unwrap();
+
+    let ids = vec![t1.id.clone(), t2.id.clone(), "team-missing".to_string()];
+    let map = get_teams_by_ids(&pool, &ids).await.unwrap();
+    assert_eq!(map.len(), 2);
+    assert_eq!(map.get(&t1.id).unwrap().display_name, "Alpha");
+    assert_eq!(map.get(&t2.id).unwrap().display_name, "Beta");
+    assert!(!map.contains_key("team-missing"));
+
+    let empty = get_teams_by_ids(&pool, &[]).await.unwrap();
+    assert!(empty.is_empty());
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_dedupes_duplicate_inputs() {
+    // S2 (pr-test-analyzer): a caller flattening paginated results could
+    // pass the same id twice. The SQL IN clause dedupes, and the HashMap
+    // assembly overwrites the second row with identical data. Pin the
+    // contract so a future regression (e.g., switching to Vec<Record> with
+    // duplicate-preserving semantics) is caught.
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-dup", "oid-dup");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+
+    set_ownership(
+        &pool,
+        "memory",
+        "m-dup",
+        Some("agent-dup"),
+        &key,
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let ids = vec![
+        "m-dup".to_string(),
+        "m-dup".to_string(),
+        "m-dup".to_string(),
+    ];
+    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    assert_eq!(
+        map.len(),
+        1,
+        "duplicate ids collapse to a single HashMap entry; the IN clause \
+         returns one row per distinct key regardless of how many times it \
+         appeared in the input"
+    );
+    assert!(map.contains_key("m-dup"));
+}
+
+#[tokio::test]
+async fn list_ownerships_by_ids_handles_small_batches_up_to_known_safe_cap() {
+    // I3 (pr-test-analyzer): SQLite's SQLITE_MAX_VARIABLE_NUMBER defaults
+    // to 999 on older builds and 32766 on recent ones. One bind for
+    // resource_type plus N for ids caps the safe input at 998 worst-case.
+    // Phase 7 list handlers page results (<=200 today), but a future
+    // caller flattening pagination could exceed that. This test pins the
+    // safe region (N=500) so a future regression in placeholder emission
+    // (e.g., accidental quadratic allocation, or an off-by-one in the
+    // bind count) is caught without forcing a guard into the helper.
+    //
+    // The helper does not chunk; callers of list_ownerships_by_ids must
+    // stay under SQLITE_MAX_VARIABLE_NUMBER. If/when a caller approaches
+    // the cap, add chunk-loop logic here rather than relying on SQLite
+    // version detection at runtime.
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-batch", "oid-batch");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+
+    // Seed 50 ownership rows (fast, deterministic) and query for 500 ids
+    // (250 hits + 250 misses) to exercise a realistically-sized batch.
+    for i in 0..50 {
+        set_ownership(
+            &pool,
+            "memory",
+            &format!("m-{i}"),
+            Some("agent-batch"),
+            &key,
+            Visibility::Personal,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    let mut ids: Vec<String> = (0..250).map(|i| format!("m-{i}")).collect();
+    ids.extend((0..250).map(|i| format!("miss-{i}")));
+    assert_eq!(ids.len(), 500, "500 binds plus 1 for resource_type = 501");
+
+    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    assert_eq!(map.len(), 50, "only seeded rows resolve; misses are absent");
 }
