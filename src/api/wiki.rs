@@ -152,8 +152,24 @@ fn default_author_type() -> String {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct WikiListResponse {
-    pages: Vec<crate::wiki::WikiPageSummary>,
+    pages: Vec<WikiListItem>,
     total: usize,
+}
+
+/// Phase 7 PR 3 Task 7.9 Step A wrapper around `WikiPageSummary` with
+/// enrichment fields inline via `#[serde(flatten)]`. Additive on the
+/// wire: `{ id, slug, title, page_type, version, updated_at,
+/// updated_by, visibility?, team_name? }`. Mirrors the `TaskListItem`
+/// pattern at `src/api/tasks.rs` and consumes the shared
+/// `enrich_visibility_tags` helper so readers do not context-switch
+/// on which enrichment path a list handler takes.
+#[derive(Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
+pub(super) struct WikiListItem {
+    #[serde(flatten)]
+    pub summary: crate::wiki::WikiPageSummary,
+    #[serde(flatten)]
+    pub tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -192,6 +208,36 @@ fn parse_page_type(s: Option<&str>) -> Result<Option<WikiPageType>, StatusCode> 
     }
 }
 
+/// Batch-enrich a slice of wiki page summaries with their visibility +
+/// team_name chip fields. Mirrors the post-fetch pattern in
+/// `src/api/tasks.rs`. During the boot window `instance_pool` may not
+/// yet be attached, in which case chips are absent (cosmetic
+/// degradation) and a grepable `tracing::warn!` fires so SRE alerts can
+/// pick up a startup-ordering bug.
+async fn enrich_wiki_list(
+    state: &ApiState,
+    summaries: Vec<crate::wiki::WikiPageSummary>,
+) -> Vec<WikiListItem> {
+    let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "wiki_page", &ids).await
+    } else {
+        tracing::warn!(
+            handler = "wiki",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+    summaries
+        .into_iter()
+        .map(|summary| {
+            let tag = tags.get(&summary.id).cloned().unwrap_or_default();
+            WikiListItem { summary, tag }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -220,7 +266,8 @@ pub(super) async fn list_pages(
     // N+1 emission cost.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
-    let pages = store.list(page_type).await.map_err(wiki_error_status)?;
+    let summaries = store.list(page_type).await.map_err(wiki_error_status)?;
+    let pages = enrich_wiki_list(&state, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }
@@ -246,10 +293,11 @@ pub(super) async fn search_pages(
     // per-row `check_read` post-filter is the planned fix.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
-    let pages = store
+    let summaries = store
         .search(&query.query, page_type)
         .await
         .map_err(wiki_error_status)?;
+    let pages = enrich_wiki_list(&state, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }

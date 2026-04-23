@@ -10,7 +10,8 @@
 //!
 //! The policy module has 15 of its own tests in `tests/policy_table.rs`
 //! so these tests stay tight: owner-200 + non-owner-404 + admin-bypass
-//! on read, non-owner-404 on write, create-ownership, pool-None skip.
+//! on read, non-owner-404 on write, create-ownership, pool-None skip,
+//! plus list-response chip-field presence (Phase 7 PR 3 Task 7.9).
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -18,7 +19,9 @@ use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
-use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
+use spacebot::auth::repository::{
+    get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use spacebot::wiki::{CreateWikiPageInput, WikiPage, WikiPageType, WikiStore};
@@ -268,4 +271,79 @@ async fn pool_none_skip_get_page() {
         StatusCode::FORBIDDEN,
         "authz skip must not cause a 403"
     );
+}
+
+#[tokio::test]
+async fn list_pages_enriches_team_scoped_page_with_chip_fields() {
+    // Phase 7 PR 3 Task 7.9 Step A. The SPA consumes `visibility` +
+    // `team_name` on each list row to render the chip. This test pins
+    // the wire shape so a regression to `Vec<WikiPageSummary>` (chip
+    // absent) trips CI before the SPA notices a silent degradation.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    attach_wiki_store(&state, &pool);
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team = upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+    let page = {
+        let store = WikiStore::new(pool.clone());
+        store
+            .create(CreateWikiPageInput {
+                title: "Team Runbook".to_string(),
+                page_type: WikiPageType::Concept,
+                content: "seed".to_string(),
+                related: vec![],
+                author_type: "user".to_string(),
+                author_id: "alice".to_string(),
+                edit_summary: None,
+            })
+            .await
+            .unwrap()
+    };
+    set_ownership(
+        &pool,
+        "wiki_page",
+        &page.id,
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let req = Request::builder()
+        .uri("/api/wiki")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let pages = body["pages"].as_array().expect("pages array present");
+    let row = pages
+        .iter()
+        .find(|p| p["id"] == page.id)
+        .expect("seeded page present in list response");
+    assert_eq!(
+        row["visibility"].as_str(),
+        Some("team"),
+        "chip visibility field must be present on team-scoped page"
+    );
+    assert_eq!(
+        row["team_name"].as_str(),
+        Some("Platform"),
+        "chip team_name must resolve to the team's display_name"
+    );
+    // Also confirm the flattened summary fields still cross the wire
+    // (additive shape, not a rewrap).
+    assert_eq!(row["slug"].as_str(), Some(page.slug.as_str()));
+    assert_eq!(row["title"].as_str(), Some("Team Runbook"));
 }
