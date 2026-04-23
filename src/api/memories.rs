@@ -41,8 +41,19 @@ use std::sync::Arc;
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct MemoriesListResponse {
-    memories: Vec<Memory>,
+    memories: Vec<MemoryListItem>,
     total: usize,
+}
+
+/// Wrapper around `Memory` that carries Phase 7 enrichment fields inline
+/// via `#[serde(flatten)]`. Additive on the wire: clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct MemoryListItem {
+    #[serde(flatten)]
+    memory: Memory,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -256,7 +267,24 @@ pub(super) async fn list_memories(
         })?;
 
     let total = all.len();
-    let memories = all.into_iter().skip(query.offset).collect();
+    let page: Vec<Memory> = all.into_iter().skip(query.offset).collect();
+
+    // Phase 7 PR 1.5 Task 7.5a. Post-fetch enrichment for the
+    // per-agent store (cross-DB JOIN is impossible per D36, so we
+    // batch-lookup against the instance pool and attach inline).
+    let ids: Vec<String> = page.iter().map(|m| m.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await
+    } else {
+        std::collections::HashMap::new()
+    };
+    let memories: Vec<MemoryListItem> = page
+        .into_iter()
+        .map(|memory| {
+            let tag = tags.get(&memory.id).cloned().unwrap_or_default();
+            MemoryListItem { memory, tag }
+        })
+        .collect();
 
     Ok(Json(MemoriesListResponse { memories, total }))
 }

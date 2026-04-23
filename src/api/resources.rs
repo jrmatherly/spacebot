@@ -1,5 +1,5 @@
-//! `PUT /api/resources/{resource_type}/{resource_id}/visibility` — rotate a
-//! resource's visibility between Personal / Team / Org and re-bind the
+//! `PUT /api/resources/{resource_type}/{resource_id}/visibility`. Rotates a
+//! resource's visibility between Personal / Team / Org and rebinds the
 //! optional `shared_with_team_id`. Phase 7 PR 1.5 Task 7.5.
 //!
 //! Semantics:
@@ -18,14 +18,208 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::policy::check_write;
 use crate::auth::principals::Visibility;
-use crate::auth::repository::set_ownership;
+use crate::auth::repository::{get_teams_by_ids, list_ownerships_by_ids, set_ownership};
+
+/// Per-item enrichment attached to list responses alongside the domain type.
+///
+/// Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes "unowned/legacy"
+/// per the no-auto-broadening policy in `docs/design-docs/entra-backfill-
+/// strategy.md`. The SPA renders `None` as "Legacy" rather than defaulting
+/// to "personal" (which would contradict Phase 4 authz, where unowned
+/// resources are admin-only). Both fields are additive: handlers that do
+/// not enrich pass `VisibilityTag::default()`, which serializes to `{}`
+/// via `skip_serializing_if`.
+#[derive(Debug, Clone, Default, Serialize, utoipa::ToSchema)]
+pub struct VisibilityTag {
+    /// `"personal"`, `"team"`, `"org"`, or absent (unowned/legacy).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    /// Team display name when `visibility == Some("team")`; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_name: Option<String>,
+}
+
+/// Batch-enrich a slice of resource ids for a single resource type. Returns
+/// a map from resource_id to VisibilityTag. Missing ids map to the default
+/// (both fields None) so the caller can `.unwrap_or_default()` safely.
+///
+/// D36 pattern. Use when the backing store is per-agent or in-memory
+/// (memories, cron, agents); tasks can inline-JOIN instead since its
+/// `TaskStore` shares the instance pool.
+pub(super) async fn enrich_visibility_tags(
+    pool: &SqlitePool,
+    resource_type: &str,
+    resource_ids: &[String],
+) -> HashMap<String, VisibilityTag> {
+    // list_ownerships_by_ids short-circuits on empty input, but make it
+    // explicit here so skim-reading is cheap.
+    if resource_ids.is_empty() {
+        return HashMap::new();
+    }
+    let owns = list_ownerships_by_ids(pool, resource_type, resource_ids)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(
+                %error,
+                resource_type = %resource_type,
+                count = resource_ids.len(),
+                "enrich_visibility_tags: list_ownerships_by_ids failed, returning empty map"
+            );
+            HashMap::new()
+        });
+    let team_ids: Vec<String> = owns
+        .values()
+        .filter_map(|o| o.shared_with_team_id.clone())
+        .collect();
+    let teams = if team_ids.is_empty() {
+        HashMap::new()
+    } else {
+        get_teams_by_ids(pool, &team_ids)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    %error,
+                    count = team_ids.len(),
+                    "enrich_visibility_tags: get_teams_by_ids failed, returning empty map"
+                );
+                HashMap::new()
+            })
+    };
+    resource_ids
+        .iter()
+        .map(|id| {
+            let own = owns.get(id);
+            let visibility = own.map(|o| o.visibility.clone());
+            let team_name = own
+                .and_then(|o| o.shared_with_team_id.as_ref())
+                .and_then(|tid| teams.get(tid).map(|t| t.display_name.clone()));
+            (
+                id.clone(),
+                VisibilityTag {
+                    visibility,
+                    team_name,
+                },
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::context::{AuthContext, PrincipalType};
+    use crate::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect memory sqlite");
+        sqlx::migrate!("./migrations/global")
+            .run(&pool)
+            .await
+            .expect("run global migrations");
+        pool
+    }
+
+    fn user_ctx(tid: &str, oid: &str) -> AuthContext {
+        AuthContext {
+            principal_type: PrincipalType::User,
+            tid: Arc::from(tid),
+            oid: Arc::from(oid),
+            roles: vec![],
+            groups: vec![],
+            groups_overage: false,
+            display_email: None,
+            display_name: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn enrich_empty_ids_returns_empty_map() {
+        let pool = setup_pool().await;
+        let result = enrich_visibility_tags(&pool, "memory", &[]).await;
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn enrich_attaches_visibility_and_team_name_for_team_scoped_resource() {
+        let pool = setup_pool().await;
+        let ctx = user_ctx("t1", "alice");
+        upsert_user_from_auth(&pool, &ctx).await.unwrap();
+        let team = upsert_team(&pool, "grp-1", "Platform").await.unwrap();
+        set_ownership(
+            &pool,
+            "memory",
+            "m-1",
+            None,
+            &ctx.principal_key(),
+            Visibility::Team,
+            Some(&team.id),
+        )
+        .await
+        .unwrap();
+
+        let ids = vec!["m-1".to_string()];
+        let tags = enrich_visibility_tags(&pool, "memory", &ids).await;
+        let tag = tags.get("m-1").expect("m-1 present");
+        assert_eq!(tag.visibility.as_deref(), Some("team"));
+        assert_eq!(tag.team_name.as_deref(), Some("Platform"));
+    }
+
+    #[tokio::test]
+    async fn enrich_missing_ownership_row_returns_none_fields_not_personal_default() {
+        // Pins the D36 policy correction. A resource without an ownership
+        // row must NOT default to "personal" on the wire; it must surface
+        // as None so the SPA renders "Legacy" rather than lying.
+        let pool = setup_pool().await;
+        let ids = vec!["orphan".to_string()];
+        let tags = enrich_visibility_tags(&pool, "memory", &ids).await;
+        let tag = tags
+            .get("orphan")
+            .expect("entry present even for missing row");
+        assert_eq!(
+            tag.visibility, None,
+            "unowned resource serializes as None, not \"personal\""
+        );
+        assert_eq!(tag.team_name, None);
+    }
+
+    #[tokio::test]
+    async fn enrich_personal_visibility_has_no_team_name() {
+        let pool = setup_pool().await;
+        let ctx = user_ctx("t1", "alice");
+        upsert_user_from_auth(&pool, &ctx).await.unwrap();
+        set_ownership(
+            &pool,
+            "memory",
+            "m-2",
+            None,
+            &ctx.principal_key(),
+            Visibility::Personal,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let ids = vec!["m-2".to_string()];
+        let tags = enrich_visibility_tags(&pool, "memory", &ids).await;
+        let tag = tags.get("m-2").unwrap();
+        assert_eq!(tag.visibility.as_deref(), Some("personal"));
+        assert_eq!(tag.team_name, None);
+    }
+}
 
 /// Payload accepted by `PUT /api/resources/{type}/{id}/visibility`. Keep the
 /// wire shape snake_case (Rust default) so the TS client can pass

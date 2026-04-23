@@ -131,6 +131,12 @@ struct CronJobWithStats {
     delivery_failure_count: u64,
     delivery_skipped_count: u64,
     last_executed_at: Option<String>,
+    /// Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
+    /// `None` encodes "unowned/legacy" per the no-auto-broadening policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team_name: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -229,12 +235,23 @@ pub(super) async fn list_cron_jobs(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Phase 7 PR 1.5 Task 7.5a. Batch-enrich visibility + team_name for
+    // the whole page in one roundtrip against the instance pool (cron
+    // lives in a per-agent store, so cross-DB JOIN is impossible per D36).
+    let ids: Vec<String> = configs.iter().map(|c| c.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "cron", &ids).await
+    } else {
+        std::collections::HashMap::new()
+    };
+
     let mut jobs = Vec::new();
     for config in configs {
         let stats = store
             .get_execution_stats(&config.id)
             .await
             .unwrap_or_default();
+        let tag = tags.get(&config.id).cloned().unwrap_or_default();
 
         jobs.push(CronJobWithStats {
             id: config.id,
@@ -252,6 +269,8 @@ pub(super) async fn list_cron_jobs(
             delivery_failure_count: stats.delivery_failure_count,
             delivery_skipped_count: stats.delivery_skipped_count,
             last_executed_at: stats.last_executed_at,
+            visibility: tag.visibility,
+            team_name: tag.team_name,
         });
     }
 

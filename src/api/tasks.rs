@@ -120,7 +120,17 @@ pub(super) struct AssignRequest {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct TaskListResponse {
-    tasks: Vec<crate::tasks::Task>,
+    tasks: Vec<TaskListItem>,
+}
+
+/// Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
+/// inline via `#[serde(flatten)]`. Additive on the wire.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct TaskListItem {
+    #[serde(flatten)]
+    task: crate::tasks::Task,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -290,7 +300,7 @@ pub(super) async fn list_tasks(
     let status = parse_status(query.status.as_deref())?;
     let priority = parse_priority(query.priority.as_deref())?;
 
-    let tasks = store
+    let tasks_raw = store
         .list(crate::tasks::TaskListFilter {
             agent_id: query.agent_id,
             owner_agent_id: query.owner_agent_id,
@@ -305,6 +315,25 @@ pub(super) async fn list_tasks(
             tracing::warn!(%error, "failed to list tasks");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // Phase 7 PR 1.5 Task 7.5a. Uniform post-fetch enrichment pattern
+    // across all 4 list handlers (Memories, Tasks, Cron, Agents) per
+    // the D36 architectural decision. Tasks' store shares the instance
+    // pool and could inline-JOIN, but uniformity wins over micro-
+    // optimization here.
+    let ids: Vec<String> = tasks_raw.iter().map(|t| t.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
+    } else {
+        std::collections::HashMap::new()
+    };
+    let tasks: Vec<TaskListItem> = tasks_raw
+        .into_iter()
+        .map(|task| {
+            let tag = tags.get(&task.id).cloned().unwrap_or_default();
+            TaskListItem { task, tag }
+        })
+        .collect();
 
     Ok(Json(TaskListResponse { tasks }))
 }
