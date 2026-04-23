@@ -2,9 +2,9 @@
 
 use super::state::ApiState;
 use super::{
-    activity, agents, attachments, audit, bindings, channels, config, cortex, cron, factory,
-    ingest, links, mcp, memories, messaging, models, notifications, opencode_proxy, portal,
-    projects, providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
+    activity, agents, attachments, audit, auth_config, bindings, channels, config, cortex, cron,
+    factory, ingest, links, mcp, memories, messaging, models, notifications, opencode_proxy,
+    portal, projects, providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
     workers,
 };
 
@@ -51,6 +51,10 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         // System routes
         .routes(routes!(system::health))
+        // Phase 6 Task 6.A.2 — unprotected SPA bootstrap endpoint.
+        // Auth bypass for this path is wired in the middleware allowlists
+        // below (static-token) and in src/auth/middleware.rs (Entra JWT).
+        .routes(routes!(auth_config::get_auth_config))
         .routes(routes!(system::idle))
         .routes(routes!(system::status))
         .routes(routes!(system::storage_status))
@@ -376,7 +380,12 @@ async fn api_auth_middleware(
     };
 
     let path = request.uri().path();
-    if path == "/api/health" || path == "/health" {
+    // Phase 6 Task 6.A.2: `/api/auth/config` is the SPA's bootstrap endpoint.
+    // The browser fetches it before MSAL has a token, so it must bypass the
+    // bearer-token check. Payload is whitelisted to non-secret identifiers
+    // (see src/api/auth_config.rs). Keep this in sync with the companion
+    // bypass in src/auth/middleware.rs.
+    if path == "/api/health" || path == "/health" || path == "/api/auth/config" {
         return next.run(request).await;
     }
 

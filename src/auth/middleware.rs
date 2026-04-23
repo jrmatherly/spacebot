@@ -22,9 +22,11 @@ pub async fn entra_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Health bypass, matching the static-token middleware.
+    // Health + SPA-bootstrap bypass, matching the static-token middleware
+    // allowlist at src/api/server.rs. `/api/auth/config` is reachable before
+    // sign-in so the browser can discover Entra identifiers (Phase 6 Task 6.A.2).
     let path = request.uri().path().to_string();
-    if path == "/api/health" || path == "/health" {
+    if path == "/api/health" || path == "/health" || path == "/api/auth/config" {
         return next.run(request).await;
     }
 

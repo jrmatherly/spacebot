@@ -5,7 +5,28 @@
 //! `TomlEntraAuthConfig`. `load.rs` resolves `secret:…` / `env:…`
 //! references and constructs this struct.
 
+use serde::Serialize;
 use std::sync::Arc;
+
+/// SPA-safe projection of [`EntraAuthConfig`]. Returned by `/api/auth/config`
+/// at SPA boot so MSAL.js can construct a `PublicClientApplication` without
+/// hard-coding tenant/client identifiers at build time.
+///
+/// Every field here is explicitly **non-secret**: tenant IDs and the SPA
+/// client ID are listed in Entra's public OIDC discovery document, and
+/// scopes are canonical strings. The Web API client ID
+/// (`EntraAuthConfig::audience`), any client secrets, and Graph
+/// credentials are deliberately NOT projected — they live on the daemon.
+///
+/// `String` (not `Arc<str>`) because the struct is constructed once per
+/// request and serialized immediately; the `Arc` sharing benefit vanishes
+/// at the `to_string()` call.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct PublicEntraConfig {
+    pub tenant_id: String,
+    pub spa_client_id: String,
+    pub spa_scopes: Vec<String>,
+}
 
 /// Resolved Entra auth config.
 #[derive(Debug, Clone)]
@@ -70,6 +91,18 @@ impl EntraAuthConfig {
             "https://login.microsoftonline.com/{}/discovery/v2.0/keys",
             self.tenant_id
         )
+    }
+
+    /// Project to a SPA-safe view. Used by `GET /api/auth/config` (Phase 6).
+    /// The projection drops every field the browser must not see: Web API
+    /// client ID (`audience`), allowed scopes, cache TTLs, mock-mode flag,
+    /// and test-only overrides.
+    pub fn public(&self) -> PublicEntraConfig {
+        PublicEntraConfig {
+            tenant_id: self.tenant_id.to_string(),
+            spa_client_id: self.spa_client_id.to_string(),
+            spa_scopes: self.spa_scopes.iter().map(|s| s.to_string()).collect(),
+        }
     }
 
     /// Integration-test constructor. Always-compiled (`#[doc(hidden)]`) so

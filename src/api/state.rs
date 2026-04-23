@@ -1010,6 +1010,25 @@ impl ApiState {
         self.entra_config.store(Arc::new(Some(cfg)));
     }
 
+    /// Returns a SPA-safe projection of the current Entra config, or `None`
+    /// when Entra is not configured (static-token deployment, the brief boot
+    /// window before `set_entra_auth_config` runs, or a mock-backed test
+    /// that doesn't wire a real config). Consumed by the unprotected
+    /// `GET /api/auth/config` handler at SPA boot (Phase 6).
+    ///
+    /// Reads from the companion `entra_config` field rather than the
+    /// `entra_auth` trait object: the `DynJwtValidator` trait exposes only
+    /// `validate_dyn`, and `EntraValidator::cfg` is private. Keeping the
+    /// accessor pointed at `entra_config` also means `MockValidator`-backed
+    /// tests without a real config return `None` correctly.
+    pub fn entra_auth_public_config(&self) -> Option<crate::auth::PublicEntraConfig> {
+        self.entra_config
+            .load()
+            .as_ref()
+            .as_ref()
+            .map(|cfg| cfg.public())
+    }
+
     /// Install the Microsoft Graph client post-construction. Called from
     /// `main.rs` after `set_entra_auth` and after the secrets store has
     /// resolved `web_api_client_secret`. Optional: deployments without

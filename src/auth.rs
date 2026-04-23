@@ -20,7 +20,7 @@ pub mod roles;
 // library. Precedent: `tests/support/mock_entra.rs` and `ApiState::new_for_tests`.
 pub mod testing;
 
-pub use config::EntraAuthConfig;
+pub use config::{EntraAuthConfig, PublicEntraConfig};
 pub use context::{AuthContext, PrincipalType};
 pub use errors::AuthError;
 pub use jwks::EntraValidator;

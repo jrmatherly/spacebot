@@ -8,6 +8,7 @@ mod activity;
 pub mod agents;
 mod attachments;
 mod audit;
+mod auth_config;
 mod bindings;
 mod channels;
 mod config;
