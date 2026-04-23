@@ -367,7 +367,9 @@ export interface TimelineWorkerRun {
 async function fetchJson<T>(path: string): Promise<T> {
 	const response = await authedFetch(`${getApiBase()}${path}`);
 	if (!response.ok) {
-		throw new Error(`API error: ${response.status}`);
+		// Include the path so operators + Sentry breadcrumbs can identify
+		// which endpoint returned the error status.
+		throw new Error(`API error ${response.status}: ${path}`);
 	}
 	return response.json();
 }
