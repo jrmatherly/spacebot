@@ -1,11 +1,12 @@
-//! Integration tests for the consolidated `GET /api/me` endpoint
-//! (Phase 6 PR C Task 6.C.6, A-18).
+//! Integration tests for the consolidated `GET /api/me` endpoint.
 //!
 //! Verifies the handler's observable contract: authenticated principal
 //! gets a 200 with the MeResponse shape; roles + groups + display name
 //! fields come from AuthContext; photo data URL is populated from the
 //! cached `users.display_photo_b64` row when present; initials are
-//! computed when photo is absent.
+//! computed when photo is absent. Also covers the non-User
+//! principal_type serialization path and the photo-row-with-null-blob
+//! edge case.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -76,7 +77,7 @@ async fn returns_photo_data_url_when_cached() {
     let alice = user_ctx("alice", Some("Alice Example"), vec![ROLE_USER]);
     upsert_user_from_auth(&pool, &alice).await.unwrap();
 
-    // Seed the cached photo row — mimics what the middleware's
+    // Seed the cached photo row. Mimics what the middleware's
     // fire-and-forget sync_user_photo_for_principal would write after
     // Graph's /me/photo/$value 200 response.
     let fake_b64 = "FAKEBASE64PAYLOAD==";
@@ -135,4 +136,64 @@ async fn rejects_missing_bearer_with_401() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn photo_row_present_with_null_blob_falls_back_to_initials() {
+    // The 404-from-Graph normal case: upsert_user_from_auth created
+    // the users row with display_photo_b64 = NULL (default). This
+    // differentiates "row missing" from "row present with null blob".
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", Some("Alice Example"), vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+
+    // Explicitly set display_photo_b64 = NULL + a fresh photo_updated_at
+    // to simulate the state the photo-sync middleware leaves after
+    // Graph returned 404 (normal for accounts with no photo).
+    sqlx::query("UPDATE users SET display_photo_b64 = NULL, photo_updated_at = datetime('now') WHERE principal_key = ?")
+        .bind(alice.principal_key())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let res = app.oneshot(req_me(&token)).await.unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = read_json(res).await;
+    assert!(body["display_photo_data_url"].is_null());
+    // Initials must still compute from display_name even when the row
+    // exists (just with null blob). A regression that checks "row
+    // exists" instead of "b64 is Some" would serve data:image/jpeg,null.
+    assert_eq!(body["initials"], "AE");
+}
+
+#[tokio::test]
+async fn service_principal_serializes_as_snake_case() {
+    // PrincipalType::ServicePrincipal must serialize as
+    // "service_principal" on the wire, not "serviceprincipal" or
+    // "ServicePrincipal". The enum's `#[serde(rename_all = "snake_case")]`
+    // gates this; a refactor that falls back to `format!("{:?}")`
+    // would ship the wrong value.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let sp = AuthContext {
+        principal_type: PrincipalType::ServicePrincipal,
+        tid: Arc::from("tenant-1"),
+        oid: Arc::from("app-client-1"),
+        roles: vec![Arc::from("SpacebotService")],
+        groups: vec![],
+        groups_overage: false,
+        display_email: None,
+        display_name: Some(Arc::from("Builder Service")),
+    };
+    upsert_user_from_auth(&pool, &sp).await.unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&sp);
+    let res = app.oneshot(req_me(&token)).await.unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = read_json(res).await;
+    assert_eq!(body["principal_type"], "service_principal");
 }

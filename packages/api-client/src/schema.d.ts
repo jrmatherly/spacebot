@@ -3429,7 +3429,13 @@ export interface components {
             initials?: string | null;
             oid: string;
             principal_key: string;
-            principal_type: string;
+            /**
+             * @description Typed enum so downstream TypeScript clients get a string-literal
+             *     union (`"user" | "service_principal" | "system" | "legacy_static"`)
+             *     instead of an opaque string. Snake-case serialization inherited
+             *     from `PrincipalType`'s `#[serde(rename_all = "snake_case")]`.
+             */
+            principal_type: components["schemas"]["PrincipalType"];
             roles: string[];
             tid: string;
         };
@@ -3750,6 +3756,15 @@ export interface components {
             name: string;
             tags?: string[];
         };
+        /**
+         * @description Stable identifier category for the authenticated principal. The four
+         *     variants map to disjoint authz paths: human users authenticate via
+         *     delegated Entra tokens, service principals via client-credentials
+         *     grant, the system (cortex) principal constructs internally, and the
+         *     static-token branch represents operator-level coarse access.
+         * @enum {string}
+         */
+        PrincipalType: "user" | "system" | "service_principal" | "legacy_static";
         ProcessTokens: {
             /** Format: int64 */
             cache_read: number;
