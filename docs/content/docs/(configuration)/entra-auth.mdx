@@ -189,6 +189,104 @@ Rare after Phase 6 (the error banner above should cover most cases), but possibl
 
 The Entra middleware branch didn't install. Most likely `[api.auth.entra].enabled` is false or the config failed TOML resolution at startup. Re-check logs for the validator startup line. See [`docs/design-docs/entra-audit-log.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-audit-log.md) for the full audit-event shape.
 
+## Server-sent events under Entra
+
+Phase 6 PR C swapped the SPA's native `EventSource` for [`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source) so the stream can carry `Authorization: Bearer <token>`. Native `EventSource` cannot attach custom headers, so under Entra the `/api/events` stream would otherwise arrive unauthenticated and return 401.
+
+The transport change is invisible to the existing `useEventSource` hook contract. The hook still accepts `handlers: Record<string, EventHandler>` + `enabled` + `onReconnect` and returns `{ connectionState }`. Downstream consumers like `useLiveContext` and the `ConnectionBanner` component work without modification. SSE now inherits the same auth behavior as every REST call:
+
+- Authorization header attached when a token provider is set
+- 401 retries once with a forced refresh token
+- `spacebot:auth-exhausted` CustomEvent dispatched on unrecoverable auth
+
+### Deploy-ordering note
+
+An Entra-enabled deployment between PR B merge and PR C merge would have REST calls authenticated but SSE rejected with 401. Production rollout order:
+
+1. Merge PR A (runtime config + AuthGate). Done.
+2. Merge PR B (authedFetch + 88-site migration). Done.
+3. Merge PR C (SSE polyfill + /api/me + mock mode). This PR.
+4. Only then enable `[api.auth.entra].enabled = true` in production config.
+
+Do NOT enable Entra between PR B and PR C merges. A staging deployment with Entra enabled between those two merges is fine as long as SSE-dependent flows are known broken.
+
+## Sign-out and the user menu
+
+The header shows the signed-in principal's display name plus a sign-out control rendered by `UserMenu.tsx`. Sign-out calls `msal.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin })`, which returns the browser to the SPA root; MSAL clears its in-memory cache (plus `localStorage` when the A-17 "Stay signed in on this device" opt-in is active).
+
+When Entra is disabled, the `MsalProvider` is absent and `useMsal` returns an empty accounts array. `UserMenu` gracefully returns `null` in that case so the header region stays empty in static-token deployments.
+
+## `/api/me` — consolidated principal endpoint (A-18, A-19)
+
+The SPA reads identity, roles, groups, and photo/initials from a single `GET /api/me` call. The frontend `useMe()` hook in `interface/src/auth/useMe.ts` returns the full shape:
+
+```json
+{
+  "principal_key": "tenant-1:alice",
+  "tid": "tenant-1",
+  "oid": "alice",
+  "principal_type": "user",
+  "display_name": "Alice Example",
+  "display_email": "alice@example.com",
+  "display_photo_data_url": "data:image/jpeg;base64,…",
+  "initials": null,
+  "roles": ["SpacebotUser"],
+  "groups": ["engineering", "platform"],
+  "groups_overage": false
+}
+```
+
+- **`display_photo_data_url`** is populated from the 7-day TTL cache of Microsoft Graph `GET /me/photo/$value`. When the account has no photo (HTTP 404 from Graph), the cache row stays in the photo-absent state and the TTL prevents re-fetching on every subsequent request.
+- **`initials`** is computed from the first letters of the display name (up to 3 chars) and populated only when `display_photo_data_url` is null. The SPA never has to branch on both absent.
+- **`groups_overage: true`** indicates the principal belongs to more than the 200-group SPA-6 payload limit; the daemon resolved the full list via Graph.
+
+`useRole("SpacebotAdmin")` reads from the same hook so there is one source of truth for the principal's roles.
+
+## Local development — VITE_AUTH_MOCK
+
+Setting `VITE_AUTH_MOCK=1` in `interface/.env.development.local` activates a mock MSAL instance that mints JSON-base64url tokens compatible with the daemon's `MockValidator` (Phase 4 PR 1). No real Entra tenant is required. Three env vars shape the mock principal:
+
+```
+VITE_AUTH_MOCK=1
+VITE_MOCK_TID=tenant-mock
+VITE_MOCK_OID=alice
+VITE_MOCK_ROLES=SpacebotUser,SpacebotAdmin
+```
+
+On the daemon side, set `[api.auth.entra].mock_mode = true` in `config.toml` to accept the mock tokens. Both halves must be configured for the local flow to work end-to-end. The mock tokens carry `principal_type: "user"` and the roles you specify; `groups` defaults to an empty array.
+
+## Additional troubleshooting (PR C surfaces)
+
+### SSE streams silently stopped updating after sign-in
+
+Verify `@microsoft/fetch-event-source` is installed in `interface/`:
+
+```bash
+grep '"@microsoft/fetch-event-source"' interface/package.json
+```
+
+If missing, the hook still uses native `EventSource` and the 401 path is not wired. Reinstall with `cd interface && bun install`.
+
+### `/api/me` returns 401 but `/api/auth/config` works
+
+This is the expected signal that Entra validation rejected the access token. The access token's `aud` claim must equal the daemon's `[api.auth.entra].audience`. Decode the token at [jwt.ms](https://jwt.ms) and compare.
+
+### `/api/me` returns data but `display_photo_data_url` is always null
+
+Either the Graph photo sync hasn't run (check daemon logs for `sync_user_photo_for_principal`), or the user has no photo set (Graph returned 404, which is normal for many accounts). Inspect the row directly:
+
+```sql
+SELECT display_photo_b64, photo_updated_at
+FROM users
+WHERE principal_key = 'tenant-1:alice';
+```
+
+If `photo_updated_at` is recent but `display_photo_b64` is NULL, the 404-is-normal path ran; the TTL prevents re-fetching for 7 days.
+
+### User menu shows `undefined` / no name
+
+The access token has no `name` claim or the account was read before `handleRedirectPromise` resolved. Refresh the page. If the name stays missing, inspect the users row; the Graph sync populates `display_name` from the ID token's `name` claim, not the access token.
+
 ## Related
 
 - [`entra-app-registrations.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-app-registrations.md) — app registration schema, redirect URIs, API permissions, role claims
