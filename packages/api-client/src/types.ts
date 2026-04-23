@@ -373,7 +373,7 @@ export type RegistrySkillContentResponse =
   components["schemas"]["RegistrySkillContentResponse"];
 
 // =============================================================================
-// Wiki Types (Phase 7 PR 3 Task 7.9)
+// Wiki Types
 // =============================================================================
 
 export type WikiPageSummary = components["schemas"]["WikiPageSummary"];

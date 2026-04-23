@@ -156,22 +156,21 @@ pub(super) struct WikiListResponse {
     total: usize,
 }
 
-/// Phase 7 PR 3 Task 7.9 Step A wrapper around `WikiPageSummary` with
-/// enrichment fields inline via `#[serde(flatten)]`. Additive on the
-/// wire: `{ id, slug, title, page_type, version, updated_at,
-/// updated_by, visibility?, team_name? }`. Mirrors the `TaskListItem`
-/// pattern at `src/api/tasks.rs` and consumes the shared
-/// `enrich_visibility_tags` helper so readers do not context-switch
-/// on which enrichment path a list handler takes.
+/// Wrapper around `WikiPageSummary` with enrichment fields inline via
+/// `#[serde(flatten)]`. Additive on the wire: clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag.
+/// Mirrors `MemoryListItem` / `TaskListItem`.
 #[derive(Serialize, utoipa::ToSchema)]
-#[non_exhaustive]
 pub(super) struct WikiListItem {
     #[serde(flatten)]
-    pub summary: crate::wiki::WikiPageSummary,
+    summary: crate::wiki::WikiPageSummary,
     #[serde(flatten)]
-    pub tag: crate::api::resources::VisibilityTag,
+    tag: crate::api::resources::VisibilityTag,
 }
 
+/// Single-page GET response. Carries the bare `WikiPage` domain type,
+/// not `WikiListItem`: visibility chips are a list-view concern, so
+/// detail views intentionally omit the enrichment.
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct WikiPageResponse {
     page: crate::wiki::WikiPage,

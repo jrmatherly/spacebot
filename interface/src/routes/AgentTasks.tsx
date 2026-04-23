@@ -39,7 +39,7 @@ export function AgentTasks({agentId}: {agentId: string}) {
 	const {taskEventVersion} = useLiveContext();
 
 	// Visibility filter state persists to URL query params so a reload
-	// restores the filter. Same pattern as AgentMemories per D54.
+	// restores the filter. Same pattern as AgentMemories.
 	const search = useSearch({strict: false}) as {visibility?: string};
 	const navigate = useNavigate();
 	const visibilityFilter: VisibilityFilterValue =
@@ -69,10 +69,9 @@ export function AgentTasks({agentId}: {agentId: string}) {
 		refetchInterval: 15_000,
 	});
 
-	// Enriched raw data (TaskItem carries visibility + team_name).
-	// Filter client-side because the backend list endpoint does not yet
-	// accept a visibility= param; queryKey includes visibilityFilter so
-	// cache entries stay isolated per filter.
+	// Filter client-side: the backend list endpoint does not yet accept
+	// a `visibility=` param. `queryKey` includes the filter so cache
+	// entries stay isolated per filter.
 	const rawTasks: TaskItem[] = useMemo(() => data?.tasks ?? [], [data]);
 	const filteredTasks: TaskItem[] = useMemo(
 		() =>
@@ -92,7 +91,7 @@ export function AgentTasks({agentId}: {agentId: string}) {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [shareTarget, setShareTarget] = useState<TaskItem | null>(null);
 
-	// Lazy-gate the teams fetch on Share-modal open per D56.
+	// Lazy-gate the teams fetch on Share-modal open.
 	const teamsQuery = useTeams({enabled: shareTarget !== null});
 
 	const activeTask = tasks.find((t) => t.id === activeTaskId);
@@ -106,7 +105,7 @@ export function AgentTasks({agentId}: {agentId: string}) {
 
 	const invalidate = useCallback(
 		// Invalidate all filter variants by partial-key match so a mutation
-		// on one filter state bust every cached variant.
+		// on one filter state busts every cached variant.
 		() => queryClient.invalidateQueries({queryKey: ["tasks", agentId]}),
 		[queryClient, agentId],
 	);
@@ -289,8 +288,8 @@ export function AgentTasks({agentId}: {agentId: string}) {
 						onClose={() => setActiveTaskId(null)}
 					/>
 					{/* Visibility chip + Share button. Chip only renders when
-					    the enriched task has a recorded visibility (D54
-					    no-auto-broadening). */}
+					    the enriched task has a recorded visibility
+					    (no-auto-broadening policy). */}
 					{activeTaskEnriched && (
 						<div className="flex items-center gap-2 border-t border-app-line/40 px-4 py-3">
 							{activeTaskEnriched.visibility && (

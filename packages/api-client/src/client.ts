@@ -112,10 +112,9 @@ export type {
 	// via `just typegen`.
 	MemoryItem,
 	MemoriesListResponse,
-	// Tasks (Phase 7 PR 3 Task 7.8 alias swap). TaskItem aliases the
-	// generated `TaskListItem` (Task & VisibilityTag). TaskResponse
-	// retains the bare `Task` domain type because chips live on list
-	// rows, not detail views.
+	// Tasks. `TaskItem = TaskListItem = Task & VisibilityTag` on the
+	// wire; `TaskResponse.task` stays bare `Task` because chips render
+	// on list rows, not detail views.
 	TaskItem,
 	TaskListResponse,
 	TaskResponse,
@@ -165,21 +164,14 @@ import type {
 	TopologyResponse,
 } from "./types";
 
-// In-file use of Memory-enriched types. The same aliases are re-exported
-// in the block above so consumers import from `@spacebot/api-client/client`.
+// Same-file bindings so call-site return annotations resolve. Each
+// name is also re-exported from the block above.
 import type { MemoryItem, MemoriesListResponse } from "./types";
-
-// In-file use of Task types so call-site return annotations resolve.
-// Same aliases are re-exported in the block above.
 import type {
 	TaskListResponse,
 	TaskResponse,
 	TaskActionResponse,
 } from "./types";
-
-// In-file use of Wiki list types. The handwritten `WikiPageSummary` and
-// `WikiPage` shapes remain below; only the list-wrapper types needed the
-// enriched schema alias.
 import type { WikiListResponse } from "./types";
 
 export type { TopologyAgent, TopologyLink, TopologyGroup, TopologyHuman, TopologyResponse };

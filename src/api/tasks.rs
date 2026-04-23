@@ -123,8 +123,10 @@ pub(super) struct TaskListResponse {
     tasks: Vec<TaskListItem>,
 }
 
-/// Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
-/// inline via `#[serde(flatten)]`. Additive on the wire.
+/// Wrapper around `Task` with enrichment fields inline via
+/// `#[serde(flatten)]`. Additive on the wire: clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag.
+/// Mirrors `MemoryListItem` / `WikiListItem`.
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct TaskListItem {
     #[serde(flatten)]
@@ -133,6 +135,9 @@ pub(super) struct TaskListItem {
     tag: crate::api::resources::VisibilityTag,
 }
 
+/// Single-task response. Carries the bare `Task` domain type, not
+/// `TaskListItem`: visibility chips are a list-view concern, so detail
+/// views intentionally omit the enrichment.
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct TaskResponse {
     task: crate::tasks::Task,

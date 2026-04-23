@@ -4224,8 +4224,10 @@ export interface components {
             success: boolean;
         };
         /**
-         * @description Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
-         *     inline via `#[serde(flatten)]`. Additive on the wire.
+         * @description Wrapper around `Task` with enrichment fields inline via
+         *     `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         *     Mirrors `MemoryListItem` / `WikiListItem`.
          */
         TaskListItem: components["schemas"]["Task"] & components["schemas"]["VisibilityTag"];
         TaskListResponse: {
@@ -4233,6 +4235,11 @@ export interface components {
         };
         /** @enum {string} */
         TaskPriority: "critical" | "high" | "medium" | "low";
+        /**
+         * @description Single-task response. Carries the bare `Task` domain type, not
+         *     `TaskListItem`: visibility chips are a list-view concern, so detail
+         *     views intentionally omit the enrichment.
+         */
         TaskResponse: {
             task: components["schemas"]["Task"];
         };
@@ -4676,13 +4683,10 @@ export interface components {
             versions: components["schemas"]["WikiPageVersion"][];
         };
         /**
-         * @description Phase 7 PR 3 Task 7.9 Step A wrapper around `WikiPageSummary` with
-         *     enrichment fields inline via `#[serde(flatten)]`. Additive on the
-         *     wire: `{ id, slug, title, page_type, version, updated_at,
-         *     updated_by, visibility?, team_name? }`. Mirrors the `TaskListItem`
-         *     pattern at `src/api/tasks.rs` and consumes the shared
-         *     `enrich_visibility_tags` helper so readers do not context-switch
-         *     on which enrichment path a list handler takes.
+         * @description Wrapper around `WikiPageSummary` with enrichment fields inline via
+         *     `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         *     Mirrors `MemoryListItem` / `TaskListItem`.
          */
         WikiListItem: components["schemas"]["WikiPageSummary"] & components["schemas"]["VisibilityTag"];
         WikiListResponse: {
@@ -4704,6 +4708,11 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /**
+         * @description Single-page GET response. Carries the bare `WikiPage` domain type,
+         *     not `WikiListItem`: visibility chips are a list-view concern, so
+         *     detail views intentionally omit the enrichment.
+         */
         WikiPageResponse: {
             page: components["schemas"]["WikiPage"];
         };

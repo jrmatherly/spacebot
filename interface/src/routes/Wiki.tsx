@@ -321,8 +321,8 @@ function PageList({
 									>
 										{page.title}
 									</button>
-									{/* Conditional-render per D54 no-auto-broadening:
-									    unowned pages show no chip. */}
+									{/* Conditional render (no-auto-broadening
+									    policy): unowned pages show no chip. */}
 									{page.visibility && (
 										<VisibilityChip
 											visibility={page.visibility}
@@ -363,7 +363,8 @@ export function Wiki() {
 	const [search, setSearch] = useState("");
 	const [shareTarget, setShareTarget] = useState<WikiListItem | null>(null);
 
-	// Visibility filter state persists to URL query params (D54).
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as AgentMemories.
 	const urlSearch = useSearch({ strict: false }) as { visibility?: string };
 	const navigate = useNavigate();
 	const visibilityFilter: VisibilityFilterValue =
@@ -373,19 +374,21 @@ export function Wiki() {
 			? urlSearch.visibility
 			: "all";
 
-	// Lazy-gate the teams fetch on modal-open (D56).
+	// Lazy-gate the teams fetch on modal-open.
 	const teamsQuery = useTeams({ enabled: shareTarget !== null });
 
-	const { data: listData, isLoading } = useQuery({
+	const { data: listData, isLoading, error: listError } = useQuery({
 		queryKey: ["wiki", "list", visibilityFilter],
 		queryFn: () => api.listWikiPages(),
 	});
 
-	const { data: searchData } = useQuery({
+	const { data: searchData, error: searchError } = useQuery({
 		queryKey: ["wiki", "search", search, visibilityFilter],
 		queryFn: () => api.searchWikiPages({ query: search }),
 		enabled: search.length > 1,
 	});
+
+	const fetchError = search.length > 1 ? searchError : listError;
 
 	// Client-side visibility filter: the backend list endpoint does not
 	// yet accept a `visibility=` param; queryKey isolation keeps caches
@@ -479,6 +482,13 @@ export function Wiki() {
 				<div className="flex-1 overflow-y-auto px-3 pb-4">
 					{isLoading ? (
 						<p className="py-4 text-center text-xs text-ink-dull">Loading…</p>
+					) : fetchError ? (
+						<div className="py-6 text-center">
+							<p className="text-xs text-red-400">Failed to load pages.</p>
+							<p className="mt-1 font-mono text-[10px] text-ink-faint">
+								{(fetchError as Error).message}
+							</p>
+						</div>
 					) : pages.length === 0 ? (
 						<div className="py-6 text-center">
 							<p className="text-xs text-ink-dull">
@@ -541,12 +551,14 @@ export function Wiki() {
 							shareTarget.id,
 							args,
 						);
-						// Invalidate the narrower ["wiki", "list"] key (not
-						// the superset ["wiki"]) per audit finding: the
-						// existing CreatePageForm mutation at line 79 uses
-						// ["wiki"] which also busts page-detail caches. Our
-						// Share action only affects list chip state, so we
-						// keep the invalidation narrow.
+						// Invalidate the narrower `["wiki", "list"]` and
+						// `["wiki", "search"]` keys (not the superset
+						// `["wiki"]` that `CreatePageForm` uses) so a Share
+						// action only busts list chip state, not page-detail
+						// caches. Rethrow on failure: Wiki has no
+						// refetchInterval, so a silent swallow would leave
+						// stale chip state visible until navigation. The
+						// modal's onSubmit wrapper catches and surfaces it.
 						try {
 							await queryClient.invalidateQueries({
 								queryKey: ["wiki", "list"],
@@ -559,6 +571,7 @@ export function Wiki() {
 								"Wiki: failed to invalidate wiki cache after share",
 								e,
 							);
+							throw e;
 						}
 					}}
 					onClose={() => setShareTarget(null)}

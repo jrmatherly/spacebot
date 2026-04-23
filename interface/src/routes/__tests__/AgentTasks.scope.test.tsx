@@ -1,4 +1,4 @@
-// AgentTasks visibility-chip + filter-wiring test (Phase 7 PR 3 T7.8).
+// AgentTasks visibility-chip + filter-wiring test.
 // Mirrors `AgentMemories.scope.test.tsx`. The chip lives in the detail
 // panel (not per-row) because `@spacedrive/ai`'s TaskList has no
 // per-row render slot; the filter is toolbar-level and is piped into
@@ -12,7 +12,9 @@ import { renderWithProviders } from "../../test/renderWithProviders";
 // crashes jsdom with "be.div is not a function". AgentTasks never
 // renders InlineWorkerCard, so stubbing the whole module with only
 // the symbols AgentTasks actually uses avoids the load-time crash.
-// Mirrors the D58 MemoryGraph stub in AgentMemories.scope.test.tsx.
+// Same pattern as the `MemoryGraph` stub in
+// `AgentMemories.scope.test.tsx`: stub heavyweight jsdom-hostile
+// deps at module-load.
 vi.mock("@spacedrive/ai", async () => {
 	const TASK_STATUS_ORDER = [
 		"in_progress",
@@ -100,7 +102,7 @@ function tasksPayload() {
 describe("AgentTasks with visibility", () => {
 	beforeEach(() => {
 		setAuthTokenProvider(async () => "mock-token");
-		// Per-URL mock (D61): /api/teams returns the team directory,
+		// Per-URL mock: /api/teams returns the team directory,
 		// everything else returns the tasks payload. A single tasks-only
 		// mock would crash useTeams' JSON.parse path.
 		vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -159,7 +161,7 @@ describe("AgentTasks with visibility", () => {
 	});
 
 	it("renders no chip for a task with null visibility", async () => {
-		// D54 no-auto-broadening: unowned tasks show no chip.
+		// No-auto-broadening policy: unowned tasks show no chip.
 		vi.mocked(globalThis.fetch).mockImplementation(
 			async (input: RequestInfo | URL) => {
 				const url = typeof input === "string" ? input : String(input);
@@ -206,5 +208,30 @@ describe("AgentTasks with visibility", () => {
 		fireEvent.click(screen.getByText("orphan task"));
 		// The detail panel opens, but no chip should render.
 		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+	});
+
+	it("renders the error panel when the list endpoint returns 500", async () => {
+		vi.mocked(globalThis.fetch).mockImplementation(
+			async (input: RequestInfo | URL) => {
+				const url = typeof input === "string" ? input : String(input);
+				if (url.includes("/teams")) {
+					return new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({ error: "database unavailable" }),
+					{
+						status: 500,
+						headers: { "content-type": "application/json" },
+					},
+				);
+			},
+		);
+		renderWithProviders(<AgentTasks agentId="agent-1" />);
+		await waitFor(() =>
+			expect(screen.getByText(/Failed to load tasks/i)).toBeInTheDocument(),
+		);
 	});
 });

@@ -91,7 +91,8 @@ export function GlobalTasks() {
 	const queryClient = useQueryClient();
 	const {taskEventVersion} = useLiveContext();
 
-	// Visibility filter state persists to URL query params (D54).
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as AgentMemories.
 	const search = useSearch({strict: false}) as {visibility?: string};
 	const navigate = useNavigate();
 	const visibilityFilter: VisibilityFilterValue =

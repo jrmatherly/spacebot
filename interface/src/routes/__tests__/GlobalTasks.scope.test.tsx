@@ -1,6 +1,6 @@
-// GlobalTasks visibility-chip + filter-wiring test (Phase 7 PR 3 T7.8, D65).
-// GlobalTasks is the second Tasks-list surface and must carry the same
-// chip + filter + Share wiring as AgentTasks.
+// GlobalTasks visibility-chip + filter-wiring test.
+// Second Tasks-list surface; carries the same chip + filter + Share
+// wiring as AgentTasks.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -100,7 +100,7 @@ describe("GlobalTasks with visibility", () => {
 	beforeEach(() => {
 		setAuthTokenProvider(async () => "mock-token");
 		// GlobalTasks calls /api/agents (picker) + /api/tasks (list) +
-		// /api/teams (share modal). Per-URL routing (D61) keeps each
+		// /api/teams (share modal). Per-URL routing keeps each
 		// JSON.parse consumer fed a valid shape.
 		vi.spyOn(globalThis, "fetch").mockImplementation(
 			async (input: RequestInfo | URL) => {
@@ -211,5 +211,36 @@ describe("GlobalTasks with visibility", () => {
 		);
 		fireEvent.click(screen.getByText("orphan global"));
 		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+	});
+
+	it("renders the error panel when the list endpoint returns 500", async () => {
+		vi.mocked(globalThis.fetch).mockImplementation(
+			async (input: RequestInfo | URL) => {
+				const url = typeof input === "string" ? input : String(input);
+				if (url.includes("/teams")) {
+					return new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					});
+				}
+				if (url.includes("/agents")) {
+					return new Response(JSON.stringify(agentsPayload()), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({ error: "database unavailable" }),
+					{
+						status: 500,
+						headers: { "content-type": "application/json" },
+					},
+				);
+			},
+		);
+		renderWithProviders(<GlobalTasks />);
+		await waitFor(() =>
+			expect(screen.getByText(/Failed to load tasks/i)).toBeInTheDocument(),
+		);
 	});
 });
