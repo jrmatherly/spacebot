@@ -12,6 +12,15 @@ export type InstanceOverviewResponse =
   components["schemas"]["InstanceOverviewResponse"];
 
 // =============================================================================
+// Auth Types (Phase 6)
+// =============================================================================
+
+/// SPA bootstrap payload returned by the unprotected `GET /api/auth/config`.
+/// `entra_enabled: false` signals the daemon is running in static-token mode
+/// and the SPA should skip MSAL bootstrapping entirely.
+export type AuthConfigResponse = components["schemas"]["AuthConfigResponse"];
+
+// =============================================================================
 // Event/SSE Types
 // =============================================================================
 
