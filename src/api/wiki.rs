@@ -152,10 +152,25 @@ fn default_author_type() -> String {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct WikiListResponse {
-    pages: Vec<crate::wiki::WikiPageSummary>,
+    pages: Vec<WikiListItem>,
     total: usize,
 }
 
+/// Wrapper around `WikiPageSummary` with enrichment fields inline via
+/// `#[serde(flatten)]`. Additive on the wire: clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag.
+/// Mirrors `MemoryListItem` / `TaskListItem`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct WikiListItem {
+    #[serde(flatten)]
+    summary: crate::wiki::WikiPageSummary,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
+}
+
+/// Single-page GET response. Carries the bare `WikiPage` domain type,
+/// not `WikiListItem`: visibility chips are a list-view concern, so
+/// detail views intentionally omit the enrichment.
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct WikiPageResponse {
     page: crate::wiki::WikiPage,
@@ -192,6 +207,36 @@ fn parse_page_type(s: Option<&str>) -> Result<Option<WikiPageType>, StatusCode> 
     }
 }
 
+/// Batch-enrich a slice of wiki page summaries with their visibility +
+/// team_name chip fields. Mirrors the post-fetch pattern in
+/// `src/api/tasks.rs`. During the boot window `instance_pool` may not
+/// yet be attached, in which case chips are absent (cosmetic
+/// degradation) and a grepable `tracing::warn!` fires so SRE alerts can
+/// pick up a startup-ordering bug.
+async fn enrich_wiki_list(
+    state: &ApiState,
+    summaries: Vec<crate::wiki::WikiPageSummary>,
+) -> Vec<WikiListItem> {
+    let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "wiki_page", &ids).await
+    } else {
+        tracing::warn!(
+            handler = "wiki",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+    summaries
+        .into_iter()
+        .map(|summary| {
+            let tag = tags.get(&summary.id).cloned().unwrap_or_default();
+            WikiListItem { summary, tag }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -220,7 +265,8 @@ pub(super) async fn list_pages(
     // N+1 emission cost.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
-    let pages = store.list(page_type).await.map_err(wiki_error_status)?;
+    let summaries = store.list(page_type).await.map_err(wiki_error_status)?;
+    let pages = enrich_wiki_list(&state, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }
@@ -246,10 +292,11 @@ pub(super) async fn search_pages(
     // per-row `check_read` post-filter is the planned fix.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
-    let pages = store
+    let summaries = store
         .search(&query.query, page_type)
         .await
         .map_err(wiki_error_status)?;
+    let pages = enrich_wiki_list(&state, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }

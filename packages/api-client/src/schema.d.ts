@@ -4224,8 +4224,10 @@ export interface components {
             success: boolean;
         };
         /**
-         * @description Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
-         *     inline via `#[serde(flatten)]`. Additive on the wire.
+         * @description Wrapper around `Task` with enrichment fields inline via
+         *     `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         *     Mirrors `MemoryListItem` / `WikiListItem`.
          */
         TaskListItem: components["schemas"]["Task"] & components["schemas"]["VisibilityTag"];
         TaskListResponse: {
@@ -4233,6 +4235,11 @@ export interface components {
         };
         /** @enum {string} */
         TaskPriority: "critical" | "high" | "medium" | "low";
+        /**
+         * @description Single-task response. Carries the bare `Task` domain type, not
+         *     `TaskListItem`: visibility chips are a list-view concern, so detail
+         *     views intentionally omit the enrichment.
+         */
         TaskResponse: {
             task: components["schemas"]["Task"];
         };
@@ -4675,8 +4682,15 @@ export interface components {
         WikiHistoryResponse: {
             versions: components["schemas"]["WikiPageVersion"][];
         };
+        /**
+         * @description Wrapper around `WikiPageSummary` with enrichment fields inline via
+         *     `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         *     Mirrors `MemoryListItem` / `TaskListItem`.
+         */
+        WikiListItem: components["schemas"]["WikiPageSummary"] & components["schemas"]["VisibilityTag"];
         WikiListResponse: {
-            pages: components["schemas"]["WikiPageSummary"][];
+            pages: components["schemas"]["WikiListItem"][];
             total: number;
         };
         WikiPage: {
@@ -4694,6 +4708,11 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /**
+         * @description Single-page GET response. Carries the bare `WikiPage` domain type,
+         *     not `WikiListItem`: visibility chips are a list-view concern, so
+         *     detail views intentionally omit the enrichment.
+         */
         WikiPageResponse: {
             page: components["schemas"]["WikiPage"];
         };

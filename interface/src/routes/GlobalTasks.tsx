@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
+import {useNavigate, useSearch} from "@tanstack/react-router";
 import {
 	api,
 	type CreateTaskRequest,
@@ -26,6 +27,16 @@ import {
 	GithubMetadataBadges,
 	getGithubReferences,
 } from "@/components/TaskUtils";
+import {VisibilityChip} from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import {useTeams} from "@/auth/useMe";
 
 const TASK_LIMIT = 200;
 
@@ -80,16 +91,30 @@ export function GlobalTasks() {
 	const queryClient = useQueryClient();
 	const {taskEventVersion} = useLiveContext();
 
-	const queryKey = ["tasks"];
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as AgentMemories.
+	const search = useSearch({strict: false}) as {visibility?: string};
+	const navigate = useNavigate();
+	const visibilityFilter: VisibilityFilterValue =
+		search.visibility === "personal" ||
+		search.visibility === "team" ||
+		search.visibility === "org"
+			? search.visibility
+			: "all";
 
-	// SSE-driven cache invalidation
+	const queryKey = useMemo(
+		() => ["tasks", visibilityFilter] as const,
+		[visibilityFilter],
+	);
+
+	// SSE-driven cache invalidation: bust every filter variant.
 	const prevVersion = useRef(taskEventVersion);
 	useEffect(() => {
 		if (taskEventVersion !== prevVersion.current) {
 			prevVersion.current = taskEventVersion;
-			queryClient.invalidateQueries({queryKey});
+			queryClient.invalidateQueries({queryKey: ["tasks"]});
 		}
-	}, [taskEventVersion, queryKey, queryClient]);
+	}, [taskEventVersion, queryClient]);
 
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
@@ -120,19 +145,35 @@ export function GlobalTasks() {
 		refetchInterval: 15_000,
 	});
 
-	const tasks = (data?.tasks ?? []) as unknown as Task[];
+	const rawTasks: TaskItem[] = useMemo(() => data?.tasks ?? [], [data]);
+	const filteredTasks: TaskItem[] = useMemo(
+		() =>
+			visibilityFilter === "all"
+				? rawTasks
+				: rawTasks.filter((t) => t.visibility === visibilityFilter),
+		[rawTasks, visibilityFilter],
+	);
+	const tasks = filteredTasks as unknown as Task[];
 
 	const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<UiTaskStatus>>(
 		() => new Set(),
 	);
 	const [createOpen, setCreateOpen] = useState(false);
+	const [shareTarget, setShareTarget] = useState<TaskItem | null>(null);
+
+	const teamsQuery = useTeams({enabled: shareTarget !== null});
 
 	const activeTask = tasks.find((t) => t.id === activeTaskId);
+	const activeTaskEnriched = activeTaskId
+		? rawTasks.find((t) => t.id === activeTaskId)
+		: undefined;
 
 	const invalidate = useCallback(
-		() => queryClient.invalidateQueries({queryKey}),
-		[queryClient, queryKey],
+		// Partial-key invalidate so a mutation on one filter variant
+		// busts all cached variants.
+		() => queryClient.invalidateQueries({queryKey: ["tasks"]}),
+		[queryClient],
 	);
 
 	const updateMutation = useMutation({
@@ -244,6 +285,18 @@ export function GlobalTasks() {
 								onChange={setSelectedOwnerId}
 							/>
 						)}
+						<VisibilityFilter
+							value={visibilityFilter}
+							onChange={(v) =>
+								navigate({
+									to: ".",
+									search: (prev) => ({
+										...prev,
+										visibility: v === "all" ? undefined : v,
+									}),
+								})
+							}
+						/>
 					</div>
 					{effectiveOwner && (
 						<Button size="md" onClick={() => setCreateOpen(!createOpen)}>
@@ -311,10 +364,50 @@ export function GlobalTasks() {
 						onDelete={handleDelete}
 						onClose={() => setActiveTaskId(null)}
 					/>
+					{activeTaskEnriched && (
+						<div className="flex items-center gap-2 border-t border-app-line/40 px-4 py-3">
+							{activeTaskEnriched.visibility && (
+								<VisibilityChip
+									visibility={activeTaskEnriched.visibility}
+									teamName={activeTaskEnriched.team_name ?? undefined}
+								/>
+							)}
+							<button
+								type="button"
+								onClick={() => setShareTarget(activeTaskEnriched)}
+								className="ml-auto rounded px-2 py-1 text-tiny font-medium text-ink-dull hover:bg-app-hover"
+							>
+								Share
+							</button>
+						</div>
+					)}
 					<GithubSection
-						metadata={(activeTask as unknown as TaskItem).metadata}
+						metadata={activeTask.metadata as Record<string, unknown>}
 					/>
 				</div>
+			)}
+			{shareTarget && (
+				<ShareResourceModal
+					resourceType="task"
+					resourceId={shareTarget.id}
+					currentVisibility={shareTarget.visibility ?? null}
+					teams={(teamsQuery.data ?? []).map((t) => ({
+						id: t.id,
+						name: t.display_name,
+					}))}
+					onSubmit={async (args: ShareSubmitArgs) => {
+						await api.setResourceVisibility("task", shareTarget.id, args);
+						try {
+							await queryClient.invalidateQueries({queryKey: ["tasks"]});
+						} catch (e) {
+							console.error(
+								"GlobalTasks: failed to invalidate tasks cache after share",
+								e,
+							);
+						}
+					}}
+					onClose={() => setShareTarget(null)}
+				/>
 			)}
 		</div>
 	);
