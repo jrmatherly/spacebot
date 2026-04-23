@@ -10,18 +10,17 @@
 //!   team-id) BEFORE touching the pool, so malformed requests surface as
 //!   400 Bad Request rather than 500 Internal Server Error from a CHECK
 //!   constraint violation.
-//! - On success, `set_ownership` upserts the ownership row (new
-//!   `visibility` + `shared_with_team_id`; `owner_principal_key` is
-//!   preserved as the caller, which matches the Phase 2 ownership model
-//!   where the caller is the authoritative owner at write time).
+//! - On success, `update_visibility_only` UPDATEs the existing ownership
+//!   row's `visibility` + `shared_with_team_id` fields. Per PR #111
+//!   review C1, this preserves `owner_agent_id` + `owner_principal_key`
+//!   on rotation. Non-existent rows return 404 so the endpoint cannot
+//!   silently create ownership under the caller's principal.
 
 use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::policy::check_write;
 use crate::auth::principals::Visibility;
-use crate::auth::repository::{
-    get_teams_by_ids, list_ownerships_by_ids, update_visibility_only,
-};
+use crate::auth::repository::{get_teams_by_ids, list_ownerships_by_ids, update_visibility_only};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -321,7 +320,8 @@ mod tests {
         // illegal-state pair {visibility: "personal" | "org" | None,
         // team_name: Some(_)} at construction time.
         assert_eq!(
-            VisibilityTag::new(Some("personal".to_string()), Some("Platform".to_string())).team_name(),
+            VisibilityTag::new(Some("personal".to_string()), Some("Platform".to_string()))
+                .team_name(),
             None
         );
         assert_eq!(
@@ -360,6 +360,7 @@ impl SetVisibilityRequest {
     /// Centralizes the two rules the handler would otherwise inline:
     ///   1. `visibility` parses to one of the known variants.
     ///   2. A `team` visibility carries a non-None `shared_with_team_id`.
+    ///
     /// Returns `Err(StatusCode::BAD_REQUEST)` on either violation so the
     /// caller can `?`-propagate without restating the error.
     fn validate(self) -> Result<(Visibility, Option<String>), StatusCode> {

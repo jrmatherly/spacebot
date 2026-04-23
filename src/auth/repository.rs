@@ -246,9 +246,7 @@ pub async fn update_visibility_only(
     .bind(resource_id)
     .execute(pool)
     .await
-    .with_context(|| {
-        format!("update visibility resource={resource_type}:{resource_id}")
-    })?;
+    .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?;
     Ok(result.rows_affected() > 0)
 }
 
