@@ -236,8 +236,10 @@ pub(super) async fn list_cron_jobs(
     })?;
 
     // Phase 7 PR 1.5 Task 7.5a. Batch-enrich visibility + team_name for
-    // the whole page in one roundtrip against the instance pool (cron
-    // lives in a per-agent store, so cross-DB JOIN is impossible per D36).
+    // the whole page in one roundtrip against the instance pool. Cron
+    // lives in a per-agent CronStore (cron_jobs.db per agent) while
+    // resource_ownership + teams live in the instance pool, and SQLite
+    // does not support cross-database JOIN.
     let ids: Vec<String> = configs.iter().map(|c| c.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "cron", &ids).await

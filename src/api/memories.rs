@@ -269,9 +269,11 @@ pub(super) async fn list_memories(
     let total = all.len();
     let page: Vec<Memory> = all.into_iter().skip(query.offset).collect();
 
-    // Phase 7 PR 1.5 Task 7.5a. Post-fetch enrichment for the
-    // per-agent store (cross-DB JOIN is impossible per D36, so we
-    // batch-lookup against the instance pool and attach inline).
+    // Phase 7 PR 1.5 Task 7.5a. Post-fetch enrichment for the per-agent
+    // store: MemoryStore's pool is the per-agent memories.db while
+    // resource_ownership + teams live in the instance pool, and SQLite
+    // does not support cross-database JOIN. Batch-lookup against
+    // state.instance_pool and attach visibility + team_name inline.
     let ids: Vec<String> = page.iter().map(|m| m.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await

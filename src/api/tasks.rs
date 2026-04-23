@@ -317,10 +317,13 @@ pub(super) async fn list_tasks(
         })?;
 
     // Phase 7 PR 1.5 Task 7.5a. Uniform post-fetch enrichment pattern
-    // across all 4 list handlers (Memories, Tasks, Cron, Agents) per
-    // the D36 architectural decision. Tasks' store shares the instance
-    // pool and could inline-JOIN, but uniformity wins over micro-
-    // optimization here.
+    // across all 4 list handlers (Memories, Tasks, Cron, Agents).
+    // Tasks' TaskStore is the only one that shares state.instance_pool
+    // (where resource_ownership + teams live), so inline LEFT JOIN is
+    // architecturally feasible here; the other 3 handlers route through
+    // per-agent pools or in-memory config where cross-DB JOIN is
+    // unsupported by SQLite. We chose post-fetch enrichment for all 4
+    // so readers do not context-switch on backing-store choice.
     let ids: Vec<String> = tasks_raw.iter().map(|t| t.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
