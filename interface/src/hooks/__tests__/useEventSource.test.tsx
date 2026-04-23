@@ -173,7 +173,10 @@ describe("useEventSource", () => {
 		const { fetchEventSource } = await import(
 			"@microsoft/fetch-event-source"
 		);
-		let capturedSignal: AbortSignal | undefined;
+		// The library's `signal` field is typed `AbortSignal | null | undefined`
+		// even though useEventSource always provides an AbortController;
+		// widen to match so strict-mode tsc (CI) accepts the assignment.
+		let capturedSignal: AbortSignal | null | undefined;
 		vi.mocked(fetchEventSource).mockImplementationOnce(
 			async (_url, options) => {
 				capturedSignal = options?.signal;
