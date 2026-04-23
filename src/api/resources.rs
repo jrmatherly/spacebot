@@ -20,7 +20,9 @@ use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::policy::check_write;
 use crate::auth::principals::Visibility;
-use crate::auth::repository::{get_teams_by_ids, list_ownerships_by_ids, update_visibility_only};
+use crate::auth::repository::{
+    get_teams_by_ids, list_ownerships_by_ids, list_teams, update_visibility_only,
+};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -465,4 +467,69 @@ pub(super) async fn set_visibility(
     }
 
     Ok(StatusCode::OK)
+}
+
+/// Minimal team projection served by `GET /api/teams`. Only `id` +
+/// `display_name` cross the wire because the SPA's `ShareResourceModal`
+/// renders `display_name` and sends `id` back on submit. Status is
+/// filtered at the SQL layer (active-only) so it carries no useful bit,
+/// and the timestamps would leak create/update cadence without adding
+/// value to the Share UI. Phase 7 PR 5's admin teams page will consume
+/// a richer projection from a separate `/api/admin/teams` route.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub(super) struct TeamSummary {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// List active teams for the Share-resource modal. Authenticated-only:
+/// any signed-in user can read the team directory because every Share
+/// button needs the list to populate its selector. Admin-gating would
+/// break the owner-rotates-own-resource flow for non-admin users.
+///
+/// Inactive teams are filtered in SQL so the UI cannot offer a team
+/// that would fail a follow-up `set_ownership` write (teams go inactive
+/// when Graph removes them during Phase 3 sync; Phase 4 authz rejects
+/// writes against inactive teams to preserve referential sanity).
+#[utoipa::path(
+    get,
+    path = "/teams",
+    responses(
+        (status = 200, description = "List of active teams", body = Vec<TeamSummary>),
+        (status = 401, description = "Not authenticated"),
+        (status = 500, description = "Instance pool unavailable"),
+    ),
+    tag = "resources",
+)]
+pub(super) async fn list_teams_handler(
+    State(state): State<Arc<ApiState>>,
+    auth_ctx: AuthContext,
+) -> Result<Json<Vec<TeamSummary>>, StatusCode> {
+    // D30 pattern: canonical ArcSwap peek matching `src/api/me.rs:60` and
+    // the sibling `set_visibility` handler above.
+    let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() else {
+        tracing::warn!(
+            actor = %auth_ctx.principal_key(),
+            "list_teams: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
+    let rows = list_teams(&pool).await.map_err(|error| {
+        tracing::error!(
+            %error,
+            actor = %auth_ctx.principal_key(),
+            "list_teams: repository query failed"
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let out: Vec<TeamSummary> = rows
+        .into_iter()
+        .map(|r| TeamSummary {
+            id: r.id,
+            display_name: r.display_name,
+        })
+        .collect();
+    Ok(Json(out))
 }

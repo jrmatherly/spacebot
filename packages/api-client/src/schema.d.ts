@@ -2296,6 +2296,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active teams for the Share-resource modal. Authenticated-only:
+         *     any signed-in user can read the team directory because every Share
+         *     button needs the list to populate its selector. Admin-gating would
+         *     break the owner-rotates-own-resource flow for non-admin users.
+         * @description Inactive teams are filtered in SQL so the UI cannot offer a team
+         *     that would fail a follow-up `set_ownership` write (teams go inactive
+         *     when Graph removes them during Phase 3 sync; Phase 4 authz rejects
+         *     writes against inactive teams to preserve referential sanity).
+         */
+        get: operations["list_teams_handler"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tools": {
         parameters: {
             query?: never;
@@ -4215,6 +4241,19 @@ export interface components {
         TaskSubtask: {
             completed: boolean;
             title: string;
+        };
+        /**
+         * @description Minimal team projection served by `GET /api/teams`. Only `id` +
+         *     `display_name` cross the wire because the SPA's `ShareResourceModal`
+         *     renders `display_name` and sends `id` back on submit. Status is
+         *     filtered at the SQL layer (active-only) so it carries no useful bit,
+         *     and the timestamps would leak create/update cadence without adding
+         *     value to the Share UI. Phase 7 PR 5's admin teams page will consume
+         *     a richer projection from a separate `/api/admin/teams` route.
+         */
+        TeamSummary: {
+            display_name: string;
+            id: string;
         };
         /** @description A unified timeline item combining messages, branch runs, and worker runs. */
         TimelineItem: {
@@ -10337,6 +10376,40 @@ export interface operations {
             };
             /** @description Task store not initialized */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_teams_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of active teams */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamSummary"][];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

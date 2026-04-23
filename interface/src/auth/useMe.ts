@@ -61,3 +61,30 @@ export function useMyPrincipalKey(): string | null {
 	const { data } = useMe();
 	return data?.principal_key ?? null;
 }
+
+export type TeamSummary = components["schemas"]["TeamSummary"];
+
+/**
+ * Active teams for the ShareResourceModal selector. Authenticated-only;
+ * the backend filters archived rows at the SQL layer so the UI does not
+ * have to. 5-minute staleTime matches useMe: team membership changes
+ * propagate through the same Graph-sync cadence as role claims.
+ */
+export function useTeams() {
+	return useQuery({
+		queryKey: ["teams"],
+		queryFn: async (): Promise<TeamSummary[]> => {
+			const path = "/teams";
+			const res = await authedFetch(`${getApiBase()}${path}`);
+			if (!res.ok) {
+				throw new Error(`API error ${res.status}: ${path}`);
+			}
+			try {
+				return (await res.json()) as TeamSummary[];
+			} catch {
+				throw new Error(`API error: malformed JSON from ${path}`);
+			}
+		},
+		staleTime: 5 * 60_000,
+	});
+}
