@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider } from "@tanstack/react-router";
+import { AuthGate } from "@/auth/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConnectionScreen } from "@/components/ConnectionScreen";
 import { LiveContextProvider } from "@/hooks/useLiveContext";
@@ -39,12 +40,22 @@ function AppShell() {
 }
 
 export function App() {
+	// Provider layering (outermost → innermost):
+	//   ErrorBoundary      — catches any descendant render/effect throw
+	//   QueryClientProvider — shared react-query state
+	//   AuthGate           — resolves MSAL state BEFORE ServerProvider boots,
+	//                        so the daemon-probe fetch inherits the token
+	//                        provider (Task 6.B.1 authedFetch reads it)
+	//   ServerProvider     — connection-state machine + heartbeat
+	//   AppShell           — ConnectionScreen | LiveContextProvider+router
 	return (
 		<ErrorBoundary>
 			<QueryClientProvider client={queryClient}>
-				<ServerProvider>
-					<AppShell />
-				</ServerProvider>
+				<AuthGate>
+					<ServerProvider>
+						<AppShell />
+					</ServerProvider>
+				</AuthGate>
 				{import.meta.env.DEV && (
 					<ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
 				)}

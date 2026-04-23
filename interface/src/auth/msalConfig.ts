@@ -103,7 +103,15 @@ export async function getMsalInstance(): Promise<PublicClientApplication | null>
 			auth: {
 				clientId: cfg.client_id,
 				authority: cfg.authority,
-				redirectUri: `${window.location.origin}/auth/callback`,
+				// F18 (Task 6.A.6 implementation): use the SPA root as the
+				// redirect URI. The plan's `/auth/callback` assumed a dedicated
+				// route, but the TanStack router does not declare one and MSAL's
+				// handleRedirectPromise runs ABOVE RouterProvider in the tree
+				// anyway — by the time the router mounts the URL fragment is
+				// already consumed. Using `/` avoids a "no route matches"
+				// flash on redirect return. Task 6.A.7 can add a pushState
+				// cleanup to restore deep-links via state.redirectStartPage.
+				redirectUri: `${window.location.origin}/`,
 				postLogoutRedirectUri: `${window.location.origin}/`,
 			},
 			cache: {
