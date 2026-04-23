@@ -1,8 +1,17 @@
-//! `PUT /api/resources/{resource_type}/{resource_id}/visibility`. Rotates a
-//! resource's visibility between Personal / Team / Org and rebinds the
-//! optional `shared_with_team_id`. Phase 7 PR 1.5 Task 7.5.
+//! Resource-visibility handlers and shared enrichment helpers.
 //!
-//! Semantics:
+//! Hosts two HTTP routes plus the batch-enrichment helper that list
+//! handlers call post-fetch:
+//!
+//! - `PUT /api/resources/{resource_type}/{resource_id}/visibility` rotates a
+//!   resource's visibility between Personal / Team / Org and rebinds the
+//!   optional `shared_with_team_id`.
+//! - `GET /api/teams` returns the active-team directory for the SPA's
+//!   ShareResourceModal selector. Authenticated + SpacebotUser-gated.
+//! - [`enrich_visibility_tags`] is the batch helper the memory / task /
+//!   wiki / cron list handlers call to attach `VisibilityTag` to each row.
+//!
+//! Semantics for `set_visibility`:
 //! - `check_write` gates: owner OR admin may change visibility. Non-owner
 //!   non-admin gets 404 per the no-auto-broadening policy so a stranger
 //!   cannot even confirm the resource exists.
@@ -11,10 +20,10 @@
 //!   400 Bad Request rather than 500 Internal Server Error from a CHECK
 //!   constraint violation.
 //! - On success, `update_visibility_only` UPDATEs the existing ownership
-//!   row's `visibility` + `shared_with_team_id` fields. Per PR #111
-//!   review C1, this preserves `owner_agent_id` + `owner_principal_key`
-//!   on rotation. Non-existent rows return 404 so the endpoint cannot
-//!   silently create ownership under the caller's principal.
+//!   row's `visibility` + `shared_with_team_id` fields. This preserves
+//!   `owner_agent_id` + `owner_principal_key` on rotation. Non-existent
+//!   rows return 404 so the endpoint cannot silently create ownership
+//!   under the caller's principal.
 
 use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
@@ -23,6 +32,7 @@ use crate::auth::principals::Visibility;
 use crate::auth::repository::{
     get_teams_by_ids, list_ownerships_by_ids, list_teams, update_visibility_only,
 };
+use crate::auth::roles::{ROLE_USER, is_admin, require_role};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -35,42 +45,43 @@ use std::sync::Arc;
 
 /// Per-item enrichment attached to list responses alongside the domain type.
 ///
-/// Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes an unowned resource
-/// (no `resource_ownership` row) per the no-auto-broadening policy in
-/// `docs/design-docs/entra-backfill-strategy.md`. The SPA's `VisibilityChip`
-/// renders `None` via its runtime fallback branch (`"Unknown"` with
-/// `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
-/// rather than defaulting to `"personal"`. Defaulting to personal would
-/// contradict Phase 4 authz, which treats unowned resources as admin-only.
+/// `visibility: None` encodes an unowned resource (no `resource_ownership`
+/// row) per the no-auto-broadening policy in
+/// `docs/design-docs/entra-backfill-strategy.md`. The SPA renders no chip
+/// for unowned rows (`{m.visibility && <VisibilityChip />}` in the list
+/// view). Defaulting to `personal` would contradict Phase 4 authz, which
+/// treats unowned resources as admin-only.
 ///
 /// Wire shape is two flat fields (`visibility`, `team_name`) because the
 /// SPA's `VisibilityChip` consumes them as two independent props; nesting
-/// into a discriminated enum would break the PR-1 component API. Instead,
-/// fields are private and the invariant `team_name.is_some() ⇒ visibility
-/// == Some("team")` is enforced at construction by the [`Self::new`]
-/// builder, so callers cannot emit the illegal `{visibility: None,
-/// team_name: Some(_)}` shape. (S1 structural narrowing, PR #111 review.)
+/// into a discriminated enum would break the existing component API.
+/// Fields are private and the invariant `team_name.is_some() ⇒ visibility
+/// == Some(Visibility::Team)` is enforced at construction by the
+/// [`Self::new`] builder, so callers cannot emit the illegal
+/// `{visibility: Personal | Org | None, team_name: Some(_)}` shape.
 #[derive(Debug, Clone, Default, Serialize, utoipa::ToSchema)]
 pub struct VisibilityTag {
-    /// `"personal"`, `"team"`, `"org"`, or absent for unowned resources.
+    /// Visibility variant or absent for unowned resources. Typed as the
+    /// `Visibility` enum (not `String`) so utoipa emits a literal union
+    /// in the OpenAPI schema and SPA consumers get exhaustive narrowing
+    /// without a manual guard at the render site.
     #[serde(skip_serializing_if = "Option::is_none")]
-    visibility: Option<String>,
-    /// Team display name when `visibility == Some("team")`; absent otherwise.
+    visibility: Option<Visibility>,
+    /// Team display name when `visibility == Some(Visibility::Team)`; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     team_name: Option<String>,
 }
 
 impl VisibilityTag {
     /// Construct from a `resource_ownership` row. Enforces the
-    /// `team_name.is_some() ⇒ visibility == "team"` invariant by
-    /// dropping any `team_name` that arrives with a non-team visibility
-    /// (defensive: callers should only pass a team_name when the row's
-    /// `shared_with_team_id` resolved to an active team, but the
-    /// narrowing here is free and makes the illegal state
-    /// unrepresentable on the wire regardless).
-    pub fn new(visibility: Option<String>, team_name: Option<String>) -> Self {
-        let team_name = match visibility.as_deref() {
-            Some("team") => team_name,
+    /// `team_name.is_some() ⇒ visibility == Team` invariant by dropping
+    /// any `team_name` that arrives with a non-team visibility. Callers
+    /// should only pass a `team_name` when `shared_with_team_id`
+    /// resolved to an active team, but the narrowing is free and makes
+    /// the illegal state unrepresentable on the wire regardless.
+    pub fn new(visibility: Option<Visibility>, team_name: Option<String>) -> Self {
+        let team_name = match visibility {
+            Some(Visibility::Team) => team_name,
             _ => None,
         };
         Self {
@@ -79,9 +90,10 @@ impl VisibilityTag {
         }
     }
 
-    /// Accessor for handlers that construct flat DTOs (cron).
-    pub fn visibility(&self) -> Option<&str> {
-        self.visibility.as_deref()
+    /// Accessor for handlers that construct flat DTOs (cron). Returns
+    /// the lowercase serde string the SPA consumes.
+    pub fn visibility(&self) -> Option<&'static str> {
+        self.visibility.map(|v| v.as_str())
     }
 
     /// Accessor for handlers that construct flat DTOs (cron).
@@ -113,12 +125,12 @@ pub(super) async fn enrich_visibility_tags(
     let owns = list_ownerships_by_ids(pool, resource_type, resource_ids)
         .await
         .unwrap_or_else(|error| {
-            // I3 elevation: sqlx-level failures mean the instance pool is
-            // broken (closed, migration mismatch, disk full). The list
-            // still returns 200 with chips absent — from the user's
-            // perspective a cosmetic degradation — so without error-level
-            // severity SRE alerts would not fire. Blast radius is every
-            // list response until the pool recovers.
+            // Severity elevation: sqlx-level failures mean the instance
+            // pool is broken (closed, migration mismatch, disk full).
+            // The list still returns 200 with chips absent (a cosmetic
+            // degradation from the user's perspective), so without
+            // error-level severity SRE alerts would not fire. Blast
+            // radius is every list response until the pool recovers.
             tracing::error!(
                 %error,
                 resource_type = %resource_type,
@@ -137,7 +149,7 @@ pub(super) async fn enrich_visibility_tags(
         get_teams_by_ids(pool, &team_ids)
             .await
             .unwrap_or_else(|error| {
-                // I3 elevation: same rationale as the ownership lookup.
+                // Same severity elevation rationale as the ownership lookup above.
                 tracing::error!(
                     %error,
                     count = team_ids.len(),
@@ -150,13 +162,17 @@ pub(super) async fn enrich_visibility_tags(
         .iter()
         .map(|id| {
             let own = owns.get(id);
-            let visibility = own.map(|o| o.visibility.clone());
+            // Parse the stored string into the Visibility enum. An
+            // unrecognized value (e.g. a future migration leaves a row
+            // with a legacy string) collapses to None rather than
+            // leaking through: the SPA then renders no chip, matching
+            // the no-auto-broadening policy.
+            let visibility = own.and_then(|o| o.visibility_enum());
             let team_name = own
                 .and_then(|o| o.shared_with_team_id.as_ref())
                 .and_then(|tid| teams.get(tid).map(|t| t.display_name.clone()));
-            // S1 narrowing: VisibilityTag::new drops team_name if the
-            // visibility is anything other than "team", making the
-            // illegal-state pair unrepresentable on the wire.
+            // VisibilityTag::new drops team_name when visibility is not
+            // Team, making the illegal-state pair unrepresentable.
             (id.clone(), VisibilityTag::new(visibility, team_name))
         })
         .collect()
@@ -318,25 +334,25 @@ mod tests {
 
     #[tokio::test]
     async fn tag_constructor_drops_team_name_when_visibility_is_not_team() {
-        // S1 structural narrowing. VisibilityTag::new must reject the
-        // illegal-state pair {visibility: "personal" | "org" | None,
-        // team_name: Some(_)} at construction time.
+        // Construction-time narrowing. VisibilityTag::new must reject the
+        // illegal-state pair `{visibility: Personal | Org | None,
+        // team_name: Some(_)}` so it cannot appear on the wire.
         assert_eq!(
-            VisibilityTag::new(Some("personal".to_string()), Some("Platform".to_string()))
+            VisibilityTag::new(Some(Visibility::Personal), Some("Platform".to_string()))
                 .team_name(),
             None
         );
         assert_eq!(
-            VisibilityTag::new(Some("org".to_string()), Some("Platform".to_string())).team_name(),
+            VisibilityTag::new(Some(Visibility::Org), Some("Platform".to_string())).team_name(),
             None
         );
         assert_eq!(
             VisibilityTag::new(None, Some("Platform".to_string())).team_name(),
             None
         );
-        // Only "team" preserves team_name.
+        // Only Team preserves team_name.
         assert_eq!(
-            VisibilityTag::new(Some("team".to_string()), Some("Platform".to_string())).team_name(),
+            VisibilityTag::new(Some(Visibility::Team), Some("Platform".to_string())).team_name(),
             Some("Platform")
         );
     }
@@ -405,7 +421,7 @@ pub(super) async fn set_visibility(
     // suspenders defense.
     let (vis, shared_with_team_id) = req.validate()?;
 
-    // D30 correction: canonical ArcSwap peek matching `src/api/me.rs:60`.
+    // Canonical ArcSwap peek matching the pattern in `api::me`.
     let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() else {
         tracing::warn!(
             actor = %auth_ctx.principal_key(),
@@ -419,9 +435,14 @@ pub(super) async fn set_visibility(
     let access = check_write(&pool, &auth_ctx, &resource_type, &resource_id)
         .await
         .map_err(|error| {
+            // is_admin is attached so operators can distinguish an
+            // admin-path failure (would otherwise have bypassed
+            // ownership) from a user-path failure (hints at an
+            // ownership-table integrity issue).
             tracing::warn!(
                 %error,
                 actor = %auth_ctx.principal_key(),
+                is_admin = is_admin(&auth_ctx),
                 resource_type = %resource_type,
                 resource_id = %resource_id,
                 "authz check_write failed"
@@ -474,9 +495,14 @@ pub(super) async fn set_visibility(
 /// renders `display_name` and sends `id` back on submit. Status is
 /// filtered at the SQL layer (active-only) so it carries no useful bit,
 /// and the timestamps would leak create/update cadence without adding
-/// value to the Share UI. Phase 7 PR 5's admin teams page will consume
-/// a richer projection from a separate `/api/admin/teams` route.
+/// value to the Share UI. A future `/api/admin/teams` route will carry
+/// a richer projection.
+///
+/// `#[non_exhaustive]` makes it clear within-crate callers should not
+/// pattern-match on the struct literal; future additive fields
+/// (member_count, last_sync_at) land without breaking them.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[non_exhaustive]
 pub(super) struct TeamSummary {
     pub id: String,
     pub display_name: String,
@@ -497,6 +523,7 @@ pub(super) struct TeamSummary {
     responses(
         (status = 200, description = "List of active teams", body = Vec<TeamSummary>),
         (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Authenticated but lacks SpacebotUser role"),
         (status = 500, description = "Instance pool unavailable"),
     ),
     tag = "resources",
@@ -505,12 +532,22 @@ pub(super) async fn list_teams_handler(
     State(state): State<Arc<ApiState>>,
     auth_ctx: AuthContext,
 ) -> Result<Json<Vec<TeamSummary>>, StatusCode> {
-    // D30 pattern: canonical ArcSwap peek matching `src/api/me.rs:60` and
-    // the sibling `set_visibility` handler above.
+    // Require `SpacebotUser` (or a bypass principal like LegacyStatic /
+    // System). Service principals that carry only `SpacebotService`
+    // are M2M identities and should not enumerate team names; a
+    // dedicated scope will lift this when that consumer lands.
+    require_role(&auth_ctx, ROLE_USER).map_err(|_| StatusCode::FORBIDDEN)?;
+
+    // Canonical ArcSwap peek matching the pattern in `api::me` and
+    // sibling `set_visibility` handler.
     let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() else {
-        tracing::warn!(
+        // Systemic (not per-request) failure: every subsequent request
+        // hits the same branch until the pool attaches, so severity
+        // matches the `list_ownerships_by_ids` / `get_teams_by_ids`
+        // elevation convention.
+        tracing::error!(
             actor = %auth_ctx.principal_key(),
-            "list_teams: instance_pool not attached (boot window or startup-ordering bug)"
+            "list_teams: instance_pool not attached; all /api/teams requests will 500 until pool attaches"
         );
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };

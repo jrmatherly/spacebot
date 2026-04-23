@@ -107,6 +107,11 @@ export type {
 	CronJobInfo,
 	// Memory (schema types only)
 	Memory,
+	// MemoryItem aliases the generated `MemoryListItem` (Memory & VisibilityTag
+	// intersection). Enrichment lives in Rust; TS consumers get the union
+	// via `just typegen`.
+	MemoryItem,
+	MemoriesListResponse,
 	Association,
 	RelationType,
 	MemoryGraphResponse,
@@ -151,6 +156,10 @@ import type {
 	TopologyHuman,
 	TopologyResponse,
 } from "./types";
+
+// In-file use of Memory-enriched types. The same aliases are re-exported
+// in the block above so consumers import from `@spacebot/api-client/client`.
+import type { MemoryItem, MemoriesListResponse } from "./types";
 
 export type { TopologyAgent, TopologyLink, TopologyGroup, TopologyHuman, TopologyResponse };
 
@@ -503,32 +512,11 @@ export const MEMORY_TYPES: MemoryType[] = [
 
 export type MemorySort = "recent" | "importance" | "most_accessed";
 
-// Extended MemoryItem with forgotten field (not yet in schema)
-export interface MemoryItem {
-	id: string;
-	content: string;
-	memory_type: MemoryType;
-	importance: number;
-	created_at: string;
-	updated_at: string;
-	last_accessed_at: string;
-	access_count: number;
-	source: string | null;
-	channel_id: string | null;
-	forgotten: boolean;
-	// Phase 7 PR 2 enrichment fields from PR 1.5's MemoryListItem wrapper
-	// in schema.d.ts. Both optional and nullable: `null`/absent encodes
-	// an unowned resource (rendered as no chip per the no-auto-broadening
-	// policy); a present string carries the visibility variant served by
-	// the list handler.
-	visibility?: string | null;
-	team_name?: string | null;
-}
-
-export interface MemoriesListResponse {
-	memories: MemoryItem[];
-	total: number;
-}
+// MemoryItem and MemoriesListResponse are exported from ./types as
+// aliases for the generated `MemoryListItem` / `MemoriesListResponse`
+// schemas. Consumers import them through the same re-export block
+// below (around line 86) so there is one source of truth for the
+// enriched wire shape.
 
 export interface MemorySearchResultItem {
 	memory: MemoryItem;
