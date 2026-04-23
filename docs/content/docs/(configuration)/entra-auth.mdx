@@ -59,8 +59,11 @@ spa_client_id = "env:ENTRA_SPA_CLIENT_ID"
 # registration exposes, prefixed by its Application ID URI.
 spa_scopes = ["api://{web-api-guid}/api.access"]
 
-# JWKS cache lifetime. Microsoft rotates signing keys roughly weekly;
-# default 3600s is a safe middle ground. Never exceed 86400 (24h).
+# JWKS cache lifetime. Microsoft rotates signing keys roughly weekly and
+# maintains a ~24h overlap window during rollovers, so any TTL under a
+# day stays within the validated-signing-key set. 3600s is the safe
+# default; going materially longer risks caching past a rollover and
+# rejecting valid tokens signed by the new key.
 jwks_cache_ttl_secs = 3600
 
 # Clock-skew tolerance between the daemon and Microsoft. 60s default
@@ -112,7 +115,7 @@ By default the SPA uses **memory storage only** (`cacheLocation: "memoryStorage"
 
 The sign-in screen offers a **"Stay signed in on this device"** opt-in checkbox. When checked, the preference is persisted to `localStorage` under `spacebot.auth.trust_device`, and the *next* load switches MSAL to `localStorage` caching. MSAL.js v5 AES-GCM-encrypts the cache automatically, so the token blob is not plainly readable even by same-origin scripts. It *is*, however, persisted across tab close. Treat this as a user choice: "my laptop is private, keep me signed in" vs "shared kiosk, don't remember me."
 
-The string `"memoryStorage"` is canonical. Do **not** shorten to `"memory"` — MSAL types accept it but silently degrade to `sessionStorage` at runtime.
+The string `"memoryStorage"` is canonical. Do **not** shorten to `"memory"`. MSAL types accept the shorter form but silently degrade to `sessionStorage` at runtime.
 
 ## Local Development (Mock Mode)
 
@@ -164,9 +167,19 @@ The user's token might be in SPA-6 overage (more than 150 group memberships). Th
 
 For long-term observability, check the `auth_first_request_race_total` and `auth_graph_sync_failures_total{reason}` Prometheus counters.
 
+### "Sign-in is unavailable" banner appears in the UI
+
+`AuthGate` displays a red diagnostic banner when bootstrap fails in a way operators should act on. The banner text identifies the specific failure mode:
+
+- **"missing client_id, authority"** means `/api/auth/config` returned `entra_enabled: true` without the SPA-client identifiers. Check the daemon's `[api.auth.entra].spa_client_id` value and restart. Previously this class of error silently fell open to static-token UI where every API call 401'd; Phase 6 surfaces it instead.
+- **"auth-config fetch failed: 500"** means the endpoint itself errored. Check daemon logs.
+- **"auth-config fetch failed: 502"** means a reverse proxy rejected the request. `/api/auth/config` is unauthenticated; confirm the proxy isn't adding an `Authorization` header that a stale middleware branch is rejecting.
+
+The banner is `role="alert"` + `aria-live="assertive"`, so screen readers announce it immediately. Children are NOT rendered while the error state is active.
+
 ### Stuck on "Signing in…" spinner
 
-`AuthGate.useEffect` failed asynchronously without resolving. Check the browser console:
+Rare after Phase 6 (the error banner above should cover most cases), but possible if `useEffect` raced an unmount before the error setState landed. Check the browser console:
 
 - `auth-config fetch failed: 404` → the `/api/auth/config` endpoint is missing. Regenerate `packages/api-client/src/schema.d.ts` via `just typegen` and rebuild the daemon.
 - `auth-config fetch failed: 502` → reverse proxy config. `/api/auth/config` is unauthenticated; confirm the proxy isn't adding an `Authorization` header that a stale middleware branch is rejecting.

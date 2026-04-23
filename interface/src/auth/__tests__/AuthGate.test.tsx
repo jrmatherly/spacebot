@@ -15,9 +15,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mocked implementations during module initialization. `entra_disabled`
 // is the default return to keep tests minimal; individual tests override
 // via `vi.mocked(...)` when they need authenticated/unauthenticated shape.
+// getMsalInstance returns a discriminated `MsalInstanceResult` as of
+// PR #107 review I5 remediation; the default `{ok: false, reason: "disabled"}`
+// matches the `entra_enabled: false` config branch.
 vi.mock("../msalConfig", () => ({
 	loadAuthConfig: vi.fn(async () => ({ entra_enabled: false })),
-	getMsalInstance: vi.fn(async () => null),
+	getMsalInstance: vi.fn(async () => ({ ok: false, reason: "disabled" })),
 	getActiveScopes: vi.fn(async () => []),
 }));
 
@@ -33,11 +36,21 @@ vi.mock("@spacebot/api-client/client", async (importOriginal) => {
 	};
 });
 
+import * as msalConfig from "../msalConfig";
 import { AuthGate } from "../AuthGate";
 
 describe("AuthGate", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Restore the default `entra_disabled` shape after each test since
+		// individual tests override via `vi.mocked(...).mockResolvedValueOnce`.
+		vi.mocked(msalConfig.loadAuthConfig).mockResolvedValue({
+			entra_enabled: false,
+		});
+		vi.mocked(msalConfig.getMsalInstance).mockResolvedValue({
+			ok: false,
+			reason: "disabled",
+		});
 	});
 
 	it("renders children when entra is disabled", async () => {
@@ -67,5 +80,57 @@ describe("AuthGate", () => {
 		await waitFor(() => {
 			expect(screen.getByText("child-content")).toBeInTheDocument();
 		});
+	});
+
+	/// PR #107 review I4/I5 remediation: when /api/auth/config reports
+	/// `entra_enabled: true` but omits identifiers, AuthGate renders an
+	/// operator-visible error banner instead of fail-open to
+	/// `entra_disabled` (which previously masked daemon config bugs
+	/// behind a 401-loop UI).
+	it("renders an error banner when entra is configured but malformed", async () => {
+		vi.mocked(msalConfig.loadAuthConfig).mockResolvedValueOnce({
+			entra_enabled: true,
+			client_id: undefined,
+			authority: undefined,
+		});
+		vi.mocked(msalConfig.getMsalInstance).mockResolvedValueOnce({
+			ok: false,
+			reason: "malformed",
+			missing: ["client_id", "authority"],
+		});
+		render(
+			<AuthGate>
+				<div>child-content</div>
+			</AuthGate>,
+		);
+		const banner = await screen.findByTestId("auth-gate-error");
+		expect(banner).toBeInTheDocument();
+		expect(banner).toHaveTextContent(/client_id/);
+		expect(banner).toHaveTextContent(/authority/);
+		// Children MUST NOT render when the error state is active — an
+		// app that renders while Entra is broken will 401 on every API
+		// call.
+		expect(screen.queryByText("child-content")).not.toBeInTheDocument();
+	});
+
+	/// PR #107 review I4 remediation: loadAuthConfig failure (e.g., 500
+	/// from /api/auth/config, or a network error) now surfaces as a
+	/// diagnostic banner, not a stuck spinner or a silent fail-open.
+	it("renders an error banner when loadAuthConfig throws", async () => {
+		vi.mocked(msalConfig.loadAuthConfig).mockRejectedValueOnce(
+			new Error("auth-config fetch failed: 500 Internal Server Error"),
+		);
+		// Silence the expected console.error from AuthGate's catch.
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		render(
+			<AuthGate>
+				<div>child-content</div>
+			</AuthGate>,
+		);
+		const banner = await screen.findByTestId("auth-gate-error");
+		expect(banner).toBeInTheDocument();
+		expect(banner).toHaveTextContent(/500/);
+		expect(screen.queryByText("child-content")).not.toBeInTheDocument();
+		errSpy.mockRestore();
 	});
 });

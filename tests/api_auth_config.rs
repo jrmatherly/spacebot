@@ -133,9 +133,7 @@ async fn config_endpoint_projects_populated_config_fields() {
     );
     assert_eq!(
         parsed.authority.as_deref(),
-        Some(
-            "https://login.microsoftonline.com/tenant-11111111-1111-1111-1111-111111111111/v2.0"
-        ),
+        Some("https://login.microsoftonline.com/tenant-11111111-1111-1111-1111-111111111111/v2.0"),
         "authority must be the v2.0 login URL computed from tenant_id"
     );
     assert_eq!(

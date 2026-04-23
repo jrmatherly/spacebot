@@ -30,7 +30,8 @@ type GateState =
 	| { kind: "loading" }
 	| { kind: "entra_disabled" }
 	| { kind: "unauthenticated"; msal: PublicClientApplication }
-	| { kind: "authenticated"; msal: PublicClientApplication };
+	| { kind: "authenticated"; msal: PublicClientApplication }
+	| { kind: "error"; message: string };
 
 export function AuthGate({ children }: { children: ReactNode }) {
 	const [state, setState] = useState<GateState>({ kind: "loading" });
@@ -45,14 +46,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				setState({ kind: "entra_disabled" });
 				return;
 			}
-			const msal = await getMsalInstance();
+			const result = await getMsalInstance();
 			if (cancelled) return;
-			if (!msal) {
-				// entra_enabled but bootstrap fields missing → treat as disabled
-				// rather than stranding the user in an unrecoverable loading state.
-				setState({ kind: "entra_disabled" });
+			if (!result.ok) {
+				if (result.reason === "disabled") {
+					setState({ kind: "entra_disabled" });
+					return;
+				}
+				// "malformed": /api/auth/config reported entra_enabled: true
+				// but omitted one or more identifiers (client_id, authority).
+				// Surface this to operators instead of fail-open to
+				// entra_disabled, which would mask a real daemon config bug
+				// behind a UI that 401s on every API call.
+				setState({
+					kind: "error",
+					message: `Auth bootstrap failed: daemon reported entra_enabled but missing ${result.missing.join(", ")}. Check /api/auth/config response and the daemon's [api.auth.entra] config block.`,
+				});
 				return;
 			}
+			const msal = result.instance;
 
 			const redirectResult = await msal.handleRedirectPromise();
 			if (cancelled) return;
@@ -69,10 +81,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		})().catch((err) => {
 			console.error("[AuthGate] init failed:", err);
 			if (!cancelled) {
-				// Fail open to visible UI rather than spinning forever. The
-				// consequences of mis-gating (a rendered app that the API
-				// layer will 401) are less user-hostile than a stuck spinner.
-				setState({ kind: "entra_disabled" });
+				// Surface the error to operators instead of the legacy
+				// "fail open to entra_disabled" behavior, which silently
+				// masked tenant misconfigurations behind a 401-loop UI.
+				// Keeps the SPA from rendering children that would 401 on
+				// every request; operators see a diagnostic banner.
+				const message =
+					err instanceof Error ? err.message : String(err);
+				setState({
+					kind: "error",
+					message: `Auth bootstrap failed: ${message}. Check the browser console and daemon logs.`,
+				});
 			}
 		});
 
@@ -85,6 +104,29 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		return (
 			<div data-testid="auth-gate-loading" role="status" aria-live="polite">
 				Signing in…
+			</div>
+		);
+	}
+	if (state.kind === "error") {
+		return (
+			<div
+				data-testid="auth-gate-error"
+				role="alert"
+				aria-live="assertive"
+				style={{
+					padding: "1.5rem",
+					margin: "2rem auto",
+					maxWidth: "600px",
+					border: "1px solid var(--color-danger, #dc2626)",
+					borderRadius: "0.5rem",
+					background: "var(--color-danger-bg, #fef2f2)",
+					color: "var(--color-danger-fg, #991b1b)",
+				}}
+			>
+				<h2 style={{ margin: "0 0 0.75rem 0" }}>
+					Sign-in is unavailable
+				</h2>
+				<p style={{ margin: 0 }}>{state.message}</p>
 			</div>
 		);
 	}

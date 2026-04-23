@@ -17,7 +17,7 @@
 //     MSAL types accept the string "memory" but silently fall back to
 //     `sessionStorage` at runtime — do NOT use it.
 //   - A-17: "Trust this device" opt-in flips cache to `localStorage`
-//     (MSAL v4+ AES-GCM-encrypts the cache blob, so this is safe). Default
+//     (MSAL v5 AES-GCM-encrypts the cache blob, so this is safe). Default
 //     (checkbox unchecked) is memoryStorage, which means the user re-auths
 //     on every tab close. Acceptable XSS-mitigation trade-off per
 //     research §12 S-C4.
@@ -34,7 +34,7 @@ const TRUST_DEVICE_KEY = "spacebot.auth.trust_device";
 let cachedConfig: AuthConfigResponse | null = null;
 let cachedInstance: PublicClientApplication | null = null;
 let inflightConfig: Promise<AuthConfigResponse> | null = null;
-let inflightInstance: Promise<PublicClientApplication | null> | null = null;
+let inflightInstance: Promise<MsalInstanceResult> | null = null;
 
 /// Fetches `/api/auth/config` and caches the result for the page lifetime.
 /// Concurrent callers share one in-flight request (prevents thundering
@@ -62,20 +62,39 @@ export async function loadAuthConfig(): Promise<AuthConfigResponse> {
 	}
 }
 
+/// Discriminated result from `getMsalInstance`. Replaces an earlier
+/// `PublicClientApplication | null` return that collapsed two very
+/// different states ("Entra intentionally disabled" and "Entra
+/// configured but malformed") into the same sentinel, masking
+/// server-side config bugs from operators (I5 from the PR #107 review).
+export type MsalInstanceResult =
+	| { ok: true; instance: PublicClientApplication }
+	| { ok: false; reason: "disabled" }
+	| { ok: false; reason: "malformed"; missing: string[] };
+
 /// Returns the singleton `PublicClientApplication`, constructing it on
-/// first call. Returns `null` when Entra is not configured on the daemon
-/// (static-token deployments) — callers must branch accordingly.
+/// first call. Returns a discriminated result so callers can distinguish
+/// "Entra not configured" (fall back to static-token UX) from "Entra
+/// configured but /api/auth/config returned a payload with missing
+/// identifiers" (surface an operator-visible error banner).
 ///
-/// `await instance.initialize()` is mandatory in MSAL v4+ before any other
-/// method call; the caller receives an already-initialized instance.
-export async function getMsalInstance(): Promise<PublicClientApplication | null> {
-	if (cachedInstance) return cachedInstance;
+/// `await instance.initialize()` is mandatory in MSAL v5 before any other
+/// method call (v5 made this stricter than the v4 soft warning); the
+/// caller receives an already-initialized instance.
+export async function getMsalInstance(): Promise<MsalInstanceResult> {
+	if (cachedInstance) return { ok: true, instance: cachedInstance };
 	if (inflightInstance) return inflightInstance;
 
-	inflightInstance = (async () => {
+	inflightInstance = (async (): Promise<MsalInstanceResult> => {
 		const cfg = await loadAuthConfig();
-		if (!cfg.entra_enabled || !cfg.client_id || !cfg.authority) {
-			return null;
+		if (!cfg.entra_enabled) {
+			return { ok: false, reason: "disabled" };
+		}
+		const missing: string[] = [];
+		if (!cfg.client_id) missing.push("client_id");
+		if (!cfg.authority) missing.push("authority");
+		if (missing.length > 0) {
+			return { ok: false, reason: "malformed", missing };
 		}
 
 		// Mock mode for local dev / CI. `mockMsal.ts` ships in Task 6.C.5;
@@ -88,21 +107,26 @@ export async function getMsalInstance(): Promise<PublicClientApplication | null>
 		// Task 6.C.5's API shape up-stack. Error narrowing happens at
 		// runtime in Task 6.C.5's tests.
 		if (import.meta.env.VITE_AUTH_MOCK === "1") {
+			// TODO(6.C.5): remove @ts-expect-error once ./mockMsal exists.
 			// @ts-expect-error Task 6.C.5 creates ./mockMsal; guarded by runtime env flag
 			const mod = await import(/* @vite-ignore */ "./mockMsal");
 			cachedInstance = (await mod.getMockMsalInstance(
 				cfg,
 			)) as unknown as PublicClientApplication;
-			return cachedInstance;
+			return { ok: true, instance: cachedInstance };
 		}
 
 		const trustThisDevice =
 			window.localStorage.getItem(TRUST_DEVICE_KEY) === "true";
 
+		// Safe non-null assertions: the `missing` check above guarantees
+		// both fields are non-null/non-empty. TypeScript's control-flow
+		// narrowing does not span the `missing.push()` pattern, so the
+		// assertion is explicit here.
 		const msalConfig: Configuration = {
 			auth: {
-				clientId: cfg.client_id,
-				authority: cfg.authority,
+				clientId: cfg.client_id as string,
+				authority: cfg.authority as string,
 				// F18 (Task 6.A.6 implementation): use the SPA root as the
 				// redirect URI. The plan's `/auth/callback` assumed a dedicated
 				// route, but the TanStack router does not declare one and MSAL's
@@ -134,7 +158,7 @@ export async function getMsalInstance(): Promise<PublicClientApplication | null>
 		const instance = new PublicClientApplication(msalConfig);
 		await instance.initialize();
 		cachedInstance = instance;
-		return instance;
+		return { ok: true, instance };
 	})();
 
 	try {

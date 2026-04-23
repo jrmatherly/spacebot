@@ -6,6 +6,7 @@
 //! references and constructs this struct.
 
 use serde::Serialize;
+
 use std::sync::Arc;
 
 /// SPA-safe projection of [`EntraAuthConfig`]. Returned by `/api/auth/config`

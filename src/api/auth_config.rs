@@ -5,7 +5,7 @@
 //! `src/auth/middleware.rs` for the Entra branch and `src/api/server.rs`
 //! for the static-token branch).
 //!
-//! Payload whitelists exactly the three fields MSAL.js needs:
+//! Payload whitelists exactly the four fields MSAL.js needs:
 //!   - `client_id` — the SPA app registration (not the Web API registration)
 //!   - `tenant_id` — used to compute the v2.0 authority URL
 //!   - `authority` — pre-computed `https://login.microsoftonline.com/{tid}/v2.0`
@@ -15,12 +15,13 @@
 //! remaining fields are absent. The SPA reads that as "static-token mode"
 //! and skips MSAL bootstrapping entirely.
 
+use super::state::ApiState;
+
 use axum::Json;
 use axum::extract::State;
 use serde::Serialize;
-use std::sync::Arc;
 
-use super::state::ApiState;
+use std::sync::Arc;
 
 /// SPA-safe MSAL bootstrap payload. Never contains secrets — the three
 /// identifiers below are listed in the Entra tenant's OIDC discovery
