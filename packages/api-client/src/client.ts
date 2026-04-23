@@ -2727,7 +2727,56 @@ export const api = {
 		const query = qs.toString();
 		return fetchJson<ActivityResponse>(`/activity${query ? `?${query}` : ""}`);
 	},
+
+	/**
+	 * Rotate a resource's visibility (Phase 7 PR 1.5 Task 7.5).
+	 *
+	 * Accepts the camelCase `SetResourceVisibilityArgs` discriminated union
+	 * so callers can pass through the `ShareResourceModal` onSubmit payload
+	 * unchanged. Translates to the snake_case wire format (`visibility`,
+	 * `shared_with_team_id`) at the boundary so downstream call sites do
+	 * not repeat the branch.
+	 *
+	 * The backend returns 200 on success, 400 for invalid visibility /
+	 * missing team id, 404 for non-owner non-admin callers (per the
+	 * no-auto-broadening policy), and 500 for the startup-window
+	 * pool-not-attached path.
+	 */
+	setResourceVisibility: async (
+		resourceType: string,
+		resourceId: string,
+		args: SetResourceVisibilityArgs,
+	): Promise<void> => {
+		const body = args.visibility === "team"
+			? { visibility: "team" as const, shared_with_team_id: args.sharedWithTeamId }
+			: { visibility: args.visibility, shared_with_team_id: null };
+		const response = await authedFetch(
+			`${getApiBase()}/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/visibility`,
+			{
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(
+				`API error ${response.status}: /resources/${resourceType}/${resourceId}/visibility`,
+			);
+		}
+	},
 }
+
+/**
+ * Discriminated-union payload for `api.setResourceVisibility`. Mirrors the
+ * `ShareSubmitArgs` type in `interface/src/components/ShareResourceModal.tsx`
+ * so consumers pass the modal's `onSubmit` payload through unchanged. The
+ * "team" branch is the only one that carries `sharedWithTeamId`, making
+ * `{visibility: "personal", sharedWithTeamId: "t1"}` unrepresentable at
+ * the type level.
+ */
+export type SetResourceVisibilityArgs =
+	| { visibility: "team"; sharedWithTeamId: string }
+	| { visibility: "personal" | "org" };
 
 export interface UsageTotals {
 	input_tokens: number;
