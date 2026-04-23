@@ -481,6 +481,34 @@ impl ApiState {
     }
 
     /// Test-only constructor mirroring [`Self::new_test_state_with_mock_entra`]
+    /// but additionally installing a populated
+    /// [`crate::auth::EntraAuthConfig`] via [`Self::set_entra_auth_config`].
+    /// Exists so Phase 6 `/api/auth/config` tests can exercise the
+    /// `entra_auth_public_config()` populated path (C1/C2 from the PR #107
+    /// review: the plain `new_test_state_with_mock_entra` leaves
+    /// `entra_config` as `None`, so the handler always branches to the
+    /// "entra_enabled: false" leg and leak-scrub checks pass vacuously).
+    ///
+    /// The config values are test-recognizable sentinels so assertions can
+    /// pin the exact shape the handler projects. `mock_mode: false` because
+    /// production-refusal of mock-mode is enforced at daemon startup, not
+    /// here; individual tests exercising mock-mode-startup-refusal handle
+    /// that separately.
+    #[doc(hidden)]
+    pub async fn new_test_state_with_mock_entra_configured() -> (Arc<Self>, sqlx::SqlitePool) {
+        let (state, pool) = Self::new_test_state_with_mock_entra().await;
+        let cfg = crate::auth::EntraAuthConfig::new_for_test(
+            Arc::from("tenant-11111111-1111-1111-1111-111111111111"),
+            Arc::from("api://web-test"),
+            vec!["api.access".to_string()],
+            Arc::from("spa-22222222-2222-2222-2222-222222222222"),
+            vec![Arc::from("api://web-test/api.access")],
+        );
+        state.set_entra_auth_config(cfg);
+        (state, pool)
+    }
+
+    /// Test-only constructor mirroring [`Self::new_test_state_with_mock_entra`]
     /// but WITHOUT attaching an `instance_pool`. Returns just `Arc<Self>` since
     /// there is no pool to seed. Used to exercise handler no-op fallbacks
     /// when the Phase 2 data model isn't attached (boot window / startup
