@@ -82,6 +82,9 @@
     "../packages/api-client": {
       "name": "@spacebot/api-client",
       "version": "0.1.0",
+      "devDependencies": {
+        "vitest": "^3",
+      },
     },
     "../spaceui/packages/ai": {
       "name": "@spacedrive/ai",
