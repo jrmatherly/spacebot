@@ -27,6 +27,7 @@ mod opencode_proxy;
 mod portal;
 mod projects;
 pub(crate) mod providers;
+mod resources;
 mod secrets;
 mod server;
 mod settings;
