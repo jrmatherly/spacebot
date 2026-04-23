@@ -39,11 +39,14 @@ type GateState =
 export function AuthGate({ children }: { children: ReactNode }) {
 	const [state, setState] = useState<GateState>({ kind: "loading" });
 
-	// D21 correction (2026-04-23 PR C audit): authedFetch dispatches
-	// spacebot:auth-exhausted on 401 refresh-exhaustion (PR B). SSE via
-	// fetchEventSource(fetch: authedFetch) inherits the same dispatch.
-	// A single window-level listener covers both REST and SSE. Phase 7
-	// replaces this console.warn with a toast banner + Re-sign in CTA.
+	// authedFetch dispatches `spacebot:auth-exhausted` on 401
+	// refresh-exhaustion. SSE via fetchEventSource(fetch: authedFetch)
+	// inherits the same dispatch. A single window-level listener
+	// covers both REST and SSE.
+	//
+	// TODO: replace console.warn with a toast banner + "Re-sign in"
+	// CTA wired to acquireTokenRedirect. Trigger: when the
+	// notifications surface lands (tracked as a Phase 7 scope item).
 	useEffect(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent<AuthExhaustedDetail>).detail;

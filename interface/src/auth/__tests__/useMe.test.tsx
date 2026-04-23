@@ -1,10 +1,12 @@
-// Phase 6 PR C Task 6.C.6 Step 6 — vitest for useMe / useRole hooks.
+// Vitest for useMe / useRole hooks.
 //
-// Covers the two observable behaviors:
+// Covers the observable behaviors:
 //   1. Happy path: /api/me returns 200 with a populated MeResponse
 //      shape; useMe's data matches; useRole(role) returns boolean.
 //   2. Failure path: /api/me returns 401; useMe's error surfaces with
-//      the D17 `API error <status>: <path>` message.
+//      the `API error <status>: <path>` message convention.
+//   3. Malformed payload: /api/me returns 200 with non-JSON body;
+//      useMe's error message identifies the parse failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -62,7 +64,7 @@ describe("useMe", () => {
 		expect(result.current.data?.roles).toContain("SpacebotAdmin");
 	});
 
-	it("surfaces API error <status>: /me on 401 (D17 pattern)", async () => {
+	it("surfaces API error <status>: /me on 401", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response("", { status: 401 }),
 		);
@@ -71,6 +73,25 @@ describe("useMe", () => {
 		await waitFor(() => expect(result.current.isError).toBe(true));
 		expect((result.current.error as Error).message).toBe(
 			"API error 401: /me",
+		);
+	});
+
+	it("distinguishes malformed JSON from network failure", async () => {
+		// Daemon returns 200 but the body is non-JSON (e.g., accidentally
+		// serving HTML from a misconfigured proxy). Without the explicit
+		// JSON-parse catch, React Query would surface the SyntaxError
+		// with the same shape as a network rejection.
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("<html>not json</html>", {
+				status: 200,
+				headers: { "content-type": "text/html" },
+			}),
+		);
+
+		const { result } = renderHook(() => useMe(), { wrapper });
+		await waitFor(() => expect(result.current.isError).toBe(true));
+		expect((result.current.error as Error).message).toBe(
+			"API error: malformed JSON from /me",
 		);
 	});
 });
@@ -132,14 +153,20 @@ describe("useRole", () => {
 			),
 		);
 
-		const { result } = renderHook(() => useRole("SpacebotAdmin"), {
-			wrapper,
-		});
-		// Wait long enough for the query to resolve; roles won't contain
-		// SpacebotAdmin, so the hook returns false even after data lands.
-		// We wait for data to be present via the default react-query
-		// pattern; since result.current is boolean, check stability.
-		await new Promise((r) => setTimeout(r, 50));
-		expect(result.current).toBe(false);
+		const { result, rerender } = renderHook(
+			() => {
+				const me = useMe();
+				const role = useRole("SpacebotAdmin");
+				return { me, role };
+			},
+			{ wrapper },
+		);
+		// Wait for the underlying query to resolve, then assert the role
+		// check returns false. Previous fixed-timeout approach was flaky.
+		await waitFor(() =>
+			expect(result.current.me.isSuccess).toBe(true),
+		);
+		rerender();
+		expect(result.current.role).toBe(false);
 	});
 });

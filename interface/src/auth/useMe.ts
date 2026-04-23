@@ -1,21 +1,10 @@
-// Phase 6 PR C Task 6.C.6 Step 4 — consolidated identity hook.
+// Consolidated identity hook. Reads from GET /api/me (one payload
+// carrying principal_key, tid/oid, roles, groups, display name/email,
+// and either a photo data URL or initials fallback).
 //
-// Reads from GET /api/me (A-18 single endpoint). The response carries
-// everything the SPA needs about the signed-in principal: identity,
-// roles, groups (overage-resolved when groups_overage is true),
-// display name/email, and either a photo data URL or initials.
-//
-// Phase 7's useRole(role) reads from this hook, so we cache for 5
-// minutes (matches the daemon's group_cache_ttl_secs default to
-// avoid UI-stale vs daemon-stale interleaving).
-//
-// D11 correction (2026-04-23 PR C audit): authedFetch imported from
-// the sibling exports entry @spacebot/api-client/authedFetch (PR B
-// commit C ships this). getApiBase stays at @spacebot/api-client/client.
-//
-// D17 correction (2026-04-23 PR C audit): throw-on-!ok message matches
-// PR B commit B's fetchJson convention — `API error <status>: <path>`
-// so operator/Sentry breadcrumbs identify the failing endpoint.
+// Phase 7's useRole(role) reads from this hook. 5-minute staleTime
+// matches the daemon's group_cache_ttl_secs default so UI-stale and
+// daemon-stale windows don't interleave.
 
 import { useQuery } from "@tanstack/react-query";
 import { getApiBase } from "@spacebot/api-client/client";
@@ -31,20 +20,35 @@ export function useMe() {
 			const path = "/me";
 			const res = await authedFetch(`${getApiBase()}${path}`);
 			if (!res.ok) {
+				// Match fetchJson's convention: status + path so Sentry
+				// breadcrumbs identify the failing endpoint.
 				throw new Error(`API error ${res.status}: ${path}`);
 			}
-			return res.json();
+			try {
+				return (await res.json()) as MeResponse;
+			} catch {
+				// Distinguish malformed daemon response from network
+				// failure. React Query otherwise wraps the SyntaxError
+				// identically to a fetch rejection.
+				throw new Error(`API error: malformed JSON from ${path}`);
+			}
 		},
 		staleTime: 5 * 60_000,
 	});
 }
 
+// Known built-in roles get autocomplete + typo protection. The
+// `(string & {})` intersection preserves the opt-out for ad-hoc roles
+// a future plugin / custom deployment might introduce.
+type KnownRole = "SpacebotAdmin" | "SpacebotUser" | "SpacebotService";
+type RoleLike = KnownRole | (string & {});
+
 /**
- * Phase 7 preview: `useRole("SpacebotAdmin")` becomes the canonical
- * gate for admin-only UI surfaces. Reads from the same `/api/me`
- * cache so there is one source of truth for the principal's roles.
+ * Phase 7: the canonical gate for admin-only UI surfaces. Reads from
+ * the same /api/me cache so there is one source of truth for the
+ * principal's roles.
  */
-export function useRole(role: string): boolean {
+export function useRole(role: RoleLike): boolean {
 	const { data } = useMe();
 	return Boolean(data?.roles.includes(role));
 }

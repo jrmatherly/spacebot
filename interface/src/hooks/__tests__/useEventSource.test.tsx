@@ -1,15 +1,11 @@
-// Phase 6 PR C Task 6.C.1 — failing vitest for useEventSource.
+// Tests the transport swap from native EventSource to
+// @microsoft/fetch-event-source. Asserts that the hook's public
+// contract (`handlers: Record<string, EventHandler>`) survives the
+// refactor, and that the wrapper's `fetch` option is the authedFetch
+// identity (not a look-alike function).
 //
-// Target: the transport swap from native EventSource to
-// @microsoft/fetch-event-source. Tests assert the hook's public
-// contract (handlers: Record<string, EventHandler>) survives the
-// refactor, and that the wrapper's `fetch` option is authedFetch
-// (identity check per D12 from the 2026-04-23 pre-PR-C audit).
-//
-// D13/D14 corrections: the hook's existing `handlers` + `enabled` +
-// `onReconnect` + `{ connectionState }` shape stays unchanged. The
-// library call receives event-type in `ev.event` which we route
-// through handlers[ev.event]?.(JSON.parse(ev.data)).
+// The library call receives the event-type name in `ev.event`; we
+// route through `handlers[ev.event]?.(JSON.parse(ev.data))`.
 
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -49,7 +45,7 @@ describe("useEventSource", () => {
 		expect(otherCalls.length).toBe(0);
 	});
 
-	it("passes authedFetch as the fetch option (D12: identity check)", async () => {
+	it("passes authedFetch as the fetch option (identity check)", async () => {
 		const { fetchEventSource } = await import("@microsoft/fetch-event-source");
 		renderHook(() =>
 			useEventSource("http://api/events", { handlers: {} }),
@@ -59,8 +55,8 @@ describe("useEventSource", () => {
 				.mock.calls;
 			const call = calls[calls.length - 1];
 			expect(call).toBeTruthy();
-			// Identity check, not toBeTypeOf("function"), so a refactor that
-			// swaps in the raw browser fetch fails this test.
+			// Identity check, not `toBeTypeOf("function")`, so a refactor
+			// that swaps in the raw browser fetch fails this test.
 			expect(call[1]).toHaveProperty("fetch", authedFetch);
 		});
 	});
