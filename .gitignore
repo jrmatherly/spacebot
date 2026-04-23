@@ -18,6 +18,12 @@ interface/dist/
 interface/public/opencode-embed/
 .opencode-build-cache/
 
+# Universal node_modules rule — catches stray caches in any subtree
+# (e.g., root-level node_modules/.vite/vitest/ created when vitest is
+# accidentally run from repo root instead of interface/). Idempotent
+# with the path-specific rules above for grep-ability.
+**/node_modules/
+
 # SpaceUI
 spaceui/node_modules
 spaceui/packages/*/dist/
