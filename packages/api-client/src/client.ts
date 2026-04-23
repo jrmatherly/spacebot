@@ -69,6 +69,11 @@ export async function getAuthToken(): Promise<string | null> {
 	}
 }
 
+// Phase 6 Task 6.B.2: central fetch wrapper. Defined in a sibling module
+// so the Task 6.B.3 sed pass doesn't risk recursing its own
+// `fetch(input, { ...init, headers })` call into `authedFetch(...)`.
+export { authedFetch } from "./authedFetch";
+
 import type * as Types from "./types";
 
 // Re-export commonly used types from schema for backward compatibility
