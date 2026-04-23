@@ -91,6 +91,7 @@ just graphify-clean                       # drop graphify-out/ entirely
 - `docs/design-docs/entra-app-registrations.md` — Entra app-registration schema (client IDs, app roles, redirect URIs, API permissions) used by the Phase 1 JWT validator
 - `docs/design-docs/entra-backfill-strategy.md` — No-auto-broadening policy for pre-existing resources under Entra auth, plus the Phase 10 sweep design for both orphan directions
 - `docs/design-docs/entra-audit-log.md` — Phase 5 operator guide: `audit_events` table shape, chain-verification procedure, three export modes (Filesystem dev-only, S3 COMPLIANCE, HttpSiem), separation-of-duties (SOC 2 CC6.6)
+- `docs/content/docs/(configuration)/entra-auth.mdx` — Phase 6 PR A operator guide: two-app-registration pattern, `[api.auth.entra]` TOML config, SPA MSAL.js v5 bootstrap flow, A-16/A-17 cache-location guidance, mock mode, troubleshooting (SPA redirect failure, 401-after-sign-in, overage 403s, "Sign-in is unavailable" banner). Renders at `/docs/entra-auth`.
 - `spacedrive/SYNC.md` — Fork provenance + reference-clone discipline for the vendored Spacedrive tree (Spacebot-owned per 2026-04-16 self-reliance decision)
 - `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
 - `AGENTS.md` — Architecture implementation guide for coding agents
