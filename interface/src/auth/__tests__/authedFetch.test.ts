@@ -18,6 +18,8 @@ import {
 	authedFetch,
 	setAuthTokenProvider,
 } from "@spacebot/api-client/client";
+import type { AuthExhaustedDetail } from "@spacebot/api-client/authedFetch";
+import { parseRetryAfterMs } from "@spacebot/api-client/authedFetch";
 
 describe("authedFetch", () => {
 	beforeEach(() => {
@@ -74,6 +76,31 @@ describe("authedFetch", () => {
 		expect(headers.get("content-type")).toBeNull();
 	});
 
+	// Review-B item 4: tightens G1/G2 coverage. The prior FormData/Blob
+	// tests only proved Content-Type was absent — they passed even if the
+	// `headers.delete("Content-Type")` line were removed, because no
+	// caller-supplied Content-Type existed to delete. This test explicitly
+	// sets Content-Type alongside FormData, proving the delete branch runs.
+	it("deletes caller-supplied Content-Type when body is FormData", async () => {
+		setAuthTokenProvider(async () => "t");
+		const spy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response("ok"));
+		const fd = new FormData();
+		fd.append("file", new Blob(["hi"]), "file.txt");
+		// Callers that naively set application/json break multipart uploads
+		// because the browser can't insert its own boundary parameter. The
+		// wrapper must scrub the caller's header on FormData/Blob bodies.
+		await authedFetch("http://api/upload", {
+			method: "POST",
+			body: fd,
+			headers: { "content-type": "application/json" },
+		});
+		const init = spy.mock.calls[0][1] as RequestInit | undefined;
+		const headers = new Headers(init?.headers);
+		expect(headers.get("content-type")).toBeNull();
+	});
+
 	// G2 correction (2026-04-23 PR B audit): callers may pass a Headers
 	// instance instead of a plain object literal. The `new Headers(init.headers ?? {})`
 	// idiom in authedFetch accepts both; this test locks the contract.
@@ -111,23 +138,38 @@ describe("authedFetch", () => {
 	// on the 401-retry attempt (MSAL silent acquisition fails without
 	// triggering a redirect), authedFetch must NOT loop forever and must
 	// NOT retry with no-Authorization-header. Return the 401 to caller.
-	it("returns 401 without further retry when provider yields null on retry", async () => {
+	//
+	// Also pins the `spacebot:auth-exhausted` observability event with
+	// reason=no_token_on_retry, so a refactor that drops or renames the
+	// event fails this test.
+	it("returns 401 without further retry when provider yields null on retry + dispatches no_token_on_retry", async () => {
 		let call = 0;
 		setAuthTokenProvider(async () => {
 			call++;
 			// First call: token issued. Retry: provider unavailable.
 			return call === 1 ? "TOKEN" : null;
 		});
-		const spy = vi
+		const fetchSpy = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(new Response("{}", { status: 401 }));
+		const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 		const res = await authedFetch("http://api/foo");
 		expect(res.status).toBe(401);
-		// 2 fetch calls max: original with token, one retry attempt. The
-		// retry would normally include a refreshed header, but with
-		// provider=null the header is absent; authedFetch must still return
-		// the 401 rather than entering a no-header loop.
-		expect(spy.mock.calls.length).toBeLessThanOrEqual(2);
+		// 1 fetch call: authedFetch sees the 401, re-reads the provider,
+		// gets null, and returns immediately without a retry. A retry with
+		// a null token would set no Authorization header, which the plan
+		// explicitly forbids as a silent no-header loop.
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		const authExhaustedCalls = dispatchSpy.mock.calls.filter(
+			(c) =>
+				c[0] instanceof CustomEvent &&
+				c[0].type === "spacebot:auth-exhausted",
+		);
+		expect(authExhaustedCalls).toHaveLength(1);
+		const detail = (authExhaustedCalls[0][0] as CustomEvent<AuthExhaustedDetail>)
+			.detail;
+		expect(detail.reason).toBe("no_token_on_retry");
+		expect(detail.url).toBe("http://api/foo");
 	});
 
 	it("passes through when no provider is set (Entra disabled)", async () => {
@@ -176,14 +218,25 @@ describe("authedFetch", () => {
 		expect(spy).toHaveBeenCalledTimes(5);
 	});
 
-	it("second consecutive 401 is returned to the caller (auth cap = 1)", async () => {
+	it("second consecutive 401 is returned to the caller + dispatches refresh_failed (auth cap = 1)", async () => {
 		setAuthTokenProvider(async () => "TOKEN");
-		const spy = vi
+		const fetchSpy = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(new Response("", { status: 401 }));
+		const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 		const res = await authedFetch("http://api/test");
 		expect(res.status).toBe(401);
-		expect(spy).toHaveBeenCalledTimes(2); // original + one refresh retry
+		expect(fetchSpy).toHaveBeenCalledTimes(2); // original + one refresh retry
+		const authExhaustedCalls = dispatchSpy.mock.calls.filter(
+			(c) =>
+				c[0] instanceof CustomEvent &&
+				c[0].type === "spacebot:auth-exhausted",
+		);
+		expect(authExhaustedCalls).toHaveLength(1);
+		const detail = (authExhaustedCalls[0][0] as CustomEvent<AuthExhaustedDetail>)
+			.detail;
+		expect(detail.reason).toBe("refresh_failed");
+		expect(detail.url).toBe("http://api/test");
 	});
 
 	// D8 correction (2026-04-23 PR B audit): the previous "alternating
@@ -224,5 +277,38 @@ describe("authedFetch", () => {
 		// Original + 3 sync retries = 4 fetch calls. syncAttempts=3 gates
 		// the 4th-retry attempt.
 		expect(spy.mock.calls.length).toBe(4);
+	});
+});
+
+// Review-B item 5: direct tests for the Retry-After parser. The four
+// branches are all reachable through the authedFetch integration path,
+// but driving them via a 202 response with a specific header is slow
+// (real setTimeout waits) and indirect. Direct unit tests pin the
+// security-adjacent 10s clamp and the malformed-header fallback.
+describe("parseRetryAfterMs", () => {
+	it("returns 1000ms default when header is null", () => {
+		expect(parseRetryAfterMs(null)).toBe(1000);
+	});
+
+	it("returns 1000ms fallback when header is non-numeric", () => {
+		expect(parseRetryAfterMs("abc")).toBe(1000);
+	});
+
+	it("returns 1000ms fallback when header is negative", () => {
+		expect(parseRetryAfterMs("-5")).toBe(1000);
+	});
+
+	it("multiplies seconds to milliseconds for valid input", () => {
+		expect(parseRetryAfterMs("2")).toBe(2000);
+		expect(parseRetryAfterMs("5")).toBe(5000);
+	});
+
+	it("clamps at 10s to prevent malicious-proxy long-sleep attacks", () => {
+		expect(parseRetryAfterMs("11")).toBe(10_000);
+		expect(parseRetryAfterMs("999999")).toBe(10_000);
+	});
+
+	it("accepts integer boundary value (10s) without clamping further", () => {
+		expect(parseRetryAfterMs("10")).toBe(10_000);
 	});
 });

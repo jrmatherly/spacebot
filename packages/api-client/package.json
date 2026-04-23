@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./client": "./src/client.ts",
+    "./authedFetch": "./src/authedFetch.ts",
     "./types": "./src/types.ts",
     "./schema": "./src/schema.d.ts"
   }

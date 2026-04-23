@@ -74,6 +74,10 @@ export async function getAuthToken(): Promise<string | null> {
 // sed-based migration pass has zero valid migration targets here.
 import { authedFetch } from "./authedFetch";
 export { authedFetch };
+export type {
+	AuthExhaustedDetail,
+	AuthExhaustedReason,
+} from "./authedFetch";
 
 import type * as Types from "./types";
 
