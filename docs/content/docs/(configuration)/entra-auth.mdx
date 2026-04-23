@@ -83,7 +83,7 @@ The static `auth_token` path at `[api]` level stays available as a fallback. Exa
 Delegated `User.Read` is required for two features:
 
 - **Group overage resolution.** Entra truncates the `groups` claim at 150 entries. Users in more groups receive a `hasgroups: true` flag; the daemon must call Graph's `/me/getMemberObjects` to materialize the full list.
-- **Display photo caching** (A-19). The SPA renders a user photo or initials fallback; the daemon caches the base64 in `users.display_photo_b64` with a weekly TTL.
+- **Display photo caching** (A-19). The SPA renders a user photo or initials fallback; the daemon caches the base64 in `users.display_photo_b64` with a 7-day TTL.
 
 See the Graph API permissions section of [`entra-app-registrations.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-app-registrations.md) for the exact OBO permission grant. Without Graph, everything still works but overage users see 403s on team resources until their group membership drops below 150, and user avatars fall back to initials.
 
