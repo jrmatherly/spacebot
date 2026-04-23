@@ -257,7 +257,12 @@ pub(super) async fn list_cron_jobs(
             .get_execution_stats(&config.id)
             .await
             .unwrap_or_default();
+        // VisibilityTag fields are private (S1 narrowing). Use the
+        // accessors; the team_name-only-with-team invariant was
+        // enforced at construction time by VisibilityTag::new.
         let tag = tags.get(&config.id).cloned().unwrap_or_default();
+        let visibility = tag.visibility().map(str::to_string);
+        let team_name = tag.team_name().map(str::to_string);
 
         jobs.push(CronJobWithStats {
             id: config.id,
@@ -275,8 +280,8 @@ pub(super) async fn list_cron_jobs(
             delivery_failure_count: stats.delivery_failure_count,
             delivery_skipped_count: stats.delivery_skipped_count,
             last_executed_at: stats.last_executed_at,
-            visibility: tag.visibility,
-            team_name: tag.team_name,
+            visibility,
+            team_name,
         });
     }
 

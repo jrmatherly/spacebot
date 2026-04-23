@@ -4551,18 +4551,26 @@ export interface components {
         /**
          * @description Per-item enrichment attached to list responses alongside the domain type.
          *
-         *     Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes "unowned/legacy"
-         *     per the no-auto-broadening policy in `docs/design-docs/entra-backfill-
-         *     strategy.md`. The SPA renders `None` as "Legacy" rather than defaulting
-         *     to "personal" (which would contradict Phase 4 authz, where unowned
-         *     resources are admin-only). Both fields are additive: handlers that do
-         *     not enrich pass `VisibilityTag::default()`, which serializes to `{}`
-         *     via `skip_serializing_if`.
+         *     Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes an unowned resource
+         *     (no `resource_ownership` row) per the no-auto-broadening policy in
+         *     `docs/design-docs/entra-backfill-strategy.md`. The SPA's `VisibilityChip`
+         *     renders `None` via its runtime fallback branch (`"Unknown"` with
+         *     `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
+         *     rather than defaulting to `"personal"`. Defaulting to personal would
+         *     contradict Phase 4 authz, which treats unowned resources as admin-only.
+         *
+         *     Wire shape is two flat fields (`visibility`, `team_name`) because the
+         *     SPA's `VisibilityChip` consumes them as two independent props; nesting
+         *     into a discriminated enum would break the PR-1 component API. Instead,
+         *     fields are private and the invariant `team_name.is_some() ⇒ visibility
+         *     == Some("team")` is enforced at construction by the [`Self::new`]
+         *     builder, so callers cannot emit the illegal `{visibility: None,
+         *     team_name: Some(_)}` shape. (S1 structural narrowing, PR #111 review.)
          */
         VisibilityTag: {
             /** @description Team display name when `visibility == Some("team")`; absent otherwise. */
             team_name?: string | null;
-            /** @description `"personal"`, `"team"`, `"org"`, or absent (unowned/legacy). */
+            /** @description `"personal"`, `"team"`, `"org"`, or absent for unowned resources. */
             visibility?: string | null;
         };
         WarmupSection: {

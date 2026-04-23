@@ -41,17 +41,52 @@ use std::sync::Arc;
 /// `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
 /// rather than defaulting to `"personal"`. Defaulting to personal would
 /// contradict Phase 4 authz, which treats unowned resources as admin-only.
-/// Both fields are additive: handlers that do not enrich pass
-/// `VisibilityTag::default()`, which serializes to `{}` via
-/// `skip_serializing_if`.
+///
+/// Wire shape is two flat fields (`visibility`, `team_name`) because the
+/// SPA's `VisibilityChip` consumes them as two independent props; nesting
+/// into a discriminated enum would break the PR-1 component API. Instead,
+/// fields are private and the invariant `team_name.is_some() ⇒ visibility
+/// == Some("team")` is enforced at construction by the [`Self::new`]
+/// builder, so callers cannot emit the illegal `{visibility: None,
+/// team_name: Some(_)}` shape. (S1 structural narrowing, PR #111 review.)
 #[derive(Debug, Clone, Default, Serialize, utoipa::ToSchema)]
 pub struct VisibilityTag {
     /// `"personal"`, `"team"`, `"org"`, or absent for unowned resources.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub visibility: Option<String>,
+    visibility: Option<String>,
     /// Team display name when `visibility == Some("team")`; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub team_name: Option<String>,
+    team_name: Option<String>,
+}
+
+impl VisibilityTag {
+    /// Construct from a `resource_ownership` row. Enforces the
+    /// `team_name.is_some() ⇒ visibility == "team"` invariant by
+    /// dropping any `team_name` that arrives with a non-team visibility
+    /// (defensive: callers should only pass a team_name when the row's
+    /// `shared_with_team_id` resolved to an active team, but the
+    /// narrowing here is free and makes the illegal state
+    /// unrepresentable on the wire regardless).
+    pub fn new(visibility: Option<String>, team_name: Option<String>) -> Self {
+        let team_name = match visibility.as_deref() {
+            Some("team") => team_name,
+            _ => None,
+        };
+        Self {
+            visibility,
+            team_name,
+        }
+    }
+
+    /// Accessor for handlers that construct flat DTOs (cron).
+    pub fn visibility(&self) -> Option<&str> {
+        self.visibility.as_deref()
+    }
+
+    /// Accessor for handlers that construct flat DTOs (cron).
+    pub fn team_name(&self) -> Option<&str> {
+        self.team_name.as_deref()
+    }
 }
 
 /// Batch-enrich a slice of resource ids for a single resource type. Returns
@@ -118,13 +153,10 @@ pub(super) async fn enrich_visibility_tags(
             let team_name = own
                 .and_then(|o| o.shared_with_team_id.as_ref())
                 .and_then(|tid| teams.get(tid).map(|t| t.display_name.clone()));
-            (
-                id.clone(),
-                VisibilityTag {
-                    visibility,
-                    team_name,
-                },
-            )
+            // S1 narrowing: VisibilityTag::new drops team_name if the
+            // visibility is anything other than "team", making the
+            // illegal-state pair unrepresentable on the wire.
+            (id.clone(), VisibilityTag::new(visibility, team_name))
         })
         .collect()
 }
@@ -190,8 +222,8 @@ mod tests {
         let ids = vec!["m-1".to_string()];
         let tags = enrich_visibility_tags(&pool, "memory", &ids).await;
         let tag = tags.get("m-1").expect("m-1 present");
-        assert_eq!(tag.visibility.as_deref(), Some("team"));
-        assert_eq!(tag.team_name.as_deref(), Some("Platform"));
+        assert_eq!(tag.visibility(), Some("team"));
+        assert_eq!(tag.team_name(), Some("Platform"));
     }
 
     #[tokio::test]
@@ -208,10 +240,11 @@ mod tests {
             .get("orphan")
             .expect("entry present even for missing row");
         assert_eq!(
-            tag.visibility, None,
+            tag.visibility(),
+            None,
             "unowned resource serializes as None, not \"personal\""
         );
-        assert_eq!(tag.team_name, None);
+        assert_eq!(tag.team_name(), None);
     }
 
     #[tokio::test]
@@ -234,8 +267,32 @@ mod tests {
         let ids = vec!["m-2".to_string()];
         let tags = enrich_visibility_tags(&pool, "memory", &ids).await;
         let tag = tags.get("m-2").unwrap();
-        assert_eq!(tag.visibility.as_deref(), Some("personal"));
-        assert_eq!(tag.team_name, None);
+        assert_eq!(tag.visibility(), Some("personal"));
+        assert_eq!(tag.team_name(), None);
+    }
+
+    #[tokio::test]
+    async fn tag_constructor_drops_team_name_when_visibility_is_not_team() {
+        // S1 structural narrowing. VisibilityTag::new must reject the
+        // illegal-state pair {visibility: "personal" | "org" | None,
+        // team_name: Some(_)} at construction time.
+        assert_eq!(
+            VisibilityTag::new(Some("personal".to_string()), Some("Platform".to_string())).team_name(),
+            None
+        );
+        assert_eq!(
+            VisibilityTag::new(Some("org".to_string()), Some("Platform".to_string())).team_name(),
+            None
+        );
+        assert_eq!(
+            VisibilityTag::new(None, Some("Platform".to_string())).team_name(),
+            None
+        );
+        // Only "team" preserves team_name.
+        assert_eq!(
+            VisibilityTag::new(Some("team".to_string()), Some("Platform".to_string())).team_name(),
+            Some("Platform")
+        );
     }
 }
 
