@@ -1,0 +1,198 @@
+---
+title: Entra ID Authentication
+description: Gate the Spacebot daemon and SPA behind Microsoft Entra ID. JWT-validated API access with delegated user identity, app-only service principals, MSAL.js in the browser, and a non-secret bootstrap endpoint.
+---
+
+# Entra ID Authentication
+
+The daemon can authenticate API requests against Microsoft Entra ID instead of (or in addition to) the built-in static bearer token. When configured, the HTTP middleware validates JSON Web Tokens against the tenant's JWKS, extracts the caller's identity (`{tid}:{oid}`), and populates an `AuthContext` that flows into every handler, every policy check, and the audit log.
+
+The web UI integrates via [MSAL.js v5](https://learn.microsoft.com/en-us/entra/identity-platform/msal-js-initializing-client-applications). On boot, the SPA fetches a non-secret runtime config from `/api/auth/config`, builds a `PublicClientApplication`, and attaches fresh access tokens to every subsequent API call.
+
+## Architecture
+
+Two Microsoft Entra app registrations are required:
+
+| Registration | Purpose | Sees |
+|---|---|---|
+| **Web API** | The daemon itself. Receives and validates tokens. | `client_id`, `client_secret` (for Graph OBO), exposed scope (`api.access`), exposed app roles. |
+| **SPA** | The browser app. Requests tokens delegated for the Web API. | `client_id`, redirect URIs, `api://{web-api-guid}/api.access` scope. **No client_secret — SPAs are public clients.** |
+
+This split is required by the OAuth 2.0 authorization-code-with-PKCE flow used by modern SPAs. The browser never holds a client secret, and the daemon never accepts an identity claim that wasn't signed by Microsoft for *its* audience.
+
+The full registration schema (redirect URIs, app roles, API permissions, manifest requirements) lives at [`docs/design-docs/entra-app-registrations.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-app-registrations.md).
+
+## Enabling Entra
+
+### 1. Register the two apps
+
+Follow the schema in `entra-app-registrations.md`. Key non-obvious requirements:
+
+- Web API registration **must** set `accessTokenAcceptedVersion: 2` in its app manifest. v1 tokens have a different `iss` claim shape and will be rejected.
+- SPA registration redirect URI **must** match `window.location.origin + "/"` exactly, trailing slash included. Spacebot redirects to the root path after sign-in. `/auth/callback` is not used.
+- The Web API registration exposes the scope (e.g. `api.access`) and declares the app roles (e.g. `SpacebotAdmin`, `SpacebotUser`, `SpacebotService`). The SPA registration requests the scope via **API permissions → Add permission → APIs my organization uses → your Web API → Delegated permissions → `api.access`**.
+
+### 2. Configure `config.toml`
+
+Add an `[api.auth.entra]` block. All values resolve the `env:` and `secret:` prefixes documented in [Config](/docs/config).
+
+```toml
+[api.auth.entra]
+enabled = true
+
+# Tenant where the app registrations live. GUID form, not "contoso.onmicrosoft.com".
+tenant_id = "env:ENTRA_TENANT_ID"
+
+# Expected `aud` claim value. For v2.0 tokens, this is the Web API
+# registration's client_id GUID, NOT the Application ID URI.
+audience = "env:ENTRA_API_AUDIENCE"
+
+# Required scope for delegated (user) tokens. Leave empty to skip scope
+# validation, which lets app-only (service principal) tokens through.
+allowed_scopes = ["api.access"]
+
+# SPA app registration's client_id GUID. Returned verbatim to the browser
+# via /api/auth/config. Never a secret.
+spa_client_id = "env:ENTRA_SPA_CLIENT_ID"
+
+# Scopes the SPA requests at sign-in. Must match the scope the Web API
+# registration exposes, prefixed by its Application ID URI.
+spa_scopes = ["api://{web-api-guid}/api.access"]
+
+# JWKS cache lifetime. Microsoft rotates signing keys roughly weekly and
+# maintains a ~24h overlap window during rollovers, so any TTL under a
+# day stays within the validated-signing-key set. 3600s is the safe
+# default; going materially longer risks caching past a rollover and
+# rejecting valid tokens signed by the new key.
+jwks_cache_ttl_secs = 3600
+
+# Clock-skew tolerance between the daemon and Microsoft. 60s default
+# handles normal NTP drift; never exceed 300.
+clock_skew_leeway_secs = 60
+
+# Per-principal group-membership cache lifetime. Phase 3's middleware
+# resolves overage claims via Graph; this sets how long the resolved list
+# is trusted. Default 300s.
+group_cache_ttl_secs = 300
+```
+
+The static `auth_token` path at `[api]` level stays available as a fallback. Exactly one auth mode is installed per request; the daemon picks at startup time based on `[api.auth.entra].enabled`.
+
+### 3. Wire Microsoft Graph (optional but recommended)
+
+Delegated `User.Read` is required for two features:
+
+- **Group overage resolution.** Entra truncates the `groups` claim at 150 entries. Users in more groups receive a `hasgroups: true` flag; the daemon must call Graph's `/me/getMemberObjects` to materialize the full list.
+- **Display photo caching** (A-19). The SPA renders a user photo or initials fallback; the daemon caches the base64 in `users.display_photo_b64` with a weekly TTL.
+
+See the Graph API permissions section of [`entra-app-registrations.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-app-registrations.md) for the exact OBO permission grant. Without Graph, everything still works but overage users see 403s on team resources until their group membership drops below 150, and user avatars fall back to initials.
+
+### 4. Restart the daemon
+
+Entra config is not hot-reloadable. `spacebot restart`, then tail the logs for the Entra validator startup line. Any failure in the TOML-resolution or JWKS-fetch path fails startup rather than silently dropping back to static-token mode.
+
+Verify with:
+
+```bash
+curl http://localhost:19898/api/auth/config
+# {"entra_enabled":true,"client_id":"...","tenant_id":"...","authority":"...","scopes":["..."]}
+```
+
+## SPA Bootstrap Flow
+
+The bundled web UI implements the standard MSAL.js authorization-code-with-PKCE flow. No config is baked into the Vite build; every identifier comes from the daemon at runtime.
+
+1. SPA boots and mounts `<AuthGate>` above the app shell.
+2. `AuthGate` calls `GET /api/auth/config`. This endpoint is unprotected: both auth middleware branches allowlist the path so the SPA can reach it before any token exists.
+3. If `entra_enabled: false`, the gate renders children directly and the deployment runs in static-token mode.
+4. If `entra_enabled: true`, the gate constructs a `PublicClientApplication` with the returned identifiers, processes any redirect return via `handleRedirectPromise`, and sets the active account.
+5. A token-provider closure is wired into the generated `@spacebot/api-client`. Every subsequent API call acquires a silent token from MSAL's in-memory cache.
+6. On `InteractionRequiredAuthError` (refresh token expired, CA policy fired, etc.), the closure kicks off `acquireTokenRedirect` and suspends the caller until the redirect completes.
+
+### Cache-location behavior (A-16 / A-17)
+
+By default the SPA uses **memory storage only** (`cacheLocation: "memoryStorage"`). Tokens live in a JavaScript object that evaporates when the tab closes. This mitigates XSS token-exfiltration at the cost of forcing re-auth on every tab reload.
+
+The sign-in screen offers a **"Stay signed in on this device"** opt-in checkbox. When checked, the preference is persisted to `localStorage` under `spacebot.auth.trust_device`, and the *next* load switches MSAL to `localStorage` caching. MSAL.js v5 AES-GCM-encrypts the cache automatically, so the token blob is not plainly readable even by same-origin scripts. It *is*, however, persisted across tab close. Treat this as a user choice: "my laptop is private, keep me signed in" vs "shared kiosk, don't remember me."
+
+The string `"memoryStorage"` is canonical. Do **not** shorten to `"memory"`. MSAL types accept the shorter form but silently degrade to `sessionStorage` at runtime.
+
+## Local Development (Mock Mode)
+
+For work that doesn't need a real Entra tenant (CI, offline dev, reproducing a bug report):
+
+```toml
+[api.auth.entra]
+enabled = true
+mock_mode = true
+# The remaining fields are still required for struct population but
+# their values are not validated in mock mode.
+tenant_id = "00000000-0000-0000-0000-000000000001"
+audience = "api://test"
+spa_client_id = "11111111-1111-1111-1111-111111111111"
+spa_scopes = ["api://test/api.access"]
+```
+
+Then run the SPA with `VITE_AUTH_MOCK=1` (env var in `interface/.env.development.local`). Optional `VITE_MOCK_*` variables shape the fake principal:
+
+| Variable | Effect |
+|---|---|
+| `VITE_MOCK_TID` | Tenant ID in the fake token (default: `tenant-mock`) |
+| `VITE_MOCK_OID` | Object ID / `principal_key` suffix (default: `alice`) |
+| `VITE_MOCK_ROLES` | Comma-separated app roles (default: `SpacebotUser`) |
+
+Mock tokens are JSON-base64-encoded payloads; the daemon's `MockValidator` accepts them without a signature check. **Never set `mock_mode = true` in production.** The daemon refuses to start if `mock_mode = true` is set alongside a non-test binding.
+
+## Troubleshooting
+
+### SPA shows "Sign in" but the redirect fails
+
+Most common causes, in order of frequency:
+
+- Redirect URI mismatch. Check the Entra app registration's SPA redirect URI matches `window.location.origin + "/"` including the trailing slash. Mixed HTTP/HTTPS counts as a mismatch.
+- Conditional Access policy blocking the tenant. Check the sign-in log in Entra ID → Sign-in logs.
+- Browser extension stripping the URL fragment before MSAL can consume it. Try an incognito window.
+
+### All API calls return 401 after sign-in
+
+The token is being acquired but rejected by the daemon. Decode it at [jwt.ms](https://jwt.ms) and compare:
+
+- `aud` must equal the configured `audience` value exactly (it's the Web API client_id GUID, not the Application ID URI).
+- `iss` must be `https://login.microsoftonline.com/{tenant_id}/v2.0`. If you see `https://sts.windows.net/...`, the Web API registration's manifest is missing `accessTokenAcceptedVersion: 2`.
+- `scp` must include at least one value from `allowed_scopes` (for delegated tokens). If this is an app-only token, `scp` will be absent (that's fine), but `roles` must match the `required_role` if set.
+
+### User gets 403 Forbidden on team resources
+
+The user's token might be in SPA-6 overage (more than 150 group memberships). The backend resolves this via Graph but takes up to `group_cache_ttl_secs` to populate. Immediate workarounds: remove the user from some groups, or wait out the cache TTL (default 5 minutes).
+
+For long-term observability, check the `auth_first_request_race_total` and `auth_graph_sync_failures_total{reason}` Prometheus counters.
+
+### "Sign-in is unavailable" banner appears in the UI
+
+`AuthGate` displays a red diagnostic banner when bootstrap fails in a way operators should act on. The banner text identifies the specific failure mode:
+
+- **"missing client_id, authority"** means `/api/auth/config` returned `entra_enabled: true` without the SPA-client identifiers. Check the daemon's `[api.auth.entra].spa_client_id` value and restart. Previously this class of error silently fell open to static-token UI where every API call 401'd; Phase 6 surfaces it instead.
+- **"auth-config fetch failed: 500"** means the endpoint itself errored. Check daemon logs.
+- **"auth-config fetch failed: 502"** means a reverse proxy rejected the request. `/api/auth/config` is unauthenticated; confirm the proxy isn't adding an `Authorization` header that a stale middleware branch is rejecting.
+
+The banner is `role="alert"` + `aria-live="assertive"`, so screen readers announce it immediately. Children are NOT rendered while the error state is active.
+
+### Stuck on "Signing in…" spinner
+
+Rare after Phase 6 (the error banner above should cover most cases), but possible if `useEffect` raced an unmount before the error setState landed. Check the browser console:
+
+- `auth-config fetch failed: 404` → the `/api/auth/config` endpoint is missing. Regenerate `packages/api-client/src/schema.d.ts` via `just typegen` and rebuild the daemon.
+- `auth-config fetch failed: 502` → reverse proxy config. `/api/auth/config` is unauthenticated; confirm the proxy isn't adding an `Authorization` header that a stale middleware branch is rejecting.
+- `[AuthGate] init failed: ...` → MSAL error. Common: `endpoints_resolution_error` means `authority` is malformed; `interaction_in_progress` means two tabs raced the sign-in. Clear `sessionStorage` + reload.
+
+### Audit log shows every request as `legacy_static`
+
+The Entra middleware branch didn't install. Most likely `[api.auth.entra].enabled` is false or the config failed TOML resolution at startup. Re-check logs for the validator startup line. See [`docs/design-docs/entra-audit-log.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-audit-log.md) for the full audit-event shape.
+
+## Related
+
+- [`entra-app-registrations.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-app-registrations.md) — app registration schema, redirect URIs, API permissions, role claims
+- [`entra-backfill-strategy.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-backfill-strategy.md) — no-auto-broadening policy for pre-existing resources when Entra is enabled on an established deployment
+- [`entra-audit-log.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-audit-log.md) — hash-chained audit log, WORM export modes, SOC 2 CC6.6 separation-of-duties
+- [`entra-role-permission-matrix.md`](https://github.com/jrmatherly/spacebot/blob/main/docs/design-docs/entra-role-permission-matrix.md) — which app roles grant which capabilities
+- [Secret Store](/docs/secrets) — how `secret:` and `env:` references resolve in the config block above

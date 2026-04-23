@@ -32,6 +32,43 @@ export function getApiBase(): string {
 	return BASE_PATH + "/api";
 }
 
+/**
+ * Auth token provider closure. Phase 6 Task 6.A.5 wires this slot from
+ * `AuthGate.tsx`: on successful MSAL sign-in, AuthGate calls
+ * `setAuthTokenProvider(async () => msal.acquireTokenSilent(...).accessToken)`,
+ * and from that point forward every outbound API call can grab a fresh
+ * Bearer token via `getAuthToken()`.
+ *
+ * The actual `authedFetch()` wrapper + per-call-site migration lands in
+ * Task 6.B.1 (PR B). This module-level slot is introduced in PR A so
+ * AuthGate's wiring has a real consumer and so PR B's rollout is a pure
+ * mechanical edit with no API-surface churn.
+ *
+ * When unset (static-token mode, pre-sign-in, or deployments without
+ * Entra), `getAuthToken()` returns `null` and callers fall back to their
+ * existing header (none, or a server-side-resolved static token).
+ */
+type AuthTokenProvider = () => Promise<string | null>;
+let _authTokenProvider: AuthTokenProvider | null = null;
+
+export function setAuthTokenProvider(provider: AuthTokenProvider | null): void {
+	_authTokenProvider = provider;
+}
+
+export async function getAuthToken(): Promise<string | null> {
+	if (!_authTokenProvider) return null;
+	try {
+		return await _authTokenProvider();
+	} catch (err) {
+		// Log-but-don't-throw: the caller should behave as if no token is
+		// available rather than propagating auth-subsystem errors up into
+		// arbitrary API request code paths. authedFetch (Task 6.B.1) will
+		// layer retry/interactive-fallback on top of this primitive.
+		console.error("[api-client] auth token provider threw:", err);
+		return null;
+	}
+}
+
 import type * as Types from "./types";
 
 // Re-export commonly used types from schema for backward compatibility

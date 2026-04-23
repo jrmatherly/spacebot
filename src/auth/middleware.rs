@@ -22,9 +22,11 @@ pub async fn entra_auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Health bypass, matching the static-token middleware.
     let path = request.uri().path().to_string();
-    if path == "/api/health" || path == "/health" {
+    // Auth-bypass allowlist shared with the static-token branch
+    // (src/api/server.rs `api_auth_middleware`). See `crate::auth::bypass`
+    // for the full list and the invariant (sorted, unique, exact-match only).
+    if crate::auth::bypass::is_auth_bypassed(&path) {
         return next.run(request).await;
     }
 

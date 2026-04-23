@@ -92,6 +92,31 @@ async fn health_bypasses_auth_even_without_token() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
+/// Phase 6 Task 6.A.1b — the SPA bootstrap endpoint must bypass the
+/// bearer-token check. The allowlist is a single line at
+/// `src/api/server.rs` (companion at `src/auth/middleware.rs`) and a
+/// future refactor could silently drop it; this assertion exists so the
+/// regression would fail CI rather than shipping.
+#[tokio::test]
+async fn auth_config_bypasses_token_check() {
+    let state = Arc::new(ApiState::new_for_tests(Some("super-secret-token".into())));
+    let app = build_test_router(state);
+    let res = app
+        .oneshot(req_with_auth("/api/auth/config", None))
+        .await
+        .unwrap();
+    // No Authorization header present; the handler must still be reached.
+    // Content-wise the response is `entra_enabled: false` for a test state
+    // without Entra wired, so 200 is the expected status. The critical
+    // assertion is "not 401".
+    assert_ne!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "/api/auth/config must bypass the bearer-token check"
+    );
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn pass_through_when_no_token_configured() {
     let state = Arc::new(ApiState::new_for_tests(None));

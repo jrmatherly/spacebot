@@ -777,6 +777,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/auth/config` — unprotected endpoint that returns SPA bootstrap
+         *     values. Reaches the handler without an `Authorization` header because
+         *     both auth middlewares include this path in their allowlist (see module
+         *     doc comment).
+         */
+        get: operations["get_auth_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bindings": {
         parameters: {
             query?: never;
@@ -2641,6 +2663,22 @@ export interface components {
             original_filename: string;
             /** Format: int64 */
             size_bytes: number;
+        };
+        /**
+         * @description SPA-safe MSAL bootstrap payload. Never contains secrets — the three
+         *     identifiers below are listed in the Entra tenant's OIDC discovery
+         *     document and the scope string is a public contract.
+         */
+        AuthConfigResponse: {
+            authority?: string | null;
+            client_id?: string | null;
+            /**
+             * @description `true` when the daemon has a resolved `[api.auth.entra]` config. The
+             *     SPA branches on this: `false` means fall back to static-token mode.
+             */
+            entra_enabled: boolean;
+            scopes?: string[] | null;
+            tenant_id?: string | null;
         };
         AuthorizedKeyRequest: {
             public_key: string;
@@ -6632,6 +6670,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_auth_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MSAL bootstrap config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthConfigResponse"];
+                };
             };
         };
     };

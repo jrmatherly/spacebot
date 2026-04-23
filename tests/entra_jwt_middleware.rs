@@ -274,6 +274,32 @@ mod router_level {
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
+    /// Phase 6 C3 remediation: lock the Entra-JWT middleware allowlist
+    /// entry for `/api/auth/config`. Mirrors
+    /// `auth_config_bypasses_token_check` in `tests/api_auth_middleware.rs`
+    /// (which covers the static-token branch). The allowlist is a single
+    /// path literal hand-maintained across the two middleware branches —
+    /// a future refactor that drops it from one branch would only be
+    /// caught if both branches have a regression test.
+    #[tokio::test]
+    async fn auth_config_bypasses_entra_jwt_check() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        let res = app
+            .oneshot(req_with_auth("/api/auth/config", None))
+            .await
+            .unwrap();
+        // No Authorization header and no valid JWT — must still reach the
+        // handler. Critical assertion is "not 401"; the 200 follow-up
+        // tightens against regressions that surface as 500/404.
+        assert_ne!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "/api/auth/config must bypass the Entra JWT check"
+        );
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
     #[tokio::test]
     async fn middleware_rejects_non_bearer_scheme() {
         let tenant = MockTenant::start().await;
