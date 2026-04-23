@@ -1413,6 +1413,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messaging/disconnect": {
         parameters: {
             query?: never;
@@ -3398,6 +3414,31 @@ export interface components {
             state: components["schemas"]["McpConnectionState"];
             transport: string;
         };
+        MeResponse: {
+            display_email?: string | null;
+            display_name?: string | null;
+            /** @description Base64 data URL for the user's Graph profile photo, or None. */
+            display_photo_data_url?: string | null;
+            groups: string[];
+            groups_overage: boolean;
+            /**
+             * @description Computed initials (1-3 chars) derived from display_name. Present
+             *     when display_photo_data_url is None, so the SPA never has to
+             *     branch on both absent.
+             */
+            initials?: string | null;
+            oid: string;
+            principal_key: string;
+            /**
+             * @description Typed enum so downstream TypeScript clients get a string-literal
+             *     union (`"user" | "service_principal" | "system" | "legacy_static"`)
+             *     instead of an opaque string. Snake-case serialization inherited
+             *     from `PrincipalType`'s `#[serde(rename_all = "snake_case")]`.
+             */
+            principal_type: components["schemas"]["PrincipalType"];
+            roles: string[];
+            tid: string;
+        };
         MemoriesListResponse: {
             memories: components["schemas"]["Memory"][];
             total: number;
@@ -3715,6 +3756,15 @@ export interface components {
             name: string;
             tags?: string[];
         };
+        /**
+         * @description Stable identifier category for the authenticated principal. The four
+         *     variants map to disjoint authz paths: human users authenticate via
+         *     delegated Entra tokens, service principals via client-credentials
+         *     grant, the system (cortex) principal constructs internally, and the
+         *     static-token branch represents operator-level coarse access.
+         * @enum {string}
+         */
+        PrincipalType: "user" | "system" | "service_principal" | "legacy_static";
         ProcessTokens: {
             /** Format: int64 */
             cache_read: number;
@@ -8170,6 +8220,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["McpAgentStatus"][];
                 };
+            };
+        };
+    };
+    me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed-in principal identity + groups + photo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description No valid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

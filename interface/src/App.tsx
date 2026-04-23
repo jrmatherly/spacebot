@@ -4,6 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { AuthGate } from "@/auth/AuthGate";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConnectionScreen } from "@/components/ConnectionScreen";
+import { UserMenu } from "@/components/UserMenu";
 import { LiveContextProvider } from "@/hooks/useLiveContext";
 import { ServerProvider, useServer } from "@/hooks/useServer";
 import { router } from "@/router";
@@ -34,6 +35,15 @@ function AppShell() {
 
 	return (
 		<LiveContextProvider onBootstrapped={onBootstrapped}>
+			<header
+				style={{
+					display: "flex",
+					justifyContent: "flex-end",
+					borderBottom: "1px solid var(--color-border, #e5e7eb)",
+				}}
+			>
+				<UserMenu />
+			</header>
 			<RouterProvider router={router} />
 		</LiveContextProvider>
 	);

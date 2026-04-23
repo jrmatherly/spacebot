@@ -20,7 +20,10 @@ import {
 	type PublicClientApplication,
 } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
-import { setAuthTokenProvider } from "@spacebot/api-client/client";
+import {
+	setAuthTokenProvider,
+	type AuthExhaustedDetail,
+} from "@spacebot/api-client/client";
 import { useEffect, useState, type ReactNode } from "react";
 import { getActiveScopes, getMsalInstance, loadAuthConfig } from "./msalConfig";
 
@@ -35,6 +38,26 @@ type GateState =
 
 export function AuthGate({ children }: { children: ReactNode }) {
 	const [state, setState] = useState<GateState>({ kind: "loading" });
+
+	// authedFetch dispatches `spacebot:auth-exhausted` on 401
+	// refresh-exhaustion. SSE via fetchEventSource(fetch: authedFetch)
+	// inherits the same dispatch. A single window-level listener
+	// covers both REST and SSE.
+	//
+	// TODO: replace console.warn with a toast banner + "Re-sign in"
+	// CTA wired to acquireTokenRedirect. Trigger: when the
+	// notifications surface lands (tracked as a Phase 7 scope item).
+	useEffect(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent<AuthExhaustedDetail>).detail;
+			console.warn(
+				`[authedFetch] session expired at ${detail.url} (${detail.reason})`,
+			);
+		};
+		window.addEventListener("spacebot:auth-exhausted", handler);
+		return () =>
+			window.removeEventListener("spacebot:auth-exhausted", handler);
+	}, []);
 
 	useEffect(() => {
 		let cancelled = false;

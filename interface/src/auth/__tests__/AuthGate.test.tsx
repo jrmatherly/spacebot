@@ -1,12 +1,9 @@
-// Phase 6 Task 6.A.5 — AuthGate state machine tests.
+// AuthGate state machine tests.
 //
-// Covers the two happy-path branches of the gate:
-//   1. entra_disabled → children render directly (static-token deployments)
-//   2. loading → spinner visible before async init resolves
-//
-// The unauthenticated + authenticated branches are exercised by
-// Task 6.C.5's mockMsal-backed integration tests; at this stage we only
-// assert the pre-MSAL states because msalConfig is mocked here.
+// Covers the gate's branches that are reachable without a real MSAL
+// tenant: entra_disabled, loading, and the malformed + fetch-failure
+// error states. The unauthenticated + authenticated branches are
+// exercised by the mockMsal-backed integration tests.
 
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -82,11 +79,10 @@ describe("AuthGate", () => {
 		});
 	});
 
-	/// PR #107 review I4/I5 remediation: when /api/auth/config reports
-	/// `entra_enabled: true` but omits identifiers, AuthGate renders an
-	/// operator-visible error banner instead of fail-open to
-	/// `entra_disabled` (which previously masked daemon config bugs
-	/// behind a 401-loop UI).
+	/// When /api/auth/config reports `entra_enabled: true` but omits
+	/// identifiers, AuthGate renders an operator-visible error banner
+	/// instead of falling open to `entra_disabled` (which previously
+	/// masked daemon config bugs behind a 401-loop UI).
 	it("renders an error banner when entra is configured but malformed", async () => {
 		vi.mocked(msalConfig.loadAuthConfig).mockResolvedValueOnce({
 			entra_enabled: true,
@@ -113,9 +109,9 @@ describe("AuthGate", () => {
 		expect(screen.queryByText("child-content")).not.toBeInTheDocument();
 	});
 
-	/// PR #107 review I4 remediation: loadAuthConfig failure (e.g., 500
-	/// from /api/auth/config, or a network error) now surfaces as a
-	/// diagnostic banner, not a stuck spinner or a silent fail-open.
+	/// loadAuthConfig failure (e.g., 500 from /api/auth/config, or a
+	/// network error) surfaces as a diagnostic banner, not a stuck
+	/// spinner or a silent fail-open.
 	it("renders an error banner when loadAuthConfig throws", async () => {
 		vi.mocked(msalConfig.loadAuthConfig).mockRejectedValueOnce(
 			new Error("auth-config fetch failed: 500 Internal Server Error"),
@@ -132,5 +128,72 @@ describe("AuthGate", () => {
 		expect(banner).toHaveTextContent(/500/);
 		expect(screen.queryByText("child-content")).not.toBeInTheDocument();
 		errSpy.mockRestore();
+	});
+
+	// Phase 6 PR C: authedFetch (PR B) dispatches spacebot:auth-exhausted
+	// on 401 refresh-exhaustion. SSE via fetchEventSource inherits the
+	// same dispatch. AuthGate's global listener surfaces both to
+	// console.warn. Phase 7 upgrades to a toast banner; until then, this
+	// test pins the plumbing so a refactor that removes the listener is
+	// caught immediately.
+	it("logs a warn when spacebot:auth-exhausted fires on the window", async () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => {});
+		render(
+			<AuthGate>
+				<div>child-content</div>
+			</AuthGate>,
+		);
+		// Wait for AuthGate to finish async init and attach the listener.
+		await waitFor(() => {
+			expect(screen.getByText("child-content")).toBeInTheDocument();
+		});
+
+		window.dispatchEvent(
+			new CustomEvent("spacebot:auth-exhausted", {
+				detail: {
+					url: "http://api/some-endpoint",
+					reason: "refresh_failed",
+				},
+			}),
+		);
+
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining("http://api/some-endpoint"),
+		);
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining("refresh_failed"),
+		);
+		warnSpy.mockRestore();
+	});
+
+	// Unmount must remove the listener or future dispatches log to
+	// nowhere while still consuming test resources. Catches a regression
+	// where the useEffect returns the wrong cleanup (e.g., returns the
+	// handler itself instead of a remove-call).
+	it("removes the spacebot:auth-exhausted listener on unmount", async () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => {});
+		const { unmount } = render(
+			<AuthGate>
+				<div>child-content</div>
+			</AuthGate>,
+		);
+		await waitFor(() => {
+			expect(screen.getByText("child-content")).toBeInTheDocument();
+		});
+		unmount();
+		warnSpy.mockClear();
+
+		window.dispatchEvent(
+			new CustomEvent("spacebot:auth-exhausted", {
+				detail: { url: "http://api/after-unmount", reason: "refresh_failed" },
+			}),
+		);
+
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 });

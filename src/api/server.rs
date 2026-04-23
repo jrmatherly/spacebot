@@ -3,7 +3,7 @@
 use super::state::ApiState;
 use super::{
     activity, agents, attachments, audit, auth_config, bindings, channels, config, cortex, cron,
-    factory, ingest, links, mcp, memories, messaging, models, notifications, opencode_proxy,
+    factory, ingest, links, mcp, me, memories, messaging, models, notifications, opencode_proxy,
     portal, projects, providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
     workers,
 };
@@ -55,6 +55,11 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Auth bypass for this path is wired in the middleware allowlists
         // below (static-token) and in src/auth/middleware.rs (Entra JWT).
         .routes(routes!(auth_config::get_auth_config))
+        // Consolidated identity endpoint (Phase 6 PR C, A-18). Returns
+        // principal_key + tid/oid + roles + groups + photo/initials in
+        // one payload so the SPA's useMe hook does not have to assemble
+        // from multiple endpoints.
+        .routes(routes!(me::me))
         .routes(routes!(system::idle))
         .routes(routes!(system::status))
         .routes(routes!(system::storage_status))

@@ -97,18 +97,10 @@ export async function getMsalInstance(): Promise<MsalInstanceResult> {
 			return { ok: false, reason: "malformed", missing };
 		}
 
-		// Mock mode for local dev / CI. `mockMsal.ts` ships in Task 6.C.5;
-		// this branch only fires when VITE_AUTH_MOCK=1, which is set
-		// explicitly in dev env vars and never in production builds.
-		//
-		// The dynamic-import target is intentionally typed as `any` via
-		// the ts-expect-error pragma: `./mockMsal` does not exist yet, and
-		// writing a fallback .d.ts stub solely to satisfy tsc would leak
-		// Task 6.C.5's API shape up-stack. Error narrowing happens at
-		// runtime in Task 6.C.5's tests.
+		// Mock mode for local dev / CI. Activated by VITE_AUTH_MOCK=1,
+		// which is set in dev env vars and never in production builds.
+		// The dynamic import keeps the mock out of the production bundle.
 		if (import.meta.env.VITE_AUTH_MOCK === "1") {
-			// TODO(6.C.5): remove @ts-expect-error once ./mockMsal exists.
-			// @ts-expect-error Task 6.C.5 creates ./mockMsal; guarded by runtime env flag
 			const mod = await import(/* @vite-ignore */ "./mockMsal");
 			cachedInstance = (await mod.getMockMsalInstance(
 				cfg,

@@ -10,7 +10,9 @@ use std::sync::Arc;
 /// delegated Entra tokens, service principals via client-credentials
 /// grant, the system (cortex) principal constructs internally, and the
 /// static-token branch represents operator-level coarse access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalType {
     /// A human user, identified by Entra `tid` + `oid`.
