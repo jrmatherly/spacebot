@@ -2616,6 +2616,12 @@ export interface components {
             role?: string | null;
             workspace: string;
         };
+        /**
+         * @description Phase 7 PR 1.5 Task 7.5a wrapper. Keeps `AgentInfo` unchanged (it's a
+         *     config-loader type used well beyond the list endpoint) while surfacing
+         *     the chip fields additively on the wire.
+         */
+        AgentListItem: components["schemas"]["AgentInfo"] & components["schemas"]["VisibilityTag"];
         AgentMcpResponse: {
             servers: components["schemas"]["McpServerStatus"][];
         };
@@ -2659,7 +2665,7 @@ export interface components {
             profile?: null | components["schemas"]["AgentProfile"];
         };
         AgentsResponse: {
-            agents: components["schemas"]["AgentInfo"][];
+            agents: components["schemas"]["AgentListItem"][];
         };
         ApproveRequest: {
             approved_by?: string | null;
@@ -3173,8 +3179,14 @@ export interface components {
             last_executed_at?: string | null;
             prompt: string;
             run_once: boolean;
+            team_name?: string | null;
             /** Format: int64 */
             timeout_secs?: number | null;
+            /**
+             * @description Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
+             *     `None` encodes "unowned/legacy" per the no-auto-broadening policy.
+             */
+            visibility?: string | null;
         };
         CronListResponse: {
             jobs: components["schemas"]["CronJobWithStats"][];
@@ -3456,7 +3468,7 @@ export interface components {
             tid: string;
         };
         MemoriesListResponse: {
-            memories: components["schemas"]["Memory"][];
+            memories: components["schemas"]["MemoryListItem"][];
             total: number;
         };
         MemoriesSearchResponse: {
@@ -3494,6 +3506,12 @@ export interface components {
             nodes: components["schemas"]["Memory"][];
             total: number;
         };
+        /**
+         * @description Wrapper around `Memory` that carries Phase 7 enrichment fields inline
+         *     via `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         */
+        MemoryListItem: components["schemas"]["Memory"] & components["schemas"]["VisibilityTag"];
         /**
          * @description Memory mode controls how memory is used in a conversation.
          * @enum {string}
@@ -4174,8 +4192,13 @@ export interface components {
             message: string;
             success: boolean;
         };
+        /**
+         * @description Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
+         *     inline via `#[serde(flatten)]`. Additive on the wire.
+         */
+        TaskListItem: components["schemas"]["Task"] & components["schemas"]["VisibilityTag"];
         TaskListResponse: {
-            tasks: components["schemas"]["Task"][];
+            tasks: components["schemas"]["TaskListItem"][];
         };
         /** @enum {string} */
         TaskPriority: "critical" | "high" | "medium" | "low";
@@ -4524,6 +4547,23 @@ export interface components {
             /** Format: int64 */
             total_rows: number;
             valid: boolean;
+        };
+        /**
+         * @description Per-item enrichment attached to list responses alongside the domain type.
+         *
+         *     Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes "unowned/legacy"
+         *     per the no-auto-broadening policy in `docs/design-docs/entra-backfill-
+         *     strategy.md`. The SPA renders `None` as "Legacy" rather than defaulting
+         *     to "personal" (which would contradict Phase 4 authz, where unowned
+         *     resources are admin-only). Both fields are additive: handlers that do
+         *     not enrich pass `VisibilityTag::default()`, which serializes to `{}`
+         *     via `skip_serializing_if`.
+         */
+        VisibilityTag: {
+            /** @description Team display name when `visibility == Some("team")`; absent otherwise. */
+            team_name?: string | null;
+            /** @description `"personal"`, `"team"`, `"org"`, or absent (unowned/legacy). */
+            visibility?: string | null;
         };
         WarmupSection: {
             eager_embedding_load: boolean;
