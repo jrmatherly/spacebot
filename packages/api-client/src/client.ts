@@ -112,6 +112,14 @@ export type {
 	// via `just typegen`.
 	MemoryItem,
 	MemoriesListResponse,
+	// Tasks (Phase 7 PR 3 Task 7.8 alias swap). TaskItem aliases the
+	// generated `TaskListItem` (Task & VisibilityTag). TaskResponse
+	// retains the bare `Task` domain type because chips live on list
+	// rows, not detail views.
+	TaskItem,
+	TaskListResponse,
+	TaskResponse,
+	TaskActionResponse,
 	Association,
 	RelationType,
 	MemoryGraphResponse,
@@ -160,6 +168,14 @@ import type {
 // In-file use of Memory-enriched types. The same aliases are re-exported
 // in the block above so consumers import from `@spacebot/api-client/client`.
 import type { MemoryItem, MemoriesListResponse } from "./types";
+
+// In-file use of Task types so call-site return annotations resolve.
+// Same aliases are re-exported in the block above.
+import type {
+	TaskListResponse,
+	TaskResponse,
+	TaskActionResponse,
+} from "./types";
 
 export type { TopologyAgent, TopologyLink, TopologyGroup, TopologyHuman, TopologyResponse };
 
@@ -1032,39 +1048,11 @@ export interface TaskSubtask {
 	completed: boolean;
 }
 
-export interface TaskItem {
-	id: string;
-	task_number: number;
-	title: string;
-	description?: string;
-	status: TaskStatus;
-	priority: TaskPriority;
-	owner_agent_id: string;
-	assigned_agent_id: string;
-	subtasks: TaskSubtask[];
-	metadata: Record<string, unknown>;
-	source_memory_id?: string;
-	worker_id?: string;
-	created_by: string;
-	approved_at?: string;
-	approved_by?: string;
-	created_at: string;
-	updated_at: string;
-	completed_at?: string;
-}
-
-export interface TaskListResponse {
-	tasks: TaskItem[];
-}
-
-export interface TaskResponse {
-	task: TaskItem;
-}
-
-export interface TaskActionResponse {
-	success: boolean;
-	message: string;
-}
+// TaskItem, TaskListResponse, TaskResponse, and TaskActionResponse are
+// exported from ./types as aliases for the generated schema entries
+// (`TaskListItem` for list rows, bare `Task` for detail responses).
+// Consumers import them through the re-export block near the top of
+// this file, mirroring the `MemoryItem` precedent.
 
 export interface CreateTaskRequest {
 	owner_agent_id: string;

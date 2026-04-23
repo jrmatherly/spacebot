@@ -312,7 +312,7 @@ export function GlobalTasks() {
 						onClose={() => setActiveTaskId(null)}
 					/>
 					<GithubSection
-						metadata={(activeTask as unknown as TaskItem).metadata}
+						metadata={activeTask.metadata as Record<string, unknown>}
 					/>
 				</div>
 			)}

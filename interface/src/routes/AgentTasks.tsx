@@ -224,7 +224,7 @@ export function AgentTasks({agentId}: {agentId: string}) {
 					/>
 					{/* GitHub metadata (not part of the shared TaskDetail) */}
 					<GithubSection
-						metadata={(activeTask as unknown as TaskItem).metadata}
+						metadata={activeTask.metadata as Record<string, unknown>}
 					/>
 				</div>
 			)}
