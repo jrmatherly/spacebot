@@ -90,8 +90,11 @@ describe("useMe", () => {
 
 		const { result } = renderHook(() => useMe(), { wrapper });
 		await waitFor(() => expect(result.current.isError).toBe(true));
-		expect((result.current.error as Error).message).toBe(
-			"API error: malformed JSON from /me",
+		// Prefix is fixed; parse-error detail is appended (e.g.,
+		// `: Unexpected token '<' ... is not valid JSON`). The prefix
+		// is what downstream listeners narrow on.
+		expect((result.current.error as Error).message).toMatch(
+			/^API error: malformed JSON from \/me/,
 		);
 	});
 });

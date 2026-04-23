@@ -28,12 +28,17 @@ export function useMe() {
 				return (await res.json()) as MeResponse;
 			} catch (e) {
 				// Distinguish malformed daemon response from network
-				// failure. Preserving the original via `cause` keeps the
-				// "unexpected token at position 0" detail operators need
-				// to diagnose a reverse-proxy injecting HTML into JSON.
-				throw new Error(`API error: malformed JSON from ${path}`, {
-					cause: e,
-				});
+				// failure. Fold the original parse-error message into
+				// the thrown message so operators see the "unexpected
+				// token at position 0" detail needed to diagnose a
+				// reverse-proxy injecting HTML into JSON. (TS lib
+				// target is ES2020; the Error(message, {cause})
+				// constructor landed in ES2022, so preserve the detail
+				// via string concatenation instead.)
+				const detail = e instanceof Error ? `: ${e.message}` : "";
+				throw new Error(
+					`API error: malformed JSON from ${path}${detail}`,
+				);
 			}
 		},
 		staleTime: 5 * 60_000,
@@ -85,9 +90,12 @@ export function useTeams(opts: { enabled?: boolean } = {}) {
 			try {
 				return (await res.json()) as TeamSummary[];
 			} catch (e) {
-				throw new Error(`API error: malformed JSON from ${path}`, {
-					cause: e,
-				});
+				// Same ES2020-target workaround as useMe above: fold the
+				// original parse error into the thrown message.
+				const detail = e instanceof Error ? `: ${e.message}` : "";
+				throw new Error(
+					`API error: malformed JSON from ${path}${detail}`,
+				);
 			}
 		},
 		// Default enabled lets existing callers (and the hook-only
