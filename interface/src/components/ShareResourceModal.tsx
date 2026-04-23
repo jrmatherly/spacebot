@@ -3,6 +3,7 @@ import type { Visibility } from "./VisibilityChip";
 
 export function ShareResourceModal({
 	resourceType,
+	resourceId,
 	currentVisibility,
 	teams,
 	onSubmit,
@@ -23,6 +24,8 @@ export function ShareResourceModal({
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	const descriptionId = `share-description-${resourceType}-${resourceId}`;
+
 	const onConfirm = async () => {
 		if (visibility === "team" && !teamId) {
 			setError("Select a team.");
@@ -36,15 +39,34 @@ export function ShareResourceModal({
 			});
 			onClose();
 		} catch (e) {
-			setError(String(e));
+			// Narrow to API errors (authedFetch throws `Error("API error ...")`).
+			// Programmer errors (TypeError, unmount-race, missing provider) are
+			// rethrown so the React error boundary sees them. Log the full
+			// Error before narrowing so operators have a stack trace in the
+			// browser console even when only a human-readable message reaches
+			// the dialog.
+			const isApiError = e instanceof Error && e.message.startsWith("API error");
+			if (!isApiError) {
+				console.error("ShareResourceModal: non-API error in onSubmit", e);
+				throw e;
+			}
+			console.error("ShareResourceModal: share submit failed", e);
+			setError(e.message);
 		} finally {
 			setSubmitting(false);
 		}
 	};
 
 	return (
-		<div role="dialog" aria-labelledby="share-title">
+		<div
+			role="dialog"
+			aria-labelledby="share-title"
+			aria-describedby={descriptionId}
+		>
 			<h2 id="share-title">Share {resourceType}</h2>
+			<p id={descriptionId} className="sr-only">
+				Change the visibility of {resourceType} {resourceId}.
+			</p>
 			<fieldset>
 				<legend>Visibility</legend>
 				{(["personal", "team", "org"] as Visibility[]).map((v) => (
