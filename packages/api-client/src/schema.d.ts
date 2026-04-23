@@ -1814,6 +1814,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/resources/{resource_type}/{resource_id}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_visibility"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/secrets": {
         parameters: {
             query?: never;
@@ -4081,6 +4097,15 @@ export interface components {
             agent_id: string;
             archived: boolean;
             channel_id: string;
+        };
+        /**
+         * @description Payload accepted by `PUT /api/resources/{type}/{id}/visibility`. Keep the
+         *     wire shape snake_case (Rust default) so the TS client can pass
+         *     `{visibility, shared_with_team_id}` without custom serde rules.
+         */
+        SetVisibilityRequest: {
+            shared_with_team_id?: string | null;
+            visibility: string;
         };
         SkillContentResponse: {
             base_dir: string;
@@ -9076,6 +9101,61 @@ export interface operations {
                 };
             };
             /** @description Provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_visibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Resource type (memory, task, wiki, cron, portal, agent, etc.) */
+                resource_type: string;
+                /** @description Resource identifier */
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Visibility updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid visibility value or missing team_id for team scope */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authenticated but not authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found or caller is not owner/admin */
             404: {
                 headers: {
                     [name: string]: unknown;
