@@ -88,7 +88,18 @@ pub async fn register_agent_ownership(
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct AgentsResponse {
-    agents: Vec<AgentInfo>,
+    agents: Vec<AgentListItem>,
+}
+
+/// Phase 7 PR 1.5 Task 7.5a wrapper. Keeps `AgentInfo` unchanged (it's a
+/// config-loader type used well beyond the list endpoint) while surfacing
+/// the chip fields additively on the wire.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct AgentListItem {
+    #[serde(flatten)]
+    agent: AgentInfo,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -349,10 +360,36 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
     // authenticated caller. Agent configs are lower-sensitivity than
     // memories or portal conversations (no private content), so this
     // matches the `list_memories` / `list_tasks` unfiltered-path TODO.
-    let agents = state.agent_configs.load();
-    Json(AgentsResponse {
-        agents: agents.as_ref().clone(),
-    })
+    let configs = state.agent_configs.load();
+
+    // Phase 7 PR 1.5 Task 7.5a. Agents are in-memory (ArcSwap<Vec<AgentInfo>>
+    // loaded from TOML config at startup), so no SQL query exists to
+    // extend with a JOIN. Enrichment is a secondary lookup against the
+    // instance pool keyed on the agent's id.
+    let ids: Vec<String> = configs.iter().map(|a| a.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "agent", &ids).await
+    } else {
+        // I4: mirror the authz-skipped pattern.
+        tracing::warn!(
+            handler = "agents",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+    let agents: Vec<AgentListItem> = configs
+        .iter()
+        .map(|agent| {
+            let tag = tags.get(&agent.id).cloned().unwrap_or_default();
+            AgentListItem {
+                agent: agent.clone(),
+                tag,
+            }
+        })
+        .collect();
+
+    Json(AgentsResponse { agents })
 }
 
 /// List MCP connection status for an agent.

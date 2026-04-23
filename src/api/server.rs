@@ -4,8 +4,8 @@ use super::state::ApiState;
 use super::{
     activity, agents, attachments, audit, auth_config, bindings, channels, config, cortex, cron,
     factory, ingest, links, mcp, me, memories, messaging, models, notifications, opencode_proxy,
-    portal, projects, providers, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
-    workers,
+    portal, projects, providers, resources, secrets, settings, skills, ssh, system, tasks, tools,
+    usage, wiki, workers,
 };
 
 use axum::Json;
@@ -174,6 +174,9 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         .routes(routes!(projects::delete_repo))
         .routes(routes!(projects::create_worktree))
         .routes(routes!(projects::delete_worktree))
+        // Resource visibility mutation (Phase 7 PR 1.5 Task 7.5).
+        // Owner + admin can rotate visibility and rebind shared_with_team_id.
+        .routes(routes!(resources::set_visibility))
         // Ingest routes
         .routes(routes!(
             ingest::list_ingest_files,

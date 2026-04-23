@@ -8,5 +8,12 @@
     "./authedFetch": "./src/authedFetch.ts",
     "./types": "./src/types.ts",
     "./schema": "./src/schema.d.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3"
   }
 }

@@ -120,7 +120,17 @@ pub(super) struct AssignRequest {
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct TaskListResponse {
-    tasks: Vec<crate::tasks::Task>,
+    tasks: Vec<TaskListItem>,
+}
+
+/// Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
+/// inline via `#[serde(flatten)]`. Additive on the wire.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct TaskListItem {
+    #[serde(flatten)]
+    task: crate::tasks::Task,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -290,7 +300,7 @@ pub(super) async fn list_tasks(
     let status = parse_status(query.status.as_deref())?;
     let priority = parse_priority(query.priority.as_deref())?;
 
-    let tasks = store
+    let tasks_raw = store
         .list(crate::tasks::TaskListFilter {
             agent_id: query.agent_id,
             owner_agent_id: query.owner_agent_id,
@@ -305,6 +315,35 @@ pub(super) async fn list_tasks(
             tracing::warn!(%error, "failed to list tasks");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // Phase 7 PR 1.5 Task 7.5a. Uniform post-fetch enrichment pattern
+    // across all 4 list handlers (Memories, Tasks, Cron, Agents).
+    // Tasks' TaskStore is the only one that shares state.instance_pool
+    // (where resource_ownership + teams live), so inline LEFT JOIN is
+    // architecturally feasible here; the other 3 handlers route through
+    // per-agent pools or in-memory config where cross-DB JOIN is
+    // unsupported by SQLite. We chose post-fetch enrichment for all 4
+    // so readers do not context-switch on backing-store choice.
+    let ids: Vec<String> = tasks_raw.iter().map(|t| t.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
+    } else {
+        // I4: mirror the authz-skipped pattern. Silent enrichment miss at
+        // the startup window would leave every task list unchipped.
+        tracing::warn!(
+            handler = "tasks",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+    let tasks: Vec<TaskListItem> = tasks_raw
+        .into_iter()
+        .map(|task| {
+            let tag = tags.get(&task.id).cloned().unwrap_or_default();
+            TaskListItem { task, tag }
+        })
+        .collect();
 
     Ok(Json(TaskListResponse { tasks }))
 }

@@ -1814,6 +1814,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/resources/{resource_type}/{resource_id}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_visibility"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/secrets": {
         parameters: {
             query?: never;
@@ -2600,6 +2616,12 @@ export interface components {
             role?: string | null;
             workspace: string;
         };
+        /**
+         * @description Phase 7 PR 1.5 Task 7.5a wrapper. Keeps `AgentInfo` unchanged (it's a
+         *     config-loader type used well beyond the list endpoint) while surfacing
+         *     the chip fields additively on the wire.
+         */
+        AgentListItem: components["schemas"]["AgentInfo"] & components["schemas"]["VisibilityTag"];
         AgentMcpResponse: {
             servers: components["schemas"]["McpServerStatus"][];
         };
@@ -2643,7 +2665,7 @@ export interface components {
             profile?: null | components["schemas"]["AgentProfile"];
         };
         AgentsResponse: {
-            agents: components["schemas"]["AgentInfo"][];
+            agents: components["schemas"]["AgentListItem"][];
         };
         ApproveRequest: {
             approved_by?: string | null;
@@ -3157,8 +3179,14 @@ export interface components {
             last_executed_at?: string | null;
             prompt: string;
             run_once: boolean;
+            team_name?: string | null;
             /** Format: int64 */
             timeout_secs?: number | null;
+            /**
+             * @description Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
+             *     `None` encodes "unowned/legacy" per the no-auto-broadening policy.
+             */
+            visibility?: string | null;
         };
         CronListResponse: {
             jobs: components["schemas"]["CronJobWithStats"][];
@@ -3440,7 +3468,7 @@ export interface components {
             tid: string;
         };
         MemoriesListResponse: {
-            memories: components["schemas"]["Memory"][];
+            memories: components["schemas"]["MemoryListItem"][];
             total: number;
         };
         MemoriesSearchResponse: {
@@ -3478,6 +3506,12 @@ export interface components {
             nodes: components["schemas"]["Memory"][];
             total: number;
         };
+        /**
+         * @description Wrapper around `Memory` that carries Phase 7 enrichment fields inline
+         *     via `#[serde(flatten)]`. Additive on the wire: clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag.
+         */
+        MemoryListItem: components["schemas"]["Memory"] & components["schemas"]["VisibilityTag"];
         /**
          * @description Memory mode controls how memory is used in a conversation.
          * @enum {string}
@@ -4082,6 +4116,20 @@ export interface components {
             archived: boolean;
             channel_id: string;
         };
+        /**
+         * @description Payload accepted by `PUT /api/resources/{type}/{id}/visibility`. Keep the
+         *     wire shape snake_case (Rust default) so the TS client can pass
+         *     `{visibility, shared_with_team_id}` without custom serde rules. Visibility
+         *     stays stringly-typed at the deserialization boundary for forward-compat
+         *     (a future fourth variant added in Rust does not break existing TS clients
+         *     deserializing the schema). The [`Self::validate`] method does the
+         *     three-step translation (parse enum + enforce team-has-team-id + extract
+         *     the owned fields) in one place, so the handler body stays single-purpose.
+         */
+        SetVisibilityRequest: {
+            shared_with_team_id?: string | null;
+            visibility: string;
+        };
         SkillContentResponse: {
             base_dir: string;
             content: string;
@@ -4149,8 +4197,13 @@ export interface components {
             message: string;
             success: boolean;
         };
+        /**
+         * @description Phase 7 PR 1.5 Task 7.5a wrapper around `Task` with enrichment fields
+         *     inline via `#[serde(flatten)]`. Additive on the wire.
+         */
+        TaskListItem: components["schemas"]["Task"] & components["schemas"]["VisibilityTag"];
         TaskListResponse: {
-            tasks: components["schemas"]["Task"][];
+            tasks: components["schemas"]["TaskListItem"][];
         };
         /** @enum {string} */
         TaskPriority: "critical" | "high" | "medium" | "low";
@@ -4499,6 +4552,31 @@ export interface components {
             /** Format: int64 */
             total_rows: number;
             valid: boolean;
+        };
+        /**
+         * @description Per-item enrichment attached to list responses alongside the domain type.
+         *
+         *     Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes an unowned resource
+         *     (no `resource_ownership` row) per the no-auto-broadening policy in
+         *     `docs/design-docs/entra-backfill-strategy.md`. The SPA's `VisibilityChip`
+         *     renders `None` via its runtime fallback branch (`"Unknown"` with
+         *     `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
+         *     rather than defaulting to `"personal"`. Defaulting to personal would
+         *     contradict Phase 4 authz, which treats unowned resources as admin-only.
+         *
+         *     Wire shape is two flat fields (`visibility`, `team_name`) because the
+         *     SPA's `VisibilityChip` consumes them as two independent props; nesting
+         *     into a discriminated enum would break the PR-1 component API. Instead,
+         *     fields are private and the invariant `team_name.is_some() ⇒ visibility
+         *     == Some("team")` is enforced at construction by the [`Self::new`]
+         *     builder, so callers cannot emit the illegal `{visibility: None,
+         *     team_name: Some(_)}` shape. (S1 structural narrowing, PR #111 review.)
+         */
+        VisibilityTag: {
+            /** @description Team display name when `visibility == Some("team")`; absent otherwise. */
+            team_name?: string | null;
+            /** @description `"personal"`, `"team"`, `"org"`, or absent for unowned resources. */
+            visibility?: string | null;
         };
         WarmupSection: {
             eager_embedding_load: boolean;
@@ -9076,6 +9154,61 @@ export interface operations {
                 };
             };
             /** @description Provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_visibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Resource type (memory, task, wiki, cron, portal, agent, etc.) */
+                resource_type: string;
+                /** @description Resource identifier */
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Visibility updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid visibility value or missing team_id for team scope */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authenticated but not authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found or caller is not owner/admin */
             404: {
                 headers: {
                     [name: string]: unknown;

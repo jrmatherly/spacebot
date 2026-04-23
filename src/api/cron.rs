@@ -131,6 +131,12 @@ struct CronJobWithStats {
     delivery_failure_count: u64,
     delivery_skipped_count: u64,
     last_executed_at: Option<String>,
+    /// Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
+    /// `None` encodes "unowned/legacy" per the no-auto-broadening policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team_name: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -229,12 +235,36 @@ pub(super) async fn list_cron_jobs(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Phase 7 PR 1.5 Task 7.5a. Batch-enrich visibility + team_name for
+    // the whole page in one roundtrip against the instance pool. Cron
+    // lives in a per-agent CronStore (cron_jobs.db per agent) while
+    // resource_ownership + teams live in the instance pool, and SQLite
+    // does not support cross-database JOIN.
+    let ids: Vec<String> = configs.iter().map(|c| c.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "cron", &ids).await
+    } else {
+        // I4: mirror the authz-skipped pattern.
+        tracing::warn!(
+            handler = "cron",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+
     let mut jobs = Vec::new();
     for config in configs {
         let stats = store
             .get_execution_stats(&config.id)
             .await
             .unwrap_or_default();
+        // VisibilityTag fields are private (S1 narrowing). Use the
+        // accessors; the team_name-only-with-team invariant was
+        // enforced at construction time by VisibilityTag::new.
+        let tag = tags.get(&config.id).cloned().unwrap_or_default();
+        let visibility = tag.visibility().map(str::to_string);
+        let team_name = tag.team_name().map(str::to_string);
 
         jobs.push(CronJobWithStats {
             id: config.id,
@@ -252,6 +282,8 @@ pub(super) async fn list_cron_jobs(
             delivery_failure_count: stats.delivery_failure_count,
             delivery_skipped_count: stats.delivery_skipped_count,
             last_executed_at: stats.last_executed_at,
+            visibility,
+            team_name,
         });
     }
 
@@ -860,4 +892,73 @@ pub(super) async fn toggle_cron(
         success: true,
         message: format!("Cron job '{}' {}", request.cron_id, status),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CronJobWithStats;
+
+    /// S5 (pr-test-analyzer): pin the CronJobWithStats wire shape for
+    /// the Phase 7 enrichment fields. CronJobWithStats inlines
+    /// `visibility` + `team_name` directly instead of flattening a
+    /// VisibilityTag; a future refactor to the wrapper pattern would
+    /// silently change the wire shape. This test freezes the
+    /// skip_serializing_if contract on both fields.
+    #[test]
+    fn visibility_fields_omitted_when_none() {
+        let job = CronJobWithStats {
+            id: "c-1".into(),
+            prompt: "do the thing".into(),
+            cron_expr: None,
+            interval_secs: 60,
+            delivery_target: "bulletin".into(),
+            enabled: true,
+            run_once: false,
+            active_hours: None,
+            timeout_secs: None,
+            execution_success_count: 0,
+            execution_failure_count: 0,
+            delivery_success_count: 0,
+            delivery_failure_count: 0,
+            delivery_skipped_count: 0,
+            last_executed_at: None,
+            visibility: None,
+            team_name: None,
+        };
+        let json = serde_json::to_string(&job).unwrap();
+        assert!(
+            !json.contains("\"visibility\""),
+            "visibility: None must be omitted from wire: {json}"
+        );
+        assert!(
+            !json.contains("\"team_name\""),
+            "team_name: None must be omitted from wire: {json}"
+        );
+    }
+
+    #[test]
+    fn visibility_fields_present_when_some() {
+        let job = CronJobWithStats {
+            id: "c-2".into(),
+            prompt: "do the thing".into(),
+            cron_expr: None,
+            interval_secs: 60,
+            delivery_target: "bulletin".into(),
+            enabled: true,
+            run_once: false,
+            active_hours: None,
+            timeout_secs: None,
+            execution_success_count: 0,
+            execution_failure_count: 0,
+            delivery_success_count: 0,
+            delivery_failure_count: 0,
+            delivery_skipped_count: 0,
+            last_executed_at: None,
+            visibility: Some("team".into()),
+            team_name: Some("Platform".into()),
+        };
+        let json = serde_json::to_string(&job).unwrap();
+        assert!(json.contains("\"visibility\":\"team\""));
+        assert!(json.contains("\"team_name\":\"Platform\""));
+    }
 }

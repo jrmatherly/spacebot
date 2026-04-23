@@ -41,8 +41,19 @@ use std::sync::Arc;
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct MemoriesListResponse {
-    memories: Vec<Memory>,
+    memories: Vec<MemoryListItem>,
     total: usize,
+}
+
+/// Wrapper around `Memory` that carries Phase 7 enrichment fields inline
+/// via `#[serde(flatten)]`. Additive on the wire: clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct MemoryListItem {
+    #[serde(flatten)]
+    memory: Memory,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -256,7 +267,36 @@ pub(super) async fn list_memories(
         })?;
 
     let total = all.len();
-    let memories = all.into_iter().skip(query.offset).collect();
+    let page: Vec<Memory> = all.into_iter().skip(query.offset).collect();
+
+    // Phase 7 PR 1.5 Task 7.5a. Post-fetch enrichment for the per-agent
+    // store: MemoryStore's pool is the per-agent memories.db while
+    // resource_ownership + teams live in the instance pool, and SQLite
+    // does not support cross-database JOIN. Batch-lookup against
+    // state.instance_pool and attach visibility + team_name inline.
+    let ids: Vec<String> = page.iter().map(|m| m.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await
+    } else {
+        // I4: match the authz-skipped observability pattern above. A
+        // persistent pool-None on this path means enrichment is silently
+        // degraded — chips absent across every memories list — and no
+        // counter fires today. One grep-friendly message per handler so
+        // "boot window" vs "startup-ordering bug" is distinguishable.
+        tracing::warn!(
+            handler = "memories",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+    let memories: Vec<MemoryListItem> = page
+        .into_iter()
+        .map(|memory| {
+            let tag = tags.get(&memory.id).cloned().unwrap_or_default();
+            MemoryListItem { memory, tag }
+        })
+        .collect();
 
     Ok(Json(MemoriesListResponse { memories, total }))
 }
