@@ -18,6 +18,7 @@ mod factory;
 mod ingest;
 mod links;
 mod mcp;
+mod me;
 mod memories;
 mod messaging;
 mod models;

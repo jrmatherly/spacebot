@@ -1413,6 +1413,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messaging/disconnect": {
         parameters: {
             query?: never;
@@ -3397,6 +3413,25 @@ export interface components {
             name: string;
             state: components["schemas"]["McpConnectionState"];
             transport: string;
+        };
+        MeResponse: {
+            display_email?: string | null;
+            display_name?: string | null;
+            /** @description Base64 data URL for the user's Graph profile photo, or None. */
+            display_photo_data_url?: string | null;
+            groups: string[];
+            groups_overage: boolean;
+            /**
+             * @description Computed initials (1-3 chars) derived from display_name. Present
+             *     when display_photo_data_url is None, so the SPA never has to
+             *     branch on both absent.
+             */
+            initials?: string | null;
+            oid: string;
+            principal_key: string;
+            principal_type: string;
+            roles: string[];
+            tid: string;
         };
         MemoriesListResponse: {
             memories: components["schemas"]["Memory"][];
@@ -8170,6 +8205,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["McpAgentStatus"][];
                 };
+            };
+        };
+    };
+    me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed-in principal identity + groups + photo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description No valid authentication */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
