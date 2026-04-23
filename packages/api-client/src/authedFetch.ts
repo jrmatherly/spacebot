@@ -7,9 +7,9 @@
 // Hard safety cap at 5 total attempts for pathological 401↔202 loops.
 //
 // D4/O1 correction: lives in a sibling module so Task 6.B.3's sed pass
-// against client.ts cannot produce recursion — this file contains
-// exactly one `fetch(` call by design (the delegation to the browser
-// primitive at line ~60).
+// against client.ts cannot produce recursion. This file contains
+// exactly one `fetch(` call by design: the delegation to the browser
+// primitive at line ~60.
 
 import { getAuthToken } from "./client";
 
@@ -39,7 +39,7 @@ const SYNC_CAP = 3;
 const TOTAL_CAP = 5;
 
 // Public API. Drop-in replacement for `fetch()` with Entra-aware auth
-// behavior. `state` is intentionally NOT a parameter — callers should
+// behavior. `state` is intentionally NOT a parameter: callers should
 // not tune retry budgets per-call.
 export async function authedFetch(
 	input: RequestInfo | URL,
@@ -79,7 +79,7 @@ async function authedFetchInner(
 		// D3 correction: check that the token provider CAN still yield a
 		// token. If the retry would produce null (provider unset, or
 		// provider threw and got caught), the retry cannot change the
-		// outcome — return the 401 to the caller instead of entering a
+		// outcome. Return the 401 to the caller instead of entering a
 		// no-header retry loop.
 		const retryToken = await getAuthToken();
 		if (retryToken === null) {

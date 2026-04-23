@@ -70,8 +70,8 @@ export async function getAuthToken(): Promise<string | null> {
 }
 
 // Phase 6 Task 6.B.2: central fetch wrapper. Defined in a sibling
-// module so the Task 6.B.3 sed pass doesn't risk recursing its own
-// delegation into a browser primitive call.
+// module to keep this file free of raw `fetch(` calls, so any future
+// sed-based migration pass has zero valid migration targets here.
 import { authedFetch } from "./authedFetch";
 export { authedFetch };
 

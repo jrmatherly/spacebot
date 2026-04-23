@@ -187,8 +187,8 @@ describe("authedFetch", () => {
 	});
 
 	// D8 correction (2026-04-23 PR B audit): the previous "alternating
-	// 401/202" test accepted EITHER 401 or 202 as the outcome — weak
-	// assertion. Trace the state machine deterministically:
+	// 401/202" test accepted EITHER 401 or 202 as the outcome, which was
+	// a weak assertion. Trace the state machine deterministically:
 	//   attempt 0 (total=0): 401; authAttempts=0<1 → retry; auth=1, total=1
 	//   attempt 1 (total=1): 202; syncAttempts=0<3 → retry; sync=1, total=2
 	//   attempt 2 (total=2): 401; authAttempts=1!<1 → return 401 to caller
