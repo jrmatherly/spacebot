@@ -1,6 +1,18 @@
 import { useState } from "react";
 import type { Visibility } from "./VisibilityChip";
 
+/**
+ * Discriminated-union payload passed to `onSubmit`. Makes the previously
+ * illegal pair `{ visibility: "personal", sharedWithTeamId: "t1" }`
+ * unrepresentable at the type level — "team" is the only branch that
+ * carries a team id. Replaces the old `{ visibility: Visibility;
+ * sharedWithTeamId: string | null }` product type per PR #110 review
+ * finding I4 (type-design-analyzer).
+ */
+export type ShareSubmitArgs =
+	| { visibility: "team"; sharedWithTeamId: string }
+	| { visibility: "personal" | "org" };
+
 export function ShareResourceModal({
 	resourceType,
 	resourceId,
@@ -13,10 +25,7 @@ export function ShareResourceModal({
 	resourceId: string;
 	currentVisibility: Visibility;
 	teams: { id: string; name: string }[];
-	onSubmit: (args: {
-		visibility: Visibility;
-		sharedWithTeamId: string | null;
-	}) => Promise<void>;
+	onSubmit: (args: ShareSubmitArgs) => Promise<void>;
 	onClose: () => void;
 }) {
 	const [visibility, setVisibility] = useState<Visibility>(currentVisibility);
@@ -27,16 +36,25 @@ export function ShareResourceModal({
 	const descriptionId = `share-description-${resourceType}-${resourceId}`;
 
 	const onConfirm = async () => {
-		if (visibility === "team" && !teamId) {
-			setError("Select a team.");
-			return;
+		// Build the payload first so TypeScript exhaustiveness narrowing
+		// handles the personal/org/team split. The old code constructed an
+		// object where `sharedWithTeamId: visibility === "team" ? teamId :
+		// null` embedded the invariant in a runtime expression; the
+		// discriminated union below moves that invariant into the type.
+		let args: ShareSubmitArgs;
+		if (visibility === "team") {
+			if (!teamId) {
+				setError("Select a team.");
+				return;
+			}
+			args = { visibility: "team", sharedWithTeamId: teamId };
+		} else {
+			args = { visibility };
 		}
+
 		setSubmitting(true);
 		try {
-			await onSubmit({
-				visibility,
-				sharedWithTeamId: visibility === "team" ? teamId : null,
-			});
+			await onSubmit(args);
 			onClose();
 		} catch (e) {
 			// Narrow to API errors (authedFetch throws `Error("API error ...")`).
