@@ -177,6 +177,11 @@ import type {
 	TaskActionResponse,
 } from "./types";
 
+// In-file use of Wiki list types. The handwritten `WikiPageSummary` and
+// `WikiPage` shapes remain below; only the list-wrapper types needed the
+// enriched schema alias.
+import type { WikiListResponse } from "./types";
+
 export type { TopologyAgent, TopologyLink, TopologyGroup, TopologyHuman, TopologyResponse };
 
 // Conversation-related types
@@ -2873,10 +2878,12 @@ export interface WikiPageVersion {
 	created_at: string;
 }
 
-export interface WikiListResponse {
-	pages: WikiPageSummary[];
-	total: number;
-}
+// WikiListResponse + WikiListItem are exported from ./types as aliases
+// for the generated schema entries. `WikiListItem = WikiPageSummary &
+// VisibilityTag` carries `visibility` + `team_name` chip fields so the
+// SPA can render a chip per row without casts. Mirrors the `TaskItem`
+// and `MemoryItem` precedents.
+export type { WikiListItem, WikiListResponse } from "./types";
 
 export interface WikiPageResponse {
 	page: WikiPage;

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	api,
-type WikiPageSummary,
+	type WikiListItem,
 	type WikiPageType,
 	type CreateWikiPageRequest,
 } from "@spacebot/api-client/client";
@@ -10,6 +11,16 @@ import { BookBookmark, Plus, MagnifyingGlass, ArrowLeft, ClockCounterClockwise, 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import { VisibilityChip } from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import { useTeams } from "@/auth/useMe";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -272,15 +283,17 @@ function PageList({
 	pages,
 	selectedSlug,
 	onSelect,
+	onShare,
 }: {
-	pages: WikiPageSummary[];
+	pages: WikiListItem[];
 	selectedSlug: string | null;
 	onSelect: (slug: string) => void;
+	onShare: (page: WikiListItem) => void;
 }) {
-	const grouped = PAGE_TYPES.reduce<Record<string, WikiPageSummary[]>>((acc, type) => {
+	const grouped = PAGE_TYPES.reduce<Record<string, WikiListItem[]>>((acc, type) => {
 		acc[type] = pages.filter((p) => p.page_type === type);
 		return acc;
-	}, {} as Record<string, WikiPageSummary[]>);
+	}, {} as Record<string, WikiListItem[]>);
 
 	return (
 		<div className="space-y-4">
@@ -294,17 +307,42 @@ function PageList({
 						</div>
 						<div className="space-y-0.5">
 							{group.map((page) => (
-								<button
+								<div
 									key={page.slug}
-									onClick={() => onSelect(page.slug)}
-									className={`w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+									className={`group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
 										selectedSlug === page.slug
 											? "bg-app-selected/40 text-ink"
 											: "text-ink-dull hover:bg-app-selected/20 hover:text-ink"
 									}`}
 								>
-									<span className="truncate block">{page.title}</span>
-								</button>
+									<button
+										onClick={() => onSelect(page.slug)}
+										className="min-w-0 flex-1 truncate text-left"
+									>
+										{page.title}
+									</button>
+									{/* Conditional-render per D54 no-auto-broadening:
+									    unowned pages show no chip. */}
+									{page.visibility && (
+										<VisibilityChip
+											visibility={page.visibility}
+											teamName={page.team_name ?? undefined}
+										/>
+									)}
+									<button
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											onShare(page);
+										}}
+										className="opacity-0 transition-opacity group-hover:opacity-100"
+										title="Share"
+									>
+										<span className="rounded px-1 py-0.5 text-tiny font-medium text-ink-dull hover:bg-app-hover">
+											Share
+										</span>
+									</button>
+								</div>
 							))}
 						</div>
 					</div>
@@ -319,24 +357,53 @@ function PageList({
 // ---------------------------------------------------------------------------
 
 export function Wiki() {
+	const queryClient = useQueryClient();
 	const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 	const [creating, setCreating] = useState(false);
 	const [search, setSearch] = useState("");
+	const [shareTarget, setShareTarget] = useState<WikiListItem | null>(null);
+
+	// Visibility filter state persists to URL query params (D54).
+	const urlSearch = useSearch({ strict: false }) as { visibility?: string };
+	const navigate = useNavigate();
+	const visibilityFilter: VisibilityFilterValue =
+		urlSearch.visibility === "personal" ||
+		urlSearch.visibility === "team" ||
+		urlSearch.visibility === "org"
+			? urlSearch.visibility
+			: "all";
+
+	// Lazy-gate the teams fetch on modal-open (D56).
+	const teamsQuery = useTeams({ enabled: shareTarget !== null });
 
 	const { data: listData, isLoading } = useQuery({
-		queryKey: ["wiki", "list"],
+		queryKey: ["wiki", "list", visibilityFilter],
 		queryFn: () => api.listWikiPages(),
 	});
 
 	const { data: searchData } = useQuery({
-		queryKey: ["wiki", "search", search],
+		queryKey: ["wiki", "search", search, visibilityFilter],
 		queryFn: () => api.searchWikiPages({ query: search }),
 		enabled: search.length > 1,
 	});
 
-	const pages = search.length > 1
-		? (searchData?.pages ?? [])
-		: (listData?.pages ?? []);
+	// Client-side visibility filter: the backend list endpoint does not
+	// yet accept a `visibility=` param; queryKey isolation keeps caches
+	// per-filter. Matches the PR 2 pattern.
+	const rawPages: WikiListItem[] = useMemo(
+		() =>
+			search.length > 1
+				? (searchData?.pages ?? [])
+				: (listData?.pages ?? []),
+		[search, searchData, listData],
+	);
+	const pages: WikiListItem[] = useMemo(
+		() =>
+			visibilityFilter === "all"
+				? rawPages
+				: rawPages.filter((p) => p.visibility === visibilityFilter),
+		[rawPages, visibilityFilter],
+	);
 
 	const totalPages = listData?.pages.length ?? 0;
 
@@ -392,6 +459,22 @@ export function Wiki() {
 					</div>
 				</div>
 
+				{/* Visibility filter */}
+				<div className="px-3 pb-2">
+					<VisibilityFilter
+						value={visibilityFilter}
+						onChange={(v) =>
+							navigate({
+								to: ".",
+								search: (prev) => ({
+									...prev,
+									visibility: v === "all" ? undefined : v,
+								}),
+							})
+						}
+					/>
+				</div>
+
 				{/* Page list */}
 				<div className="flex-1 overflow-y-auto px-3 pb-4">
 					{isLoading ? (
@@ -415,6 +498,7 @@ export function Wiki() {
 							pages={pages}
 							selectedSlug={selectedSlug}
 							onSelect={setSelectedSlug}
+							onShare={setShareTarget}
 						/>
 					)}
 				</div>
@@ -442,6 +526,44 @@ export function Wiki() {
 					</div>
 				)}
 			</div>
+			{shareTarget && (
+				<ShareResourceModal
+					resourceType="wiki_page"
+					resourceId={shareTarget.id}
+					currentVisibility={shareTarget.visibility ?? null}
+					teams={(teamsQuery.data ?? []).map((t) => ({
+						id: t.id,
+						name: t.display_name,
+					}))}
+					onSubmit={async (args: ShareSubmitArgs) => {
+						await api.setResourceVisibility(
+							"wiki_page",
+							shareTarget.id,
+							args,
+						);
+						// Invalidate the narrower ["wiki", "list"] key (not
+						// the superset ["wiki"]) per audit finding: the
+						// existing CreatePageForm mutation at line 79 uses
+						// ["wiki"] which also busts page-detail caches. Our
+						// Share action only affects list chip state, so we
+						// keep the invalidation narrow.
+						try {
+							await queryClient.invalidateQueries({
+								queryKey: ["wiki", "list"],
+							});
+							await queryClient.invalidateQueries({
+								queryKey: ["wiki", "search"],
+							});
+						} catch (e) {
+							console.error(
+								"Wiki: failed to invalidate wiki cache after share",
+								e,
+							);
+						}
+					}}
+					onClose={() => setShareTarget(null)}
+				/>
+			)}
 		</div>
 	);
 }
