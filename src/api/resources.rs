@@ -15,14 +15,6 @@
 //!   preserved as the caller, which matches the Phase 2 ownership model
 //!   where the caller is the authoritative owner at write time).
 
-use axum::Json;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::policy::check_write;
@@ -30,6 +22,15 @@ use crate::auth::principals::Visibility;
 use crate::auth::repository::{
     get_teams_by_ids, list_ownerships_by_ids, update_visibility_only,
 };
+
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Per-item enrichment attached to list responses alongside the domain type.
 ///
