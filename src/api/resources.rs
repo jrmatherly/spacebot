@@ -271,6 +271,50 @@ mod tests {
         assert_eq!(tag.team_name(), None);
     }
 
+    #[test]
+    fn validate_accepts_known_visibility_values() {
+        let req = SetVisibilityRequest {
+            visibility: "personal".into(),
+            shared_with_team_id: None,
+        };
+        let (vis, team_id) = req.validate().unwrap();
+        assert_eq!(vis.as_str(), "personal");
+        assert_eq!(team_id, None);
+
+        let req = SetVisibilityRequest {
+            visibility: "team".into(),
+            shared_with_team_id: Some("team-1".into()),
+        };
+        let (vis, team_id) = req.validate().unwrap();
+        assert_eq!(vis.as_str(), "team");
+        assert_eq!(team_id.as_deref(), Some("team-1"));
+
+        let req = SetVisibilityRequest {
+            visibility: "org".into(),
+            shared_with_team_id: None,
+        };
+        let (vis, _) = req.validate().unwrap();
+        assert_eq!(vis.as_str(), "org");
+    }
+
+    #[test]
+    fn validate_rejects_unknown_visibility() {
+        let req = SetVisibilityRequest {
+            visibility: "global".into(),
+            shared_with_team_id: None,
+        };
+        assert_eq!(req.validate(), Err(StatusCode::BAD_REQUEST));
+    }
+
+    #[test]
+    fn validate_rejects_team_without_team_id() {
+        let req = SetVisibilityRequest {
+            visibility: "team".into(),
+            shared_with_team_id: None,
+        };
+        assert_eq!(req.validate(), Err(StatusCode::BAD_REQUEST));
+    }
+
     #[tokio::test]
     async fn tag_constructor_drops_team_name_when_visibility_is_not_team() {
         // S1 structural narrowing. VisibilityTag::new must reject the
@@ -298,12 +342,33 @@ mod tests {
 
 /// Payload accepted by `PUT /api/resources/{type}/{id}/visibility`. Keep the
 /// wire shape snake_case (Rust default) so the TS client can pass
-/// `{visibility, shared_with_team_id}` without custom serde rules.
+/// `{visibility, shared_with_team_id}` without custom serde rules. Visibility
+/// stays stringly-typed at the deserialization boundary for forward-compat
+/// (a future fourth variant added in Rust does not break existing TS clients
+/// deserializing the schema). The [`Self::validate`] method does the
+/// three-step translation (parse enum + enforce team-has-team-id + extract
+/// the owned fields) in one place, so the handler body stays single-purpose.
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct SetVisibilityRequest {
     visibility: String,
     #[serde(default)]
     shared_with_team_id: Option<String>,
+}
+
+impl SetVisibilityRequest {
+    /// Validate the payload and project into `(Visibility, Option<team_id>)`.
+    /// Centralizes the two rules the handler would otherwise inline:
+    ///   1. `visibility` parses to one of the known variants.
+    ///   2. A `team` visibility carries a non-None `shared_with_team_id`.
+    /// Returns `Err(StatusCode::BAD_REQUEST)` on either violation so the
+    /// caller can `?`-propagate without restating the error.
+    fn validate(self) -> Result<(Visibility, Option<String>), StatusCode> {
+        let vis = Visibility::parse(&self.visibility).ok_or(StatusCode::BAD_REQUEST)?;
+        if matches!(vis, Visibility::Team) && self.shared_with_team_id.is_none() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        Ok((vis, self.shared_with_team_id))
+    }
 }
 
 #[utoipa::path(
@@ -331,12 +396,11 @@ pub(super) async fn set_visibility(
 ) -> Result<StatusCode, StatusCode> {
     // Parse + guard BEFORE touching the pool so malformed requests fail
     // fast with a clear 400 (not a 500 CHECK-constraint leak from the DB
-    // layer). The Visibility CHECK on the `resource_ownership` table
-    // enforces the same invariant as a belt-and-suspenders defense.
-    let vis = Visibility::parse(&req.visibility).ok_or(StatusCode::BAD_REQUEST)?;
-    if matches!(vis, Visibility::Team) && req.shared_with_team_id.is_none() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
+    // layer). Validation lives on SetVisibilityRequest::validate so it is
+    // unit-testable independent of the whole-handler harness. The DB's
+    // CHECK constraint enforces the same invariant as a belt-and-
+    // suspenders defense.
+    let (vis, shared_with_team_id) = req.validate()?;
 
     // D30 correction: canonical ArcSwap peek matching `src/api/me.rs:60`.
     let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() else {
@@ -377,7 +441,7 @@ pub(super) async fn set_visibility(
         &resource_type,
         &resource_id,
         vis,
-        req.shared_with_team_id.as_deref(),
+        shared_with_team_id.as_deref(),
     )
     .await
     .map_err(|error| {
