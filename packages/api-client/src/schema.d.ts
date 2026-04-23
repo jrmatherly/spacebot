@@ -2296,6 +2296,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active teams for the Share-resource modal. Authenticated-only:
+         *     any signed-in user can read the team directory because every Share
+         *     button needs the list to populate its selector. Admin-gating would
+         *     break the owner-rotates-own-resource flow for non-admin users.
+         * @description Inactive teams are filtered in SQL so the UI cannot offer a team
+         *     that would fail a follow-up `set_ownership` write (teams go inactive
+         *     when Graph removes them during Phase 3 sync; Phase 4 authz rejects
+         *     writes against inactive teams to preserve referential sanity).
+         */
+        get: operations["list_teams_handler"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tools": {
         parameters: {
             query?: never;
@@ -4216,6 +4242,23 @@ export interface components {
             completed: boolean;
             title: string;
         };
+        /**
+         * @description Minimal team projection served by `GET /api/teams`. Only `id` +
+         *     `display_name` cross the wire because the SPA's `ShareResourceModal`
+         *     renders `display_name` and sends `id` back on submit. Status is
+         *     filtered at the SQL layer (active-only) so it carries no useful bit,
+         *     and the timestamps would leak create/update cadence without adding
+         *     value to the Share UI. A future `/api/admin/teams` route will carry
+         *     a richer projection.
+         *
+         *     `#[non_exhaustive]` makes it clear within-crate callers should not
+         *     pattern-match on the struct literal; future additive fields
+         *     (member_count, last_sync_at) land without breaking them.
+         */
+        TeamSummary: {
+            display_name: string;
+            id: string;
+        };
         /** @description A unified timeline item combining messages, branch runs, and worker runs. */
         TimelineItem: {
             attachments?: components["schemas"]["SavedAttachmentMeta"][];
@@ -4553,30 +4596,30 @@ export interface components {
             total_rows: number;
             valid: boolean;
         };
+        /** @enum {string} */
+        Visibility: "personal" | "team" | "org";
         /**
          * @description Per-item enrichment attached to list responses alongside the domain type.
          *
-         *     Phase 7 PR 1.5 Task 7.5a. `visibility: None` encodes an unowned resource
-         *     (no `resource_ownership` row) per the no-auto-broadening policy in
-         *     `docs/design-docs/entra-backfill-strategy.md`. The SPA's `VisibilityChip`
-         *     renders `None` via its runtime fallback branch (`"Unknown"` with
-         *     `tone="warning"` at `interface/src/components/VisibilityChip.tsx:17`)
-         *     rather than defaulting to `"personal"`. Defaulting to personal would
-         *     contradict Phase 4 authz, which treats unowned resources as admin-only.
+         *     `visibility: None` encodes an unowned resource (no `resource_ownership`
+         *     row) per the no-auto-broadening policy in
+         *     `docs/design-docs/entra-backfill-strategy.md`. The SPA renders no chip
+         *     for unowned rows (`{m.visibility && <VisibilityChip />}` in the list
+         *     view). Defaulting to `personal` would contradict Phase 4 authz, which
+         *     treats unowned resources as admin-only.
          *
          *     Wire shape is two flat fields (`visibility`, `team_name`) because the
          *     SPA's `VisibilityChip` consumes them as two independent props; nesting
-         *     into a discriminated enum would break the PR-1 component API. Instead,
-         *     fields are private and the invariant `team_name.is_some() ⇒ visibility
-         *     == Some("team")` is enforced at construction by the [`Self::new`]
-         *     builder, so callers cannot emit the illegal `{visibility: None,
-         *     team_name: Some(_)}` shape. (S1 structural narrowing, PR #111 review.)
+         *     into a discriminated enum would break the existing component API.
+         *     Fields are private and the invariant `team_name.is_some() ⇒ visibility
+         *     == Some(Visibility::Team)` is enforced at construction by the
+         *     [`Self::new`] builder, so callers cannot emit the illegal
+         *     `{visibility: Personal | Org | None, team_name: Some(_)}` shape.
          */
         VisibilityTag: {
-            /** @description Team display name when `visibility == Some("team")`; absent otherwise. */
+            /** @description Team display name when `visibility == Some(Visibility::Team)`; absent otherwise. */
             team_name?: string | null;
-            /** @description `"personal"`, `"team"`, `"org"`, or absent for unowned resources. */
-            visibility?: string | null;
+            visibility?: null | components["schemas"]["Visibility"];
         };
         WarmupSection: {
             eager_embedding_load: boolean;
@@ -10337,6 +10380,47 @@ export interface operations {
             };
             /** @description Task store not initialized */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_teams_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of active teams */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamSummary"][];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authenticated but lacks SpacebotUser role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

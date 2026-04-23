@@ -97,6 +97,30 @@ describe("ShareResourceModal", () => {
 		expect(consoleErrorSpy).toHaveBeenCalled();
 	});
 
+	it("renders unowned-state hint and refuses submit until a visibility is chosen (currentVisibility=null)", () => {
+		const onSubmit = vi.fn();
+		render(
+			<ShareResourceModal
+				resourceType="memory"
+				resourceId="m-1"
+				currentVisibility={null}
+				teams={[{ id: "t1", name: "Platform" }]}
+				onSubmit={onSubmit}
+				onClose={() => {}}
+			/>,
+		);
+		// Unowned-state hint rendered in a role="note" region so screen
+		// readers announce the reason the form is blank.
+		const note = screen.getByRole("note");
+		expect(note.textContent).toMatch(/no visibility recorded/i);
+		// No radio is pre-selected; clicking Confirm without choosing one
+		// surfaces the validation message and does not invoke onSubmit.
+		fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+		const alert = screen.getByRole("alert");
+		expect(alert.textContent).toMatch(/choose a visibility/i);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
 	it("does not render an alert + does not close on non-API programmer errors (it rethrows so the error boundary handles them)", async () => {
 		const onClose = vi.fn();
 		// Simulate a programmer-error path: a TypeError from a caller bug.

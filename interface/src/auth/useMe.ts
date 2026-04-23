@@ -26,11 +26,19 @@ export function useMe() {
 			}
 			try {
 				return (await res.json()) as MeResponse;
-			} catch {
+			} catch (e) {
 				// Distinguish malformed daemon response from network
-				// failure. React Query otherwise wraps the SyntaxError
-				// identically to a fetch rejection.
-				throw new Error(`API error: malformed JSON from ${path}`);
+				// failure. Fold the original parse-error message into
+				// the thrown message so operators see the "unexpected
+				// token at position 0" detail needed to diagnose a
+				// reverse-proxy injecting HTML into JSON. (TS lib
+				// target is ES2020; the Error(message, {cause})
+				// constructor landed in ES2022, so preserve the detail
+				// via string concatenation instead.)
+				const detail = e instanceof Error ? `: ${e.message}` : "";
+				throw new Error(
+					`API error: malformed JSON from ${path}${detail}`,
+				);
 			}
 		},
 		staleTime: 5 * 60_000,
@@ -60,4 +68,41 @@ export function useRole(role: RoleLike): boolean {
 export function useMyPrincipalKey(): string | null {
 	const { data } = useMe();
 	return data?.principal_key ?? null;
+}
+
+export type TeamSummary = components["schemas"]["TeamSummary"];
+
+/**
+ * Active teams for the ShareResourceModal selector. Authenticated-only;
+ * the backend filters archived rows at the SQL layer so the UI does not
+ * have to. 5-minute staleTime matches useMe: team membership changes
+ * propagate through the same Graph-sync cadence as role claims.
+ */
+export function useTeams(opts: { enabled?: boolean } = {}) {
+	return useQuery({
+		queryKey: ["teams"],
+		queryFn: async (): Promise<TeamSummary[]> => {
+			const path = "/teams";
+			const res = await authedFetch(`${getApiBase()}${path}`);
+			if (!res.ok) {
+				throw new Error(`API error ${res.status}: ${path}`);
+			}
+			try {
+				return (await res.json()) as TeamSummary[];
+			} catch (e) {
+				// Same ES2020-target workaround as useMe above: fold the
+				// original parse error into the thrown message.
+				const detail = e instanceof Error ? `: ${e.message}` : "";
+				throw new Error(
+					`API error: malformed JSON from ${path}${detail}`,
+				);
+			}
+		},
+		// Default enabled lets existing callers (and the hook-only
+		// vitest suite) work without passing the option. AgentMemories
+		// gates on `shareTarget !== null` so the call only fires on
+		// first Share-modal open.
+		enabled: opts.enabled ?? true,
+		staleTime: 5 * 60_000,
+	});
 }

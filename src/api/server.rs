@@ -177,6 +177,10 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Resource visibility mutation (Phase 7 PR 1.5 Task 7.5).
         // Owner + admin can rotate visibility and rebind shared_with_team_id.
         .routes(routes!(resources::set_visibility))
+        // Authenticated list of active teams (Phase 7 PR 2 Task 7.7.5).
+        // Powers the Share modal's team selector; any signed-in user can
+        // read. Admin-only listing ships separately under /admin/teams.
+        .routes(routes!(resources::list_teams_handler))
         // Ingest routes
         .routes(routes!(
             ingest::list_ingest_files,

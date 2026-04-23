@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import {useQuery} from "@tanstack/react-query";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {useVirtualizer} from "@tanstack/react-virtual";
+import {useNavigate, useSearch} from "@tanstack/react-router";
 import {AnimatePresence, motion} from "framer-motion";
 import {
 	api,
@@ -10,6 +11,16 @@ import {
 	type MemoryType,
 } from "@spacebot/api-client/client";
 import {MemoryGraph} from "@/components/MemoryGraph";
+import {VisibilityChip} from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import {useTeams} from "@/auth/useMe";
 import {
 	CircleButton,
 	CircleButtonGroup,
@@ -69,6 +80,26 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 	const [typeFilter, setTypeFilter] = useState<MemoryType | null>(null);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
 	const [sortOpen, setSortOpen] = useState(false);
+	const [shareTarget, setShareTarget] = useState<MemoryItem | null>(null);
+
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. `useSearch({strict: false})` is TanStack
+	// Router's escape hatch that works without touching the route
+	// registration in `router.tsx` (parity with `AgentWorkers.tsx`).
+	const search = useSearch({strict: false}) as {visibility?: string};
+	const navigate = useNavigate();
+	const visibilityFilter: VisibilityFilterValue =
+		search.visibility === "personal" ||
+		search.visibility === "team" ||
+		search.visibility === "org"
+			? search.visibility
+			: "all";
+
+	// Gate the teams fetch on modal-open: the full directory is only
+	// needed to populate the Share selector, so users who never open
+	// the modal do not pay the roundtrip.
+	const teamsQuery = useTeams({ enabled: shareTarget !== null });
+	const queryClient = useQueryClient();
 
 	const parentRef = useRef<HTMLDivElement>(null);
 
@@ -80,9 +111,16 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 
 	const isSearching = debouncedQuery.length > 0;
 
-	// List query (when not searching)
+	// List query (when not searching). `visibilityFilter` is appended to
+	// the queryKey so filter changes produce a distinct cache entry and
+	// force React Query to refetch. The backend list endpoint does not
+	// yet accept a `visibility=` param; post-fetch filtering below is the
+	// PR-2 compromise until Phase 7 PR 6+ wires the backend param. This
+	// still isolates cache entries per filter, so a user switching
+	// between "Team" and "All" does not pay the network roundtrip twice
+	// in the same session.
 	const listQuery = useQuery({
-		queryKey: ["memories", agentId, sort, typeFilter],
+		queryKey: ["memories", agentId, sort, typeFilter, visibilityFilter],
 		queryFn: () =>
 			api.agentMemories(agentId, {
 				limit: 200,
@@ -105,10 +143,18 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 		staleTime: 5_000,
 	});
 
-	// Unified data
-	const memories: MemoryItem[] = isSearching
+	// Unified data, with client-side visibility filter applied. Backend
+	// currently returns the full list; the filter is enforced here so
+	// chips match the filter pill selection. When the backend param
+	// lands, drop this filter and pipe `visibilityFilter` into the
+	// `params` object above.
+	const rawMemories: MemoryItem[] = isSearching
 		? (searchQueryResult.data?.results.map((r) => r.memory) ?? [])
 		: (listQuery.data?.memories ?? []);
+	const memories: MemoryItem[] =
+		visibilityFilter === "all"
+			? rawMemories
+			: rawMemories.filter((m) => m.visibility === visibilityFilter);
 
 	const scores: Record<string, number> | null = isSearching
 		? Object.fromEntries(
@@ -217,11 +263,25 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 						{type_}
 					</FilterButton>
 				))}
-				{memories.length > 0 && (
-					<span className="ml-auto text-tiny text-ink-faint">
-						{memories.length} {isSearching ? "results" : "memories"}
-					</span>
-				)}
+				<div className="ml-auto flex items-center gap-3">
+					<VisibilityFilter
+						value={visibilityFilter}
+						onChange={(v) =>
+							navigate({
+								to: ".",
+								search: (prev) => ({
+									...prev,
+									visibility: v === "all" ? undefined : v,
+								}),
+							})
+						}
+					/>
+					{memories.length > 0 && (
+						<span className="text-tiny text-ink-faint">
+							{memories.length} {isSearching ? "results" : "memories"}
+						</span>
+					)}
+				</div>
 			</div>
 
 			{viewMode === "graph" ? (
@@ -286,11 +346,19 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 													<p className="truncate text-sm text-ink-dull">
 														{memory.content}
 													</p>
-													{score !== undefined && (
-														<span className="text-tiny text-accent/70">
-															score: {score.toFixed(3)}
-														</span>
-													)}
+													<div className="mt-0.5 flex items-center gap-2">
+														{memory.visibility && (
+															<VisibilityChip
+																visibility={memory.visibility}
+																teamName={memory.team_name ?? undefined}
+															/>
+														)}
+														{score !== undefined && (
+															<span className="text-tiny text-accent/70">
+																score: {score.toFixed(3)}
+															</span>
+														)}
+													</div>
 												</div>
 												<ImportanceBar value={memory.importance} />
 												<span className="truncate text-tiny text-ink-faint">
@@ -333,6 +401,18 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 																	<span>Channel: {memory.channel_id}</span>
 																)}
 															</div>
+															<div className="mt-3">
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		setShareTarget(memory);
+																	}}
+																	className="rounded px-2 py-1 text-tiny font-medium text-ink-dull hover:bg-app-hover"
+																>
+																	Share
+																</button>
+															</div>
 														</div>
 													</motion.div>
 												)}
@@ -344,6 +424,44 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 						</div>
 					)}
 				</>
+			)}
+			{shareTarget && (
+				<ShareResourceModal
+					resourceType="memory"
+					resourceId={shareTarget.id}
+					// Pass null through when the memory has no recorded visibility.
+					// D36 / no-auto-broadening: an unowned memory must not pre-select
+					// "Personal"; the modal renders a neutral "Choose a visibility"
+					// header in that case so the user opts in deliberately.
+					currentVisibility={shareTarget.visibility ?? null}
+					teams={(teamsQuery.data ?? []).map((t) => ({
+						id: t.id,
+						name: t.display_name,
+					}))}
+					onSubmit={async (args: ShareSubmitArgs) => {
+						// api.setResourceVisibility takes SetResourceVisibilityArgs
+						// directly and does the camelCase → snake_case wire
+						// translation internally, so no callsite branching is
+						// needed.
+						await api.setResourceVisibility("memory", shareTarget.id, args);
+						// Await the invalidation so the modal's `submitting`
+						// state stays true through the refetch window. A
+						// refetch failure is best-effort cosmetic (the write
+						// already landed); log it so operators can see the
+						// staleness without surfacing to the user.
+						try {
+							await queryClient.invalidateQueries({
+								queryKey: ["memories", agentId],
+							});
+						} catch (e) {
+							console.error(
+								"AgentMemories: failed to invalidate memories cache after share",
+								e,
+							);
+						}
+					}}
+					onClose={() => setShareTarget(null)}
+				/>
 			)}
 		</div>
 	);

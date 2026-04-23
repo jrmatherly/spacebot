@@ -338,3 +338,26 @@ pub async fn get_teams_by_ids(
         .with_context(|| format!("batch read teams count={}", team_ids.len()))?;
     Ok(rows.into_iter().map(|r| (r.id.clone(), r)).collect())
 }
+
+/// List active teams ordered by display name with `id` as tiebreaker so
+/// two teams sharing a display name produce a stable ordering. Backs
+/// `GET /api/teams`, which the SPA's Share modal consumes to populate
+/// its team selector. Archived teams (Graph sync removed the group)
+/// are filtered at the SQL layer so the UI never offers a team that
+/// would fail a downstream `set_ownership` write. The `teams.status`
+/// CHECK constraint restricts values to `'active'` or `'archived'`.
+///
+/// Columns are listed explicitly rather than via `SELECT *` so a future
+/// additive migration on `teams` does not silently widen the query's
+/// result set, and the projection invariant lives at the SQL layer
+/// (not just the response-mapping step).
+pub async fn list_teams(pool: &SqlitePool) -> anyhow::Result<Vec<TeamRecord>> {
+    sqlx::query_as::<_, TeamRecord>(
+        "SELECT id, external_id, display_name, status, created_at, updated_at \
+         FROM teams WHERE status = 'active' \
+         ORDER BY display_name, id",
+    )
+    .fetch_all(pool)
+    .await
+    .context("list active teams")
+}
