@@ -516,10 +516,11 @@ export interface MemoryItem {
 	source: string | null;
 	channel_id: string | null;
 	forgotten: boolean;
-	// Phase 7 PR 2 — enrichment fields from PR 1.5's MemoryListItem wrapper
-	// in schema.d.ts. Both optional + nullable: `null`/absent encodes unowned
-	// (rendered as no chip per no-auto-broadening policy); a present string
-	// carries the visibility variant served by the list handler.
+	// Phase 7 PR 2 enrichment fields from PR 1.5's MemoryListItem wrapper
+	// in schema.d.ts. Both optional and nullable: `null`/absent encodes
+	// an unowned resource (rendered as no chip per the no-auto-broadening
+	// policy); a present string carries the visibility variant served by
+	// the list handler.
 	visibility?: string | null;
 	team_name?: string | null;
 }
