@@ -67,4 +67,20 @@ describe("useTeams", () => {
 		expect(result.current.error?.message).toContain("500");
 		expect(result.current.error?.message).toContain("/teams");
 	});
+
+	it("surfaces a 401 exhaustion with the documented prefix", async () => {
+		// Locks the `API error 401: /teams` contract that downstream
+		// listeners (sign-out flow, auth-exhausted toast) narrow on.
+		// authedFetch's one-shot retry is itself 401-returning in this
+		// mock, so the refresh-exhausted path surfaces straight through.
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("", { status: 401 }),
+		);
+		const { result } = renderHook(() => useTeams(), { wrapper });
+		await waitFor(() => expect(result.current.isError).toBe(true));
+		expect(result.current.error?.message.startsWith("API error 401")).toBe(
+			true,
+		);
+		expect(result.current.error?.message).toContain("/teams");
+	});
 });

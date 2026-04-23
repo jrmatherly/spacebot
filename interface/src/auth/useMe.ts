@@ -26,11 +26,14 @@ export function useMe() {
 			}
 			try {
 				return (await res.json()) as MeResponse;
-			} catch {
+			} catch (e) {
 				// Distinguish malformed daemon response from network
-				// failure. React Query otherwise wraps the SyntaxError
-				// identically to a fetch rejection.
-				throw new Error(`API error: malformed JSON from ${path}`);
+				// failure. Preserving the original via `cause` keeps the
+				// "unexpected token at position 0" detail operators need
+				// to diagnose a reverse-proxy injecting HTML into JSON.
+				throw new Error(`API error: malformed JSON from ${path}`, {
+					cause: e,
+				});
 			}
 		},
 		staleTime: 5 * 60_000,
@@ -70,7 +73,7 @@ export type TeamSummary = components["schemas"]["TeamSummary"];
  * have to. 5-minute staleTime matches useMe: team membership changes
  * propagate through the same Graph-sync cadence as role claims.
  */
-export function useTeams() {
+export function useTeams(opts: { enabled?: boolean } = {}) {
 	return useQuery({
 		queryKey: ["teams"],
 		queryFn: async (): Promise<TeamSummary[]> => {
@@ -81,10 +84,17 @@ export function useTeams() {
 			}
 			try {
 				return (await res.json()) as TeamSummary[];
-			} catch {
-				throw new Error(`API error: malformed JSON from ${path}`);
+			} catch (e) {
+				throw new Error(`API error: malformed JSON from ${path}`, {
+					cause: e,
+				});
 			}
 		},
+		// Default enabled lets existing callers (and the hook-only
+		// vitest suite) work without passing the option. AgentMemories
+		// gates on `shareTarget !== null` so the call only fires on
+		// first Share-modal open.
+		enabled: opts.enabled ?? true,
 		staleTime: 5 * 60_000,
 	});
 }

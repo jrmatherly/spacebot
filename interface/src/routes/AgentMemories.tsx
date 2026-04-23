@@ -11,7 +11,7 @@ import {
 	type MemoryType,
 } from "@spacebot/api-client/client";
 import {MemoryGraph} from "@/components/MemoryGraph";
-import {VisibilityChip, type Visibility} from "@/components/VisibilityChip";
+import {VisibilityChip} from "@/components/VisibilityChip";
 import {
 	VisibilityFilter,
 	type VisibilityFilterValue,
@@ -95,7 +95,10 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 			? search.visibility
 			: "all";
 
-	const teamsQuery = useTeams();
+	// Gate the teams fetch on modal-open: the full directory is only
+	// needed to populate the Share selector, so users who never open
+	// the modal do not pay the roundtrip.
+	const teamsQuery = useTeams({ enabled: shareTarget !== null });
 	const queryClient = useQueryClient();
 
 	const parentRef = useRef<HTMLDivElement>(null);
@@ -346,7 +349,7 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 													<div className="mt-0.5 flex items-center gap-2">
 														{memory.visibility && (
 															<VisibilityChip
-																visibility={memory.visibility as Visibility}
+																visibility={memory.visibility}
 																teamName={memory.team_name ?? undefined}
 															/>
 														)}
@@ -426,26 +429,36 @@ export function AgentMemories({agentId}: AgentMemoriesProps) {
 				<ShareResourceModal
 					resourceType="memory"
 					resourceId={shareTarget.id}
-					currentVisibility={
-						(shareTarget.visibility ?? "personal") as Visibility
-					}
+					// Pass null through when the memory has no recorded visibility.
+					// D36 / no-auto-broadening: an unowned memory must not pre-select
+					// "Personal"; the modal renders a neutral "Choose a visibility"
+					// header in that case so the user opts in deliberately.
+					currentVisibility={shareTarget.visibility ?? null}
 					teams={(teamsQuery.data ?? []).map((t) => ({
 						id: t.id,
 						name: t.display_name,
 					}))}
 					onSubmit={async (args: ShareSubmitArgs) => {
 						// api.setResourceVisibility takes SetResourceVisibilityArgs
-						// directly; its internal body does the camelCase →
-						// snake_case wire translation (client.ts:2750-2752), so
-						// no callsite branching is needed.
+						// directly and does the camelCase → snake_case wire
+						// translation internally, so no callsite branching is
+						// needed.
 						await api.setResourceVisibility("memory", shareTarget.id, args);
-						// Invalidate all memories queries for this agent so the
-						// chip updates without a hard reload (the 5-tuple queryKey
-						// means only the exact filter cache entry would otherwise
-						// refetch on next mount).
-						queryClient.invalidateQueries({
-							queryKey: ["memories", agentId],
-						});
+						// Await the invalidation so the modal's `submitting`
+						// state stays true through the refetch window. A
+						// refetch failure is best-effort cosmetic (the write
+						// already landed); log it so operators can see the
+						// staleness without surfacing to the user.
+						try {
+							await queryClient.invalidateQueries({
+								queryKey: ["memories", agentId],
+							});
+						} catch (e) {
+							console.error(
+								"AgentMemories: failed to invalidate memories cache after share",
+								e,
+							);
+						}
 					}}
 					onClose={() => setShareTarget(null)}
 				/>

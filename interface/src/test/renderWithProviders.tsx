@@ -1,8 +1,8 @@
-// Test harness for full-page route components that depend on React Query
-// + TanStack Router context. PR 1's hook-only tests used inline
-// QueryClientProvider; route components (AgentMemories, AgentTasks, Wiki,
-// etc.) blow up without router context, so Phase 7 PRs 2-5 route tests go
-// through this helper.
+// Test harness for full-page route components that depend on React
+// Query + TanStack Router context. Hook-only tests use inline
+// QueryClientProvider; route components (AgentMemories, AgentTasks,
+// Wiki, etc.) blow up without router context, so route-level tests
+// go through this helper.
 import { type ReactNode } from "react";
 import { render, type RenderResult } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

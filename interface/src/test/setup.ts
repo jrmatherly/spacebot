@@ -19,9 +19,6 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 			this.callback = cb;
 		}
 		observe(target: Element): void {
-			// Fire one synthetic entry with the shimmed rect so dependants
-			// that wait on the first observation (react-virtual, Radix UI,
-			// SpaceUI primitives) get a non-zero measurement and render.
 			const entry = {
 				target,
 				contentRect: target.getBoundingClientRect(),

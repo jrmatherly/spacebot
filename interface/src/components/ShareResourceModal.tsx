@@ -23,12 +23,22 @@ export function ShareResourceModal({
 }: {
 	resourceType: string;
 	resourceId: string;
-	currentVisibility: Visibility;
+	/// `null` when the resource has no recorded visibility (the
+	/// no-auto-broadening policy emits `null` for unowned rows). The
+	/// modal renders a neutral "Choose a visibility" header in that
+	/// case with no radio pre-selected, so the user opts in to a
+	/// scope rather than having "Personal" pre-chosen on their behalf.
+	currentVisibility: Visibility | null;
 	teams: { id: string; name: string }[];
 	onSubmit: (args: ShareSubmitArgs) => Promise<void>;
 	onClose: () => void;
 }) {
-	const [visibility, setVisibility] = useState<Visibility>(currentVisibility);
+	// Initial radio selection matches the current visibility; unowned
+	// resources start with no radio selected so the user makes a
+	// deliberate first choice.
+	const [visibility, setVisibility] = useState<Visibility | null>(
+		currentVisibility,
+	);
 	const [teamId, setTeamId] = useState<string>("");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -41,6 +51,10 @@ export function ShareResourceModal({
 		// object where `sharedWithTeamId: visibility === "team" ? teamId :
 		// null` embedded the invariant in a runtime expression; the
 		// discriminated union below moves that invariant into the type.
+		if (visibility === null) {
+			setError("Choose a visibility.");
+			return;
+		}
 		let args: ShareSubmitArgs;
 		if (visibility === "team") {
 			if (!teamId) {
@@ -83,8 +97,15 @@ export function ShareResourceModal({
 		>
 			<h2 id="share-title">Share {resourceType}</h2>
 			<p id={descriptionId} className="sr-only">
-				Change the visibility of {resourceType} {resourceId}.
+				{currentVisibility === null
+					? `This ${resourceType} has no recorded visibility; choose one to claim ownership.`
+					: `Change the visibility of ${resourceType} ${resourceId}.`}
 			</p>
+			{currentVisibility === null && (
+				<p role="note" className="text-tiny text-ink-faint">
+					No visibility recorded yet. Choose one to claim ownership.
+				</p>
+			)}
 			<fieldset>
 				<legend>Visibility</legend>
 				{(["personal", "team", "org"] as Visibility[]).map((v) => (

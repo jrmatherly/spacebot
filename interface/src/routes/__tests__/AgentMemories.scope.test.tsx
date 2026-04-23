@@ -120,4 +120,67 @@ describe("AgentMemories with visibility", () => {
 			).toBeGreaterThan(callsBefore);
 		});
 	});
+
+	it("renders no chip for memories with null visibility (no-auto-broadening policy)", async () => {
+		// Pins the D36 policy in UI. An unowned memory (visibility: null)
+		// must show no chip rather than defaulting to a Personal label.
+		// Pairs with the backend invariant in
+		// `resources.rs::enrich_missing_ownership_row_returns_none_fields_not_personal_default`.
+		vi.mocked(globalThis.fetch).mockImplementation(async () => {
+			return new Response(
+				JSON.stringify({
+					memories: [
+						{
+							id: "m-orphan",
+							content: "unowned memory",
+							memory_type: "fact",
+							importance: 0.5,
+							created_at: "2026-04-23T00:00:00Z",
+							updated_at: "2026-04-23T00:00:00Z",
+							last_accessed_at: "2026-04-23T00:00:00Z",
+							access_count: 0,
+							source: null,
+							channel_id: null,
+							forgotten: false,
+							visibility: null,
+							team_name: null,
+						},
+					],
+					total: 1,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		});
+		const { container } = renderWithProviders(
+			<AgentMemories agentId="agent-1" />,
+		);
+		await waitFor(() =>
+			expect(screen.getByText("unowned memory")).toBeInTheDocument(),
+		);
+		const chips = container.querySelectorAll(".visibility-chip");
+		expect(chips).toHaveLength(0);
+	});
+
+	// URL-hydration from `?visibility=team` is covered by manual testing
+	// in dev mode. A vitest-level assertion would require the test
+	// harness to register the real route tree with `validateSearch`,
+	// which pushes complexity beyond the minimal helper. Revisit when
+	// the harness grows richer route registrations for PRs 3-5.
+
+	it("does not render any chips in graph view (out of PR 2 scope per D43)", async () => {
+		// Pins the scope boundary: chip semantics live only in the list
+		// view. A future PR adding chips to the graph view must also
+		// update this negative assertion, surfacing the divergence.
+		const { container } = renderWithProviders(
+			<AgentMemories agentId="agent-1" />,
+		);
+		await waitFor(() =>
+			expect(screen.getByText("first memory content")).toBeInTheDocument(),
+		);
+		const graphToggle = screen.getByRole("button", { name: /Graph view/i });
+		fireEvent.click(graphToggle);
+		// After switching to graph view, the MemoryGraph component stub
+		// renders nothing and the chip grid is gone. No chip elements.
+		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+	});
 });
