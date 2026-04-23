@@ -240,7 +240,9 @@ pub async fn get_ownership(
 ///
 /// Empty `resource_ids` returns an empty map without hitting the pool. Binds
 /// one placeholder per id, following the pattern proven in
-/// `src/memory/store.rs:462` for SQLite variadic IN clauses.
+/// `MemoryStore::get_associations_between` for SQLite variadic IN clauses.
+/// Cited by function name rather than line number so the citation survives
+/// unrelated edits to the memory store.
 pub async fn list_ownerships_by_ids(
     pool: &SqlitePool,
     resource_type: &str,

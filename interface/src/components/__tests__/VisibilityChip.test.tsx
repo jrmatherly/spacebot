@@ -22,4 +22,14 @@ describe("VisibilityChip", () => {
 		render(<VisibilityChip visibility={"mystery" as Visibility} />);
 		expect(screen.getByText(/unknown/i)).toBeInTheDocument();
 	});
+
+	it("ignores teamName when visibility is not 'team'", () => {
+		// S3 (pr-test-analyzer): pin the contract that a stray teamName
+		// passed alongside personal/org visibility does not leak into the
+		// label. Guards against a future refactor that accidentally
+		// threads teamName into every branch.
+		render(<VisibilityChip visibility="personal" teamName="Platform" />);
+		expect(screen.getByText(/^Personal$/)).toBeInTheDocument();
+		expect(screen.queryByText(/platform/i)).toBeNull();
+	});
 });
