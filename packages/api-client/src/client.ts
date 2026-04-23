@@ -516,6 +516,12 @@ export interface MemoryItem {
 	source: string | null;
 	channel_id: string | null;
 	forgotten: boolean;
+	// Phase 7 PR 2 — enrichment fields from PR 1.5's MemoryListItem wrapper
+	// in schema.d.ts. Both optional + nullable: `null`/absent encodes unowned
+	// (rendered as no chip per no-auto-broadening policy); a present string
+	// carries the visibility variant served by the list handler.
+	visibility?: string | null;
+	team_name?: string | null;
 }
 
 export interface MemoriesListResponse {
