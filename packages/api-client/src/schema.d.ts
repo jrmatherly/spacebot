@@ -4119,7 +4119,12 @@ export interface components {
         /**
          * @description Payload accepted by `PUT /api/resources/{type}/{id}/visibility`. Keep the
          *     wire shape snake_case (Rust default) so the TS client can pass
-         *     `{visibility, shared_with_team_id}` without custom serde rules.
+         *     `{visibility, shared_with_team_id}` without custom serde rules. Visibility
+         *     stays stringly-typed at the deserialization boundary for forward-compat
+         *     (a future fourth variant added in Rust does not break existing TS clients
+         *     deserializing the schema). The [`Self::validate`] method does the
+         *     three-step translation (parse enum + enforce team-has-team-id + extract
+         *     the owned fields) in one place, so the handler body stays single-purpose.
          */
         SetVisibilityRequest: {
             shared_with_team_id?: string | null;
