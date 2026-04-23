@@ -128,11 +128,7 @@ fn compute_initials(name: Option<&str>) -> String {
     };
     let parts: Vec<&str> = name.split_whitespace().take(3).collect();
     if parts.is_empty() {
-        return name
-            .chars()
-            .take(1)
-            .collect::<String>()
-            .to_uppercase();
+        return name.chars().take(1).collect::<String>().to_uppercase();
     }
     parts
         .iter()
@@ -157,10 +153,7 @@ mod tests {
 
     #[test]
     fn initials_from_four_word_name_truncates_to_three() {
-        assert_eq!(
-            compute_initials(Some("Alice B Example Four")),
-            "ABE"
-        );
+        assert_eq!(compute_initials(Some("Alice B Example Four")), "ABE");
     }
 
     #[test]

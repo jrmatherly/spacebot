@@ -105,11 +105,7 @@ async fn returns_photo_data_url_when_cached() {
 #[tokio::test]
 async fn returns_roles_from_auth_context() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
-    let alice = user_ctx(
-        "alice",
-        Some("Alice"),
-        vec![ROLE_USER, "SpacebotAdmin"],
-    );
+    let alice = user_ctx("alice", Some("Alice"), vec![ROLE_USER, "SpacebotAdmin"]);
     upsert_user_from_auth(&pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
