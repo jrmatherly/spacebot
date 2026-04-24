@@ -32,7 +32,9 @@ use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
-use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
+use spacebot::auth::repository::{
+    get_ownership, list_ownerships_by_ids, set_ownership, upsert_team, upsert_user_from_auth,
+};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use spacebot::cron::{CronConfig, CronStore};
@@ -446,5 +448,77 @@ async fn pool_none_skip_get_cron() {
         res.status(),
         StatusCode::FORBIDDEN,
         "authz skip must not cause a 403"
+    );
+}
+
+#[tokio::test]
+async fn cron_enrichment_keys_on_cron_job_resource_type() {
+    // The SPA consumes `visibility` + `team_name` on each cron row to
+    // render the chip. The cron list handler populates those fields via
+    // `list_ownerships_by_ids(pool, "cron_job", &ids)` (the call inside
+    // `enrich_visibility_tags` at src/api/cron.rs). Before this fix, the
+    // handler passed "cron" (file-resource-family string, the same label
+    // used for the Prometheus metric) while `set_ownership` at the create
+    // path keyed the row on "cron_job"; the SQL WHERE clause silently
+    // matched zero rows and every cron surfaced as
+    // `{ visibility: None, team_name: None }` on the wire.
+    //
+    // This test locks the function-level contract: an ownership row
+    // seeded via `set_ownership("cron_job", ...)` (the same repository
+    // call `create_or_update_cron` makes at production runtime) must be
+    // discoverable via `list_ownerships_by_ids(&pool, "cron_job", &ids)`
+    // and must NOT be discoverable via the old buggy string
+    // `list_ownerships_by_ids(&pool, "cron", &ids)`. The handler's call
+    // site in `src/api/cron.rs` passes the literal `"cron_job"`; a
+    // future regression there is a grep-visible one-line revert that
+    // this assertion pair would detect when exercised alongside
+    // the handler call.
+    //
+    // Why not end-to-end: the list handler returns 404 without an
+    // attached `Scheduler` (see `cron.rs` cron_schedulers lookup), and
+    // `Scheduler::new(CronContext)` needs a full `AgentDeps` bundle
+    // (MemorySearch, LlmManager, McpManager, Sandbox, ...) that this
+    // integration test fixture cannot construct (see the file-level
+    // doc on `create_cron_assigns_ownership` for the same reasoning).
+    // Testing the function boundary is the tightest available seam.
+    let (_state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team = upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+    set_ownership(
+        &pool,
+        "cron_job",
+        "cron-team-1",
+        Some("agent-alice-1"),
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let ids = vec!["cron-team-1".to_string()];
+
+    // Correct key — the string the live handler uses post-fix.
+    let map_correct = list_ownerships_by_ids(&pool, "cron_job", &ids)
+        .await
+        .expect("list_ownerships_by_ids succeeds");
+    let row = map_correct
+        .get("cron-team-1")
+        .expect("cron_job-keyed lookup must find the seeded row");
+    assert_eq!(row.visibility, "team");
+    assert_eq!(row.shared_with_team_id.as_deref(), Some(team.id.as_str()));
+
+    // Old buggy key — the pre-fix string. Must return empty because
+    // the ownership row was keyed on "cron_job", not "cron".
+    let map_buggy = list_ownerships_by_ids(&pool, "cron", &ids)
+        .await
+        .expect("list_ownerships_by_ids succeeds");
+    assert!(
+        map_buggy.is_empty(),
+        "the old 'cron' resource_type must match zero rows; a non-empty \
+         result means a future migration started double-keying rows"
     );
 }

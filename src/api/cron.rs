@@ -235,14 +235,20 @@ pub(super) async fn list_cron_jobs(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Phase 7 PR 1.5 Task 7.5a. Batch-enrich visibility + team_name for
-    // the whole page in one roundtrip against the instance pool. Cron
-    // lives in a per-agent CronStore (cron_jobs.db per agent) while
-    // resource_ownership + teams live in the instance pool, and SQLite
-    // does not support cross-database JOIN.
+    // Batch-enrich visibility + team_name for the whole page in one
+    // roundtrip against the instance pool. Cron lives in a per-agent
+    // CronStore (cron_jobs.db per agent) while resource_ownership + teams
+    // live in the instance pool, and SQLite does not support
+    // cross-database JOIN.
+    //
+    // Keyed on "cron_job" to match set_ownership at the create path
+    // (see create_or_update_cron) and check_write on the mutate path.
+    // All chip-enriched resources use their write-authz resource_type
+    // at enrichment sites so one SQL WHERE clause matches all three
+    // code paths (set, check, enrich).
     let ids: Vec<String> = configs.iter().map(|c| c.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "cron", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, "cron_job", &ids).await
     } else {
         // I4: mirror the authz-skipped pattern.
         tracing::warn!(
