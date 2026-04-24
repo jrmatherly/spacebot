@@ -361,3 +361,36 @@ pub async fn list_teams(pool: &SqlitePool) -> anyhow::Result<Vec<TeamRecord>> {
     .await
     .context("list active teams")
 }
+
+/// List `resource_id` values the given principal owns directly for the given
+/// `resource_type`. Backs the `ResourceScope::Mine` query param on list
+/// handlers: the handler fetches the owned id set here, then filters the
+/// per-agent (or global) resource query by `id IN (...)`.
+///
+/// Returns an empty `Vec` for unknown principals and for principals with no
+/// matching ownership rows. Handlers rely on this: a caller with no owned
+/// resources must see an empty list, not an error.
+///
+/// Ordered by `resource_id` for a deterministic result across invocations.
+/// Callers that need a set-membership check can `.collect::<HashSet<_>>()`.
+pub async fn list_resource_ids_owned_by(
+    pool: &SqlitePool,
+    principal_key: &str,
+    resource_type: &str,
+) -> anyhow::Result<Vec<String>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT resource_id FROM resource_ownership \
+         WHERE owner_principal_key = ? AND resource_type = ? \
+         ORDER BY resource_id",
+    )
+    .bind(principal_key)
+    .bind(resource_type)
+    .fetch_all(pool)
+    .await
+    .with_context(|| {
+        format!(
+            "list owned resource_ids principal_key={principal_key} resource_type={resource_type}"
+        )
+    })?;
+    Ok(ids)
+}

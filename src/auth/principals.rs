@@ -72,6 +72,38 @@ impl Visibility {
     }
 }
 
+/// Query-param scope for list endpoints that support narrowing results to
+/// "resources the caller owns" / "resources in the caller's teams" / "the
+/// full org view." Distinct from [`Visibility`], which is the persisted
+/// property on each resource row. `ResourceScope` is the query-time lens
+/// over ownership; `Visibility` is the storage-time classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceScope {
+    Mine,
+    Team,
+    Org,
+}
+
+impl ResourceScope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResourceScope::Mine => "mine",
+            ResourceScope::Team => "team",
+            ResourceScope::Org => "org",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "mine" => Some(Self::Mine),
+            "team" => Some(Self::Team),
+            "org" => Some(Self::Org),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ResourceOwnershipRecord {
     pub resource_type: String,

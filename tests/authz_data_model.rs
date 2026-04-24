@@ -2,10 +2,10 @@
 //! real SQLite instance. Uses the crate's global-migration path.
 
 use spacebot::auth::context::{AuthContext, PrincipalType};
-use spacebot::auth::principals::Visibility;
+use spacebot::auth::principals::{ResourceScope, Visibility};
 use spacebot::auth::repository::{
-    RepositoryError, get_ownership, get_teams_by_ids, list_ownerships_by_ids, set_ownership,
-    upsert_team, upsert_user_from_auth,
+    RepositoryError, get_ownership, get_teams_by_ids, list_ownerships_by_ids,
+    list_resource_ids_owned_by, set_ownership, upsert_team, upsert_user_from_auth,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -441,4 +441,173 @@ async fn list_ownerships_by_ids_handles_small_batches_up_to_known_safe_cap() {
 
     let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
     assert_eq!(map.len(), 50, "only seeded rows resolve; misses are absent");
+}
+
+// ResourceScope parses the same three string forms as the query-param values
+// the SPA will send. Mirrors the Visibility::parse pattern so the two enums
+// stay aligned lexically.
+#[test]
+fn resource_scope_parses_all_variants() {
+    assert_eq!(ResourceScope::parse("mine"), Some(ResourceScope::Mine));
+    assert_eq!(ResourceScope::parse("team"), Some(ResourceScope::Team));
+    assert_eq!(ResourceScope::parse("org"), Some(ResourceScope::Org));
+    assert_eq!(ResourceScope::parse("personal"), None);
+    assert_eq!(ResourceScope::parse("MINE"), None); // case-sensitive
+    assert_eq!(ResourceScope::parse(""), None);
+}
+
+#[test]
+fn resource_scope_round_trips_through_as_str() {
+    for scope in [ResourceScope::Mine, ResourceScope::Team, ResourceScope::Org] {
+        assert_eq!(ResourceScope::parse(scope.as_str()), Some(scope));
+    }
+}
+
+#[tokio::test]
+async fn list_resource_ids_owned_by_empty_principal_returns_empty() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-empty", "oid-empty");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+
+    let ids = list_resource_ids_owned_by(&pool, &ctx.principal_key(), "memory")
+        .await
+        .expect("query runs against empty ownership table");
+    assert!(ids.is_empty(), "no ownership rows means no ids");
+}
+
+#[tokio::test]
+async fn list_resource_ids_owned_by_nonexistent_principal_returns_empty() {
+    // A principal_key that never appeared in users or resource_ownership
+    // must return an empty Vec, not an error. Handlers rely on this so an
+    // unknown caller sees "no owned resources" rather than a 500.
+    let pool = setup_pool().await;
+    let ids = list_resource_ids_owned_by(&pool, "user:nonexistent@example.com", "memory")
+        .await
+        .expect("unknown principal is a valid query");
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn list_resource_ids_owned_by_returns_ids_for_owned_resources() {
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-owner", "oid-owner");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+
+    for id in ["mem-1", "mem-2", "mem-3"] {
+        set_ownership(
+            &pool,
+            "memory",
+            id,
+            Some("agent-a"),
+            &key,
+            Visibility::Personal,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    let mut ids = list_resource_ids_owned_by(&pool, &key, "memory")
+        .await
+        .unwrap();
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec![
+            "mem-1".to_string(),
+            "mem-2".to_string(),
+            "mem-3".to_string()
+        ],
+    );
+}
+
+#[tokio::test]
+async fn list_resource_ids_owned_by_filters_by_resource_type() {
+    // The same principal owns a memory and a project. A query for
+    // resource_type="memory" returns only the memory id; the project id
+    // must not leak. Guards against a future refactor that accidentally
+    // drops the resource_type filter (e.g., building the wrong WHERE clause).
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-mixed", "oid-mixed");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    let key = ctx.principal_key();
+
+    set_ownership(
+        &pool,
+        "memory",
+        "mem-x",
+        Some("agent-a"),
+        &key,
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    set_ownership(
+        &pool,
+        "project",
+        "proj-y",
+        None,
+        &key,
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let memory_ids = list_resource_ids_owned_by(&pool, &key, "memory")
+        .await
+        .unwrap();
+    assert_eq!(memory_ids, vec!["mem-x".to_string()]);
+
+    let project_ids = list_resource_ids_owned_by(&pool, &key, "project")
+        .await
+        .unwrap();
+    assert_eq!(project_ids, vec!["proj-y".to_string()]);
+}
+
+#[tokio::test]
+async fn list_resource_ids_owned_by_excludes_other_principals() {
+    // Two principals each own their own memory. A query from principal A
+    // sees only A's id; B's remains private. This is the scope-filtering
+    // core invariant the ResourceScope::Mine query-param relies on.
+    let pool = setup_pool().await;
+    let ctx_a = make_ctx("tid-a", "oid-a");
+    let ctx_b = make_ctx("tid-a", "oid-b");
+    upsert_user_from_auth(&pool, &ctx_a).await.unwrap();
+    upsert_user_from_auth(&pool, &ctx_b).await.unwrap();
+
+    set_ownership(
+        &pool,
+        "memory",
+        "mem-a",
+        Some("agent-a"),
+        &ctx_a.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+    set_ownership(
+        &pool,
+        "memory",
+        "mem-b",
+        Some("agent-b"),
+        &ctx_b.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let a_ids = list_resource_ids_owned_by(&pool, &ctx_a.principal_key(), "memory")
+        .await
+        .unwrap();
+    assert_eq!(a_ids, vec!["mem-a".to_string()]);
+
+    let b_ids = list_resource_ids_owned_by(&pool, &ctx_b.principal_key(), "memory")
+        .await
+        .unwrap();
+    assert_eq!(b_ids, vec!["mem-b".to_string()]);
 }
