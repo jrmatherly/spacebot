@@ -300,6 +300,28 @@ mod router_level {
         assert_eq!(res.status(), StatusCode::OK);
     }
 
+    /// Phase 8 Task 8.A.4 — Entra-JWT branch counterpart of
+    /// `desktop_tokens_bypasses_token_check` in
+    /// `tests/api_auth_middleware.rs`. Same obligation (both middleware
+    /// branches must honor the allowlist) enforced on the second branch.
+    #[tokio::test]
+    async fn desktop_tokens_bypasses_entra_jwt_check() {
+        let tenant = MockTenant::start().await;
+        let app = router_for(&tenant).await;
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/desktop/tokens")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_ne!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "/api/desktop/tokens must bypass the Entra JWT check"
+        );
+    }
+
     #[tokio::test]
     async fn middleware_rejects_non_bearer_scheme() {
         let tenant = MockTenant::start().await;

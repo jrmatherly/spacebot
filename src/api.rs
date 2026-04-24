@@ -15,6 +15,7 @@ mod channels;
 mod config;
 mod cortex;
 mod cron;
+mod desktop;
 mod factory;
 mod ingest;
 mod links;

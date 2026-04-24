@@ -3,9 +3,9 @@
 use super::state::ApiState;
 use super::{
     activity, admin_teams, agents, attachments, audit, auth_config, bindings, channels, config,
-    cortex, cron, factory, ingest, links, mcp, me, memories, messaging, models, notifications,
-    opencode_proxy, portal, projects, providers, resources, secrets, settings, skills, ssh, system,
-    tasks, tools, usage, wiki, workers,
+    cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging, models,
+    notifications, opencode_proxy, portal, projects, providers, resources, secrets, settings,
+    skills, ssh, system, tasks, tools, usage, wiki, workers,
 };
 
 use axum::Json;
@@ -65,6 +65,12 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Auth bypass for this path is wired in the middleware allowlists
         // below (static-token) and in src/auth/middleware.rs (Entra JWT).
         .routes(routes!(auth_config::get_auth_config))
+        // Phase 8 Task 8.A.4 — loopback-only token ingestion from the
+        // Tauri desktop app. Bypasses the auth middleware because the
+        // desktop has no bearer token yet; the JWT being delivered is
+        // what will unlock future authenticated requests. Transport
+        // protection lives in the handler (peer IP + Host header).
+        .routes(routes!(desktop::store_desktop_tokens))
         // Consolidated identity endpoint (Phase 6 PR C, A-18). Returns
         // principal_key + tid/oid + roles + groups + photo/initials in
         // one payload so the SPA's useMe hook does not have to assemble
@@ -377,11 +383,18 @@ pub async fn start_http_server(
 
     let handle = tokio::spawn(async move {
         let mut shutdown = shutdown_rx;
-        if let Err(error) = axum::serve(listener, app)
-            .with_graceful_shutdown(async move {
-                let _ = shutdown.wait_for(|v| *v).await;
-            })
-            .await
+        // `.into_make_service_with_connect_info::<SocketAddr>()` enables the
+        // `ConnectInfo<SocketAddr>` extractor used by loopback-only handlers
+        // (currently `/api/desktop/tokens`, Phase 8 Task 8.A.4). Without it
+        // the extractor returns 500 at request time.
+        if let Err(error) = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            let _ = shutdown.wait_for(|v| *v).await;
+        })
+        .await
         {
             tracing::error!(%error, "HTTP server exited with error");
         }

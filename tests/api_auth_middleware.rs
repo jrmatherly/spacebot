@@ -117,6 +117,36 @@ async fn auth_config_bypasses_token_check() {
     assert_eq!(res.status(), StatusCode::OK);
 }
 
+/// Phase 8 Task 8.A.4 — the desktop Tauri app posts the JWT it just
+/// acquired via system-browser SSO to /api/desktop/tokens; it has no
+/// bearer yet because the post is how it DELIVERS one. Both middleware
+/// branches must allowlist this path. Mirrors `auth_config_bypasses_*`.
+/// The handler itself applies transport-level defenses (loopback peer
+/// + Host pin) that live in `src/api/desktop.rs`, not in this allowlist.
+#[tokio::test]
+async fn desktop_tokens_bypasses_token_check() {
+    let state = Arc::new(ApiState::new_for_tests(Some("super-secret-token".into())));
+    let app = build_test_router(state);
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/desktop/tokens")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    // The critical invariant is "middleware did NOT 401 on a missing
+    // Authorization header". The handler below the middleware rejects on
+    // its own defenses (missing ConnectInfo in a oneshot call produces
+    // 500 from the extractor; the Host check would 403 if ConnectInfo
+    // resolved). Either 500 or 403 proves the bypass fired; 401 would
+    // prove the regression.
+    assert_ne!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "/api/desktop/tokens must bypass the bearer-token check"
+    );
+}
+
 #[tokio::test]
 async fn pass_through_when_no_token_configured() {
     let state = Arc::new(ApiState::new_for_tests(None));

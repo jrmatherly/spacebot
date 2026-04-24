@@ -1177,6 +1177,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/desktop/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept tokens acquired by the Tauri desktop app's loopback auth flow
+         *     and persist them via the daemon's `SecretsStore`.
+         */
+        post: operations["store_desktop_tokens"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -3336,6 +3356,12 @@ export interface components {
          * @enum {string}
          */
         Deployment: "docker" | "hosted" | "native";
+        DesktopTokens: {
+            access_token: string;
+            /** Format: int64 */
+            expires_in: number;
+            refresh_token?: string | null;
+        };
         DisconnectPlatformRequest: {
             adapter?: string | null;
             platform: string;
@@ -7901,6 +7927,49 @@ export interface operations {
             };
             /** @description Internal server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    store_desktop_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopTokens"];
+            };
+        };
+        responses: {
+            /** @description Tokens stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not from loopback */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Secret store write failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon secret store is locked */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -10,6 +10,11 @@
 //!     by container orchestrators that have no bearer token.
 //!   - `/api/auth/config` (Phase 6) — the SPA's MSAL bootstrap fetch
 //!     runs before sign-in completes, so it has no token yet.
+//!   - `/api/desktop/tokens` (Phase 8) — the Tauri desktop loopback
+//!     listener posts tokens it just acquired via system-browser SSO;
+//!     by definition no bearer token is available yet. Transport-level
+//!     protection (peer IP is_loopback + Host header pin) lives in the
+//!     handler, not this allowlist.
 //!
 //! Historically each middleware hand-maintained the allowlist as a
 //! local `if path == "..." || path == "..."` block. That worked for a
@@ -31,7 +36,12 @@
 /// middleware branches (see `tests/api_auth_middleware.rs` and the
 /// `router_level` mod in `tests/entra_jwt_middleware.rs`), and document
 /// the rationale here.
-pub(crate) const AUTH_BYPASS_PATHS: &[&str] = &["/api/auth/config", "/api/health", "/health"];
+pub(crate) const AUTH_BYPASS_PATHS: &[&str] = &[
+    "/api/auth/config",
+    "/api/desktop/tokens",
+    "/api/health",
+    "/health",
+];
 
 /// Returns true when the request path bypasses the auth middleware.
 /// Exact-match only; prefix matching is deliberately NOT supported so a
@@ -67,6 +77,7 @@ mod tests {
         assert!(is_auth_bypassed("/health"));
         assert!(is_auth_bypassed("/api/health"));
         assert!(is_auth_bypassed("/api/auth/config"));
+        assert!(is_auth_bypassed("/api/desktop/tokens"));
     }
 
     #[test]
