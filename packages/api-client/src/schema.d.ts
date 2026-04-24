@@ -6039,6 +6039,12 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                /**
+                 * @description Optional scope filter. Absent preserves legacy unfiltered behavior
+                 *     for admin callers and scripts; Sidebar / Workbench send an
+                 *     explicit scope to narrow the view.
+                 */
+                scope?: null | components["schemas"]["ResourceScope"];
             };
             header?: never;
             path?: never;

@@ -101,6 +101,11 @@ fn sanitize_segment(name: &str) -> Result<String, StatusCode> {
 pub(super) struct ProjectListQuery {
     #[serde(default)]
     status: Option<String>,
+    /// Optional scope filter. Absent preserves legacy unfiltered behavior
+    /// for admin callers and scripts; Sidebar / Workbench send an
+    /// explicit scope to narrow the view.
+    #[serde(default)]
+    scope: Option<crate::auth::principals::ResourceScope>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -420,14 +425,14 @@ pub(super) async fn reorder_projects(
 )]
 pub(super) async fn list_projects(
     State(state): State<Arc<ApiState>>,
-    _auth_ctx: crate::auth::context::AuthContext,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<ProjectListQuery>,
 ) -> Result<Json<ProjectListResponse>, StatusCode> {
     // TODO(phase-5): gate the unfiltered listing path. Currently returns
-    // every project the instance holds to any authenticated caller. The
-    // correct fix is per-row `check_read` once the audit log lands and
-    // can absorb the N+1 audit emission cost; in the interim an
-    // admin-only guard would be an acceptable tightening.
+    // every project the instance holds to any authenticated caller when
+    // no scope is requested. Scope-narrowed queries apply an ownership
+    // allowlist at the SQL layer, which is a weaker form of the per-row
+    // gate the phase-5 TODO will eventually replace.
     let store_guard = state.project_store.load();
     let store = store_guard.as_ref().as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
@@ -438,13 +443,74 @@ pub(super) async fn list_projects(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    let pool_opt = state.instance_pool.load().as_ref().as_ref().cloned();
+
+    // Scope filter resolves to an allowlist of ids. None = unfiltered
+    // (legacy path; admins and scripts). Admin callers bypass the filter
+    // even when a scope is requested: the admin surface wants full-list
+    // visibility regardless of ownership. Pool-None under a Mine/Team
+    // scope returns empty with a warn — same shape as the enrichment
+    // Pool-None path above.
+    use crate::auth::principals::ResourceScope;
+    let scope_allowlist: Option<std::collections::HashSet<String>> = match query.scope {
+        None => None,
+        Some(_) if auth_ctx.has_role(crate::auth::roles::ROLE_ADMIN) => None,
+        Some(ResourceScope::Org) => None,
+        Some(scope @ (ResourceScope::Mine | ResourceScope::Team)) => match pool_opt.as_ref() {
+            None => {
+                tracing::warn!(
+                    handler = "projects",
+                    actor = %auth_ctx.principal_key(),
+                    scope = scope.as_str(),
+                    "scope filter skipped: instance_pool not attached; returning empty"
+                );
+                Some(std::collections::HashSet::new())
+            }
+            Some(pool) => {
+                let key = auth_ctx.principal_key();
+                let fetched = match scope {
+                    ResourceScope::Mine => {
+                        crate::auth::repository::list_resource_ids_owned_by(
+                            pool,
+                            &key,
+                            PROJECT_RESOURCE_TYPE,
+                        )
+                        .await
+                    }
+                    ResourceScope::Team => {
+                        crate::auth::repository::list_team_scoped_resource_ids(
+                            pool,
+                            &key,
+                            PROJECT_RESOURCE_TYPE,
+                        )
+                        .await
+                    }
+                    ResourceScope::Org => unreachable!("Org handled above"),
+                };
+                match fetched {
+                    Ok(v) => Some(v.into_iter().collect()),
+                    Err(error) => {
+                        tracing::warn!(
+                            %error,
+                            handler = "projects",
+                            actor = %key,
+                            scope = scope.as_str(),
+                            "scope filter query failed; returning empty"
+                        );
+                        Some(std::collections::HashSet::new())
+                    }
+                }
+            }
+        },
+    };
+
     // Phase 7 PR 5 Task 7.12 enrichment. Project data lives in the
     // per-agent (and global) project store, while visibility lives in
     // the instance `resource_ownership` table. Post-fetch enrichment
     // mirrors every other chip-aware list handler.
     let ids: Vec<String> = projects.iter().map(|p| p.id.clone()).collect();
-    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, PROJECT_RESOURCE_TYPE, &ids).await
+    let tags = if let Some(pool) = pool_opt.as_ref() {
+        crate::api::resources::enrich_visibility_tags(pool, PROJECT_RESOURCE_TYPE, &ids).await
     } else {
         // Boot-window fallback: chips render as unowned until the pool
         // attaches. Mirrors the agents / cron / portal enrichment path.
@@ -458,6 +524,11 @@ pub(super) async fn list_projects(
 
     let items: Vec<ProjectListItem> = projects
         .into_iter()
+        .filter(|project| {
+            scope_allowlist
+                .as_ref()
+                .is_none_or(|set| set.contains(&project.id))
+        })
         .map(|project| {
             let tag = tags.get(&project.id).cloned().unwrap_or_default();
             ProjectListItem { project, tag }
