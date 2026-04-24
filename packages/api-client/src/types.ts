@@ -19,6 +19,25 @@ export type InstanceOverviewResponse =
 export type ResourceScope = components["schemas"]["ResourceScope"];
 
 // =============================================================================
+// Admin Types (Phase 7 PR 5)
+// =============================================================================
+
+/// Trimmed team row returned by `GET /api/admin/teams` for the admin
+/// directory page. Omits `external_id`, `tenant_id`, and raw record
+/// timestamps in favor of `member_count` + `last_sync_at` aggregates
+/// (see `src/api/admin_teams.rs` for the projection rationale).
+export type AdminTeamDetail = components["schemas"]["AdminTeamDetail"];
+export type AdminTeamsResponse = components["schemas"]["AdminTeamsResponse"];
+
+/// Trimmed member row returned by `GET /api/admin/teams/{id}/members`.
+/// Exposes display identity (`principal_key`, `display_name`,
+/// `display_email`) and the `observed_at` join-row timestamp.
+export type AdminTeamMemberDetail =
+  components["schemas"]["AdminTeamMemberDetail"];
+export type AdminTeamMembersResponse =
+  components["schemas"]["AdminTeamMembersResponse"];
+
+// =============================================================================
 // Auth Types (Phase 6)
 // =============================================================================
 

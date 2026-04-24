@@ -88,6 +88,11 @@ export type {
 	StatusResponse,
 	InstanceOverviewResponse,
 	ResourceScope,
+	// Admin (Phase 7 PR 5)
+	AdminTeamDetail,
+	AdminTeamsResponse,
+	AdminTeamMemberDetail,
+	AdminTeamMembersResponse,
 	// Channels
 	ChannelResponse,
 	ChannelsResponse,
@@ -187,6 +192,7 @@ import type {
 } from "./types";
 import type { WikiListResponse } from "./types";
 import type { ProjectListResponse, ResourceScope } from "./types";
+import type { AdminTeamsResponse, AdminTeamMembersResponse } from "./types";
 import type {
 	CronListResponse,
 	CronExecutionsResponse,
@@ -2697,6 +2703,18 @@ export const api = {
 		const query = qs.toString();
 		return fetchJson<ActivityResponse>(`/activity${query ? `?${query}` : ""}`);
 	},
+
+	// Admin team directory (Phase 7 PR 5 Task 7.13). Both endpoints
+	// require SpacebotAdmin; the caller site is responsible for the
+	// useRole("SpacebotAdmin") guard, the backend returns 403 for any
+	// other caller.
+	listAdminTeams: () =>
+		fetchJson<AdminTeamsResponse>(`/admin/teams`),
+
+	listTeamMembers: (teamId: string) =>
+		fetchJson<AdminTeamMembersResponse>(
+			`/admin/teams/${encodeURIComponent(teamId)}/members`,
+		),
 
 	/**
 	 * Rotate a resource's visibility (Phase 7 PR 1.5 Task 7.5).
