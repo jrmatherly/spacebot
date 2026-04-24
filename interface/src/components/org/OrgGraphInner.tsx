@@ -81,7 +81,7 @@ export function OrgGraphInner({activeEdges, agents}: OrgGraphInnerProps) {
 	// Fetch agent info for gradient/appearance data
 	const {data: agentInfoData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
 		refetchInterval: 30_000,
 	});
 

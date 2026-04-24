@@ -183,7 +183,7 @@ export function InstanceCard({
 
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
 		staleTime: 10_000,
 		enabled: expanded,
 	});

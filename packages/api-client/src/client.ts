@@ -1425,7 +1425,10 @@ export interface MigrateResponse {
 export const api = {
 	status: () => fetchJson<Types.StatusResponse>("/status"),
 	overview: () => fetchJson<Types.InstanceOverviewResponse>("/agents/instance"),
-	agents: () => fetchJson<Types.AgentsResponse>("/agents"),
+	agents: (opts?: { scope?: ResourceScope }) => {
+		const qs = opts?.scope ? `?scope=${opts.scope}` : "";
+		return fetchJson<Types.AgentsResponse>(`/agents${qs}`);
+	},
 	factoryPresets: () => fetchJson<PresetsResponse>("/factory/presets"),
 	agentOverview: (agentId: string) =>
 		fetchJson<Types.AgentOverviewResponse>(`/agents/overview?agent_id=${encodeURIComponent(agentId)}`),

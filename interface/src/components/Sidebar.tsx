@@ -205,7 +205,29 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
+		refetchInterval: 30_000,
+	});
+
+	// Phase 7 PR 5 Task 7.16: split the flat agent list into My / Team /
+	// Org nav groups. The three scoped queries drive a classification
+	// map (agentId → scope group); the flat `agentsData` query above
+	// remains authoritative for display names, gradients, and the DnD
+	// ordering hook so reorder UX stays intact. Group headers hide when
+	// their slice is empty.
+	const {data: myAgentsData} = useQuery({
+		queryKey: ["agents", "mine"],
+		queryFn: () => api.agents({scope: "mine"}),
+		refetchInterval: 30_000,
+	});
+	const {data: teamAgentsData} = useQuery({
+		queryKey: ["agents", "team"],
+		queryFn: () => api.agents({scope: "team"}),
+		refetchInterval: 30_000,
+	});
+	const {data: orgAgentsData} = useQuery({
+		queryKey: ["agents", "org"],
+		queryFn: () => api.agents({scope: "org"}),
 		refetchInterval: 30_000,
 	});
 
@@ -242,6 +264,39 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 		return map;
 	}, [agents]);
 	const [agentOrder, setAgentOrder] = useAgentOrder(agentIds);
+
+	// Scope-group membership sets derived from the three scoped queries.
+	// Mine + Team are the narrowing lenses; Org acts as the catch-all
+	// (the backend returns the full list for scope=org), so any agent
+	// not in Mine or Team falls into Org without needing the orgAgents
+	// set explicitly. Reading `orgAgentsData` keeps the query wired
+	// (React Query needs the subscription to refetch + stay warm) even
+	// though the ids themselves are not referenced here.
+	void orgAgentsData;
+	const myAgentIds = useMemo(
+		() => new Set((myAgentsData?.agents ?? []).map((a) => a.id)),
+		[myAgentsData],
+	);
+	const teamAgentIds = useMemo(
+		() => new Set((teamAgentsData?.agents ?? []).map((a) => a.id)),
+		[teamAgentsData],
+	);
+
+	// Partition the ordered agent id list into three scope groups. An
+	// agent appears in exactly one group: Mine wins over Team, Team wins
+	// over Org catch-all. This matches the chip-model invariant (union
+	// of paths; render once per agent in the narrowest-scope group).
+	const [myIdsOrdered, teamIdsOrdered, orgIdsOrdered] = useMemo(() => {
+		const mine: string[] = [];
+		const team: string[] = [];
+		const org: string[] = [];
+		for (const id of agentOrder) {
+			if (myAgentIds.has(id)) mine.push(id);
+			else if (teamAgentIds.has(id)) team.push(id);
+			else org.push(id);
+		}
+		return [mine, team, org];
+	}, [agentOrder, myAgentIds, teamAgentIds]);
 
 	// Default-expand the first agent until the user explicitly picks another.
 	const expandedAgent = userExpandedAgent ?? agentOrder[0] ?? null;
@@ -410,7 +465,13 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 					</section>
 				)}
 
-				{/* Agents section */}
+				{/* Agents section — split into My / Team / Org groups. Each
+				    group renders its own DnD context so drag-reorder stays
+				    bounded to the group; cross-group reordering is
+				    out-of-scope here (it would require re-labeling the
+				    agent's ownership, which is a Share modal flow). Empty
+				    groups hide their header so callers with only personal
+				    agents aren't staring at empty "Team" / "Org" labels. */}
 				<section>
 					<div className="mb-2 flex items-center justify-between px-2">
 						<div className="text-sidebar-inkDull text-[11px] font-semibold uppercase tracking-[0.16em]">
@@ -425,38 +486,53 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 							/>
 						)}
 					</div>
-					<div className="space-y-0.5">
-						<DndContext
-							sensors={sensors}
-							collisionDetection={closestCenter}
-							onDragEnd={handleDragEnd}
-						>
-							<SortableContext
-								items={agentOrder}
-								strategy={verticalListSortingStrategy}
-							>
-								{agentOrder.map((agentId) => {
-									const isActive = !!matchRoute({
-										to: "/agents/$agentId",
-										params: {agentId},
-										fuzzy: true,
-									});
-									return (
-										<SortableAgentItem
-											key={agentId}
-											agentId={agentId}
-											displayName={agentDisplayNames[agentId]}
-											gradientStart={agentGradients[agentId]?.start}
-											gradientEnd={agentGradients[agentId]?.end}
-											isActive={isActive}
-											isExpanded={expandedAgent === agentId}
-											onToggle={() => setUserExpandedAgent(agentId)}
-										/>
-									);
-								})}
-							</SortableContext>
-						</DndContext>
-					</div>
+					{([
+						["mine" as const, "My Agents", myIdsOrdered],
+						["team" as const, "Team", teamIdsOrdered],
+						["org" as const, "Org", orgIdsOrdered],
+					] as const).map(([key, label, ids]) => {
+						if (ids.length === 0) return null;
+						return (
+							<div key={key} className="mb-3 space-y-0.5">
+								<div
+									className="px-2 pb-1 text-sidebar-inkFaint text-[10px] font-medium uppercase tracking-[0.14em]"
+									data-testid={`sidebar-agents-group-${key}`}
+								>
+									{label}
+								</div>
+								<DndContext
+									sensors={sensors}
+									collisionDetection={closestCenter}
+									onDragEnd={handleDragEnd}
+								>
+									<SortableContext
+										items={ids}
+										strategy={verticalListSortingStrategy}
+									>
+										{ids.map((agentId) => {
+											const isActive = !!matchRoute({
+												to: "/agents/$agentId",
+												params: {agentId},
+												fuzzy: true,
+											});
+											return (
+												<SortableAgentItem
+													key={agentId}
+													agentId={agentId}
+													displayName={agentDisplayNames[agentId]}
+													gradientStart={agentGradients[agentId]?.start}
+													gradientEnd={agentGradients[agentId]?.end}
+													isActive={isActive}
+													isExpanded={expandedAgent === agentId}
+													onToggle={() => setUserExpandedAgent(agentId)}
+												/>
+											);
+										})}
+									</SortableContext>
+								</DndContext>
+							</div>
+						);
+					})}
 				</section>
 			</div>
 			</div>

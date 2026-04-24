@@ -118,7 +118,7 @@ export function GlobalTasks() {
 
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
 		staleTime: 10_000,
 	});
 
