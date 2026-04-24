@@ -20,7 +20,9 @@ use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
-use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
+use spacebot::auth::repository::{
+    get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use spacebot::tasks::TaskStore;
@@ -360,4 +362,98 @@ async fn pool_none_skip_get_task() {
         StatusCode::FORBIDDEN,
         "authz skip must not cause a 403"
     );
+}
+
+#[tokio::test]
+async fn list_tasks_enriches_team_scoped_task_with_chip_fields() {
+    // The SPA consumes `visibility` + `team_name` on each task list row
+    // to render the chip. This pins the wire shape so a regression that
+    // drops `enrich_visibility_tags` from the list handler trips CI
+    // before the SPA notices a silent degradation. Mirrors
+    // tests/api_wiki_authz.rs::list_pages_enriches_team_scoped_page_with_chip_fields
+    // (the PR 3 precedent) and
+    // tests/api_projects_authz.rs::list_projects_enriches_team_scoped_project_with_chip_fields
+    // (PR 5 Commit 3). Backfill commit closing the D104 asymmetry flagged
+    // in PR 4's plan review S1.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    attach_task_store(&state, &pool);
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team = upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+
+    // Own the parent agent (so the authz gate passes on scope=agent_id).
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Seed a single team-scoped task under agent-a.
+    let store = TaskStore::new(pool.clone());
+    let task = store
+        .create(spacebot::tasks::CreateTaskInput {
+            owner_agent_id: "agent-a".to_string(),
+            assigned_agent_id: "agent-a".to_string(),
+            title: "Team Task".to_string(),
+            description: None,
+            status: spacebot::tasks::TaskStatus::PendingApproval,
+            priority: spacebot::tasks::TaskPriority::Medium,
+            subtasks: vec![],
+            metadata: serde_json::json!({}),
+            source_memory_id: None,
+            created_by: "test".to_string(),
+        })
+        .await
+        .unwrap();
+    set_ownership(
+        &pool,
+        "task",
+        &task.id,
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let req = Request::builder()
+        .uri("/api/tasks?agent_id=agent-a")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let tasks = body["tasks"].as_array().expect("tasks array present");
+    let row = tasks
+        .iter()
+        .find(|t| t["id"] == task.id)
+        .expect("seeded task present in list response");
+    assert_eq!(
+        row["visibility"].as_str(),
+        Some("team"),
+        "chip visibility field must be present on team-scoped task"
+    );
+    assert_eq!(
+        row["team_name"].as_str(),
+        Some("Platform"),
+        "chip team_name must resolve to the team's display_name"
+    );
+    // Flattened inner-Task fields still cross the wire (additive shape).
+    assert_eq!(row["title"].as_str(), Some("Team Task"));
 }
