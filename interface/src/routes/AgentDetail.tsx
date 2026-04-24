@@ -32,7 +32,7 @@ interface AgentDetailProps {
 export function AgentDetail({agentId, liveStates}: AgentDetailProps) {
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
 		refetchInterval: 30_000,
 	});
 

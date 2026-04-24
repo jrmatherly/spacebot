@@ -15,6 +15,21 @@ import {
 import {SettingSidebarButton} from "@/ui/SettingSidebarButton";
 import {useSearch, useNavigate} from "@tanstack/react-router";
 import {ModelSelect} from "@/components/ModelSelect";
+import {useRole} from "@/auth/useMe";
+import {Shield, WarningCircle} from "@phosphor-icons/react";
+
+// Sections whose content exposes LLM provider credentials, encrypted
+// secrets, channel bindings, or third-party API keys. Only SpacebotAdmin
+// principals see them; the sidebar hides the entries and a deep-link
+// attempt (`?tab=providers`) renders an access-denied panel. This
+// matches the backend's `/api/admin/*` 403 guard so the UI surface and
+// the authz surface stay aligned.
+const ADMIN_ONLY_SECTIONS = new Set<SectionId>([
+	"providers",
+	"secrets",
+	"channels",
+	"api-keys",
+]);
 import {
 	InstanceSection,
 	AppearanceSection,
@@ -62,8 +77,17 @@ function validateLitellmBaseUrl(raw: string): ValidationResult {
 export function Settings() {
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
+	const isAdmin = useRole("SpacebotAdmin");
 	const search = useSearch({from: "/settings"}) as {tab?: string};
-	const [activeSection, setActiveSection] = useState<SectionId>("providers");
+	// Default non-admins to a safe section they can see. Admins land on
+	// providers as before so existing bookmarks survive.
+	const [activeSection, setActiveSection] = useState<SectionId>(
+		isAdmin ? "providers" : "appearance",
+	);
+	const visibleSections = isAdmin
+		? SECTIONS
+		: SECTIONS.filter((s) => !ADMIN_ONLY_SECTIONS.has(s.id));
+	const isLockedOut = ADMIN_ONLY_SECTIONS.has(activeSection) && !isAdmin;
 
 	// Sync activeSection with URL search param
 	useEffect(() => {
@@ -618,7 +642,7 @@ export function Settings() {
 					</span>
 				</div>
 				<div className="flex flex-col gap-0.5 px-2">
-					{SECTIONS.map((section) => (
+					{visibleSections.map((section) => (
 						<SettingSidebarButton
 							key={section.id}
 							onClick={() => handleSectionChange(section.id)}
@@ -632,8 +656,29 @@ export function Settings() {
 
 			{/* Content */}
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+				{isAdmin && (
+					<div className="flex items-center gap-2 border-b border-app-line/30 bg-amber-900/10 px-6 py-2 text-[11px] text-amber-200/80">
+						<Shield className="size-3.5 shrink-0" weight="fill" />
+						<span>
+							Admin mode: Providers, Secrets, Channels, and API Keys
+							sections are visible because you hold the SpacebotAdmin
+							role.
+						</span>
+					</div>
+				)}
 				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-					{activeSection === "instance" ? (
+					{isLockedOut ? (
+						<div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-ink-dull">
+							<WarningCircle
+								className="size-10 text-red-400/60"
+								weight="thin"
+							/>
+							<p className="text-sm">
+								The <strong>{activeSection}</strong> section requires the
+								SpacebotAdmin role.
+							</p>
+						</div>
+					) : activeSection === "instance" ? (
 						<InstanceSection
 							settings={globalSettings}
 							isLoading={globalSettingsLoading}

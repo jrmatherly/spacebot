@@ -36,7 +36,7 @@ use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
-use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
+use spacebot::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use std::sync::Arc;
@@ -494,4 +494,125 @@ async fn authz_skipped_total_increments_on_pool_none() {
         "authz_skipped_total should increment at least once per pool-None request \
          (before={before}, after={after})"
     );
+}
+
+#[tokio::test]
+async fn list_memories_enriches_team_scoped_memory_with_chip_fields() {
+    // The SPA consumes `visibility` + `team_name` on each memory list row
+    // to render the chip. Pins the wire shape so a regression that drops
+    // `enrich_visibility_tags` from the list_memories handler trips CI
+    // before the SPA notices a silent degradation. Mirrors
+    // tests/api_wiki_authz.rs::list_pages_enriches_team_scoped_page_with_chip_fields
+    // (the PR 3 precedent), tests/api_tasks_authz.rs (PR 5 Commit 12),
+    // and tests/api_projects_authz.rs (PR 5 Commit 3). Backfill commit
+    // closing the D104 asymmetry flagged in PR 4's plan review S1.
+    //
+    // Unlike the other chip-field tests, `list_memories` requires a
+    // registered MemorySearch in ApiState (the handler looks up
+    // `state.memory_searches.get(agent_id)` and 404s if absent). This
+    // test registers a real MemorySearch wrapping an in-memory
+    // MemoryStore + tempdir-backed LanceDB + stub EmbeddingModel so the
+    // enrichment code path runs end-to-end.
+    use spacebot::memory::types::{Memory, MemoryType};
+    use spacebot::memory::{EmbeddingModel, EmbeddingTable, MemorySearch, MemoryStore};
+    use std::collections::HashMap;
+
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team = upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+
+    // Own the parent agent (authz gate passes on scope=agent_id).
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-alice-1",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Build MemorySearch fixture. Mirrors the internal pattern in
+    // `src/memory/search.rs::tests::setup_search_with_memories`:
+    // in-memory SQLite store + tempdir-backed LanceDB + stub
+    // embedding model. The handler's `get_sorted` path doesn't touch
+    // embeddings so we don't need real vectors.
+    // `MemoryStore::connect_in_memory` is `#[cfg(test)]` and not
+    // reachable from integration-test files, so reproduce its setup
+    // inline: open an in-memory SQLite, run the per-agent migrations,
+    // wrap with MemoryStore::new.
+    let mem_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::migrate!("./migrations").run(&mem_pool).await.unwrap();
+    let store = MemoryStore::new(mem_pool);
+    let lance_dir = tempfile::tempdir().unwrap();
+    let lance_conn = lancedb::connect(lance_dir.path().to_str().unwrap())
+        .execute()
+        .await
+        .unwrap();
+    let embedding_table = EmbeddingTable::open_or_create(&lance_conn).await.unwrap();
+    let embedding_model = Arc::new(EmbeddingModel::new(lance_dir.path()).unwrap());
+
+    // Seed one memory, capture its id for ownership + assertion.
+    let memory = Memory::new("Team Runbook", MemoryType::Identity);
+    let memory_id = memory.id.clone();
+    store.save(&memory).await.unwrap();
+
+    // Register the MemorySearch keyed to agent-alice-1 so the handler's
+    // `searches.get(&agent_id)` lookup resolves.
+    let search = Arc::new(MemorySearch::new(store, embedding_table, embedding_model));
+    let mut searches = HashMap::new();
+    searches.insert("agent-alice-1".to_string(), search);
+    state.set_memory_searches(searches);
+
+    // Mark the memory row as team-scoped, shared to "Platform".
+    set_ownership(
+        &pool,
+        "memory",
+        &memory_id,
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let res = app
+        .oneshot(req_list_memories("agent-alice-1", &token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let memories = body["memories"].as_array().expect("memories array present");
+    let row = memories
+        .iter()
+        .find(|m| m["id"] == memory_id)
+        .expect("seeded memory present in list response");
+    assert_eq!(
+        row["visibility"].as_str(),
+        Some("team"),
+        "chip visibility field must be present on team-scoped memory"
+    );
+    assert_eq!(
+        row["team_name"].as_str(),
+        Some("Platform"),
+        "chip team_name must resolve to the team's display_name"
+    );
+    // Flattened inner-Memory fields still cross the wire (additive shape).
+    assert_eq!(row["content"].as_str(), Some("Team Runbook"));
 }

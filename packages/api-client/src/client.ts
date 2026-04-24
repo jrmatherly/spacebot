@@ -87,6 +87,12 @@ export type {
 	// System
 	StatusResponse,
 	InstanceOverviewResponse,
+	ResourceScope,
+	// Admin (Phase 7 PR 5)
+	AdminTeamDetail,
+	AdminTeamsResponse,
+	AdminTeamMemberDetail,
+	AdminTeamMembersResponse,
 	// Channels
 	ChannelResponse,
 	ChannelsResponse,
@@ -185,6 +191,8 @@ import type {
 	TaskActionResponse,
 } from "./types";
 import type { WikiListResponse } from "./types";
+import type { ProjectListResponse, ResourceScope } from "./types";
+import type { AdminTeamsResponse, AdminTeamMembersResponse } from "./types";
 import type {
 	CronListResponse,
 	CronExecutionsResponse,
@@ -1290,10 +1298,12 @@ export interface ProjectWorktreeWithRepo extends ProjectWorktree {
 	repo_name: string;
 }
 
-/** GET /agents/projects response */
-export interface ProjectListResponse {
-	projects: Project[];
-}
+// ProjectListResponse + ProjectListItem are exported from ./types as aliases
+// for the generated schema entries. `ProjectListItem = Project & VisibilityTag`
+// carries `visibility` + `team_name` chip fields so the SPA can render a
+// chip per row without casts. Mirrors the `WikiListItem`, `CronListItem`,
+// `PortalConversationListItem`, `TaskItem`, and `MemoryItem` precedents.
+export type { ProjectListItem, ProjectListResponse } from "./types";
 
 /** GET /agents/projects/:id response. Project fields are flattened. */
 export interface ProjectWithRelations extends Project {
@@ -1415,7 +1425,10 @@ export interface MigrateResponse {
 export const api = {
 	status: () => fetchJson<Types.StatusResponse>("/status"),
 	overview: () => fetchJson<Types.InstanceOverviewResponse>("/agents/instance"),
-	agents: () => fetchJson<Types.AgentsResponse>("/agents"),
+	agents: (opts?: { scope?: ResourceScope }) => {
+		const qs = opts?.scope ? `?scope=${opts.scope}` : "";
+		return fetchJson<Types.AgentsResponse>(`/agents${qs}`);
+	},
 	factoryPresets: () => fetchJson<PresetsResponse>("/factory/presets"),
 	agentOverview: (agentId: string) =>
 		fetchJson<Types.AgentOverviewResponse>(`/agents/overview?agent_id=${encodeURIComponent(agentId)}`),
@@ -2431,9 +2444,16 @@ export const api = {
 	},
 
 	// Projects API
-	listProjects: (status?: ProjectStatus) => {
+	listProjects: (opts?: { status?: ProjectStatus; scope?: ResourceScope }) => {
+		// Single options-object signature. An earlier dual positional /
+		// options overload was a type-narrowing footgun:
+		// `listProjects(undefined, "mine")` silently dropped the scope
+		// arg on the positional path. All two pre-PR-5 callers migrated
+		// to the options-object form in the same PR, and the generated
+		// schema's query-param surface matches this shape exactly.
 		const search = new URLSearchParams();
-		if (status) search.set("status", status);
+		if (opts?.status) search.set("status", opts.status);
+		if (opts?.scope) search.set("scope", opts.scope);
 		const qs = search.toString();
 		return fetchJson<ProjectListResponse>(`/agents/projects${qs ? `?${qs}` : ""}`);
 	},
@@ -2675,6 +2695,18 @@ export const api = {
 		const query = qs.toString();
 		return fetchJson<ActivityResponse>(`/activity${query ? `?${query}` : ""}`);
 	},
+
+	// Admin team directory (Phase 7 PR 5 Task 7.13). Both endpoints
+	// require SpacebotAdmin; the caller site is responsible for the
+	// useRole("SpacebotAdmin") guard, the backend returns 403 for any
+	// other caller.
+	listAdminTeams: () =>
+		fetchJson<AdminTeamsResponse>(`/admin/teams`),
+
+	listTeamMembers: (teamId: string) =>
+		fetchJson<AdminTeamMembersResponse>(
+			`/admin/teams/${encodeURIComponent(teamId)}/members`,
+		),
 
 	/**
 	 * Rotate a resource's visibility (Phase 7 PR 1.5 Task 7.5).

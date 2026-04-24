@@ -361,3 +361,75 @@ pub async fn list_teams(pool: &SqlitePool) -> anyhow::Result<Vec<TeamRecord>> {
     .await
     .context("list active teams")
 }
+
+/// List `resource_id` values the given principal owns directly for the given
+/// `resource_type`. Backs the `ResourceScope::Mine` query param on list
+/// handlers: the handler fetches the owned id set here, then filters the
+/// per-agent (or global) resource query by `id IN (...)`.
+///
+/// Returns an empty `Vec` for unknown principals and for principals with no
+/// matching ownership rows. Handlers rely on this: a caller with no owned
+/// resources must see an empty list, not an error.
+///
+/// Ordered by `resource_id` for a deterministic result across invocations.
+/// Callers that need a set-membership check can `.collect::<HashSet<_>>()`.
+pub async fn list_resource_ids_owned_by(
+    pool: &SqlitePool,
+    principal_key: &str,
+    resource_type: &str,
+) -> anyhow::Result<Vec<String>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT resource_id FROM resource_ownership \
+         WHERE owner_principal_key = ? AND resource_type = ? \
+         ORDER BY resource_id",
+    )
+    .bind(principal_key)
+    .bind(resource_type)
+    .fetch_all(pool)
+    .await
+    .with_context(|| {
+        format!(
+            "list owned resource_ids principal_key={principal_key} resource_type={resource_type}"
+        )
+    })?;
+    Ok(ids)
+}
+
+/// List `resource_id` values shared with any team the given principal
+/// belongs to. Backs the `ResourceScope::Team` query param on list
+/// handlers. Uses a single JOIN so the caller does not need a separate
+/// round-trip to resolve team memberships.
+///
+/// The JOIN matches `resource_ownership.shared_with_team_id =
+/// team_memberships.team_id`. Rows where `shared_with_team_id` is NULL
+/// (i.e., `visibility IN ('personal', 'org')`) are excluded by the
+/// NULL-safe INNER JOIN semantics. Excludes rows owned directly by the
+/// caller (`owner_principal_key != ?`) so team-scope queries mean
+/// "resources my team shared with me but that I don't own" rather than
+/// doubling up with `Mine`. Handlers that want the union fetch both
+/// scopes and merge.
+pub async fn list_team_scoped_resource_ids(
+    pool: &SqlitePool,
+    principal_key: &str,
+    resource_type: &str,
+) -> anyhow::Result<Vec<String>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT ro.resource_id \
+         FROM resource_ownership ro \
+         INNER JOIN team_memberships tm ON tm.team_id = ro.shared_with_team_id \
+         WHERE tm.principal_key = ? AND ro.resource_type = ? \
+               AND ro.owner_principal_key != ? \
+         ORDER BY ro.resource_id",
+    )
+    .bind(principal_key)
+    .bind(resource_type)
+    .bind(principal_key)
+    .fetch_all(pool)
+    .await
+    .with_context(|| {
+        format!(
+            "list team-scoped resource_ids principal_key={principal_key} resource_type={resource_type}"
+        )
+    })?;
+    Ok(ids)
+}

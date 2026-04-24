@@ -27,6 +27,7 @@ import {Wiki} from "@/routes/Wiki";
 import {AgentChat} from "@/routes/AgentChat";
 import {Settings} from "@/routes/Settings";
 import {Workbench} from "@/routes/Workbench";
+import {AdminTeams} from "@/routes/admin/Teams";
 import {useLiveContext} from "@/hooks/useLiveContext";
 
 // ── Root layout ──────────────────────────────────────────────────────────
@@ -122,6 +123,14 @@ const wikiRoute = createRoute({
 	path: "/wiki",
 	component: function WikiPage() {
 		return <Wiki />;
+	},
+});
+
+const adminTeamsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/admin/teams",
+	component: function AdminTeamsPage() {
+		return <AdminTeams />;
 	},
 });
 
@@ -265,6 +274,7 @@ const routeTree = rootRoute.addChildren([
 	workbenchRoute,
 	tasksRoute,
 	wikiRoute,
+	adminTeamsRoute,
 	agentRoute,
 	agentChatRoute,
 	agentChannelsRoute,

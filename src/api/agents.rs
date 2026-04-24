@@ -41,7 +41,7 @@
 use super::state::{AgentInfo, ApiState};
 
 use crate::agent::cortex::CortexLogger;
-use crate::auth::principals::Visibility;
+use crate::auth::principals::{ResourceScope, Visibility};
 use crate::conversation::channels::ChannelStore;
 
 use axum::Json;
@@ -232,6 +232,15 @@ pub(super) struct AgentMcpQuery {
     agent_id: String,
 }
 
+/// Optional scope filter for the agents list. Absent param preserves the
+/// legacy unfiltered behavior so admin UIs, scripts, and existing
+/// integration tests are unaffected. Sidebar and admin list pages pass
+/// an explicit scope to narrow the view.
+#[derive(Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
+pub(super) struct AgentsQuery {
+    scope: Option<ResourceScope>,
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct ReconnectMcpRequest {
     agent_id: String,
@@ -345,21 +354,32 @@ fn resolve_warmup_agent_ids(
     Ok(accepted_agents)
 }
 
-/// List all configured agents with their config summaries.
+/// List all configured agents with their config summaries. Supports the
+/// `?scope=mine|team|org` query param (absent = unfiltered, admin/script
+/// behavior). Sidebar and admin list pages use the scope filter;
+/// existing unfiltered callers keep working unchanged.
 #[utoipa::path(
     get,
     path = "/agents",
+    params(AgentsQuery),
     responses(
         (status = 200, body = AgentsResponse),
+        (status = 500, description = "Scope-filter query failed (user-facing listing cannot silently degrade to empty)"),
     ),
     tag = "agents",
 )]
-pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<AgentsResponse> {
+pub(super) async fn list_agents(
+    State(state): State<Arc<ApiState>>,
+    auth_ctx: crate::auth::context::AuthContext,
+    Query(query): Query<AgentsQuery>,
+) -> Result<Json<AgentsResponse>, StatusCode> {
     // TODO(phase-5): per-row `check_read` once the audit log lands.
     // Today this returns every configured agent's summary to any
-    // authenticated caller. Agent configs are lower-sensitivity than
-    // memories or portal conversations (no private content), so this
-    // matches the `list_memories` / `list_tasks` unfiltered-path TODO.
+    // authenticated caller when no scope is provided. Scope-narrowed
+    // queries are filtered by ownership at the SQL layer, which is a
+    // weaker form of the per-row gate the phase-5 TODO will eventually
+    // replace. Agent configs are lower-sensitivity than memories or
+    // portal conversations (no private content).
     let configs = state.agent_configs.load();
 
     // Phase 7 PR 1.5 Task 7.5a. Agents are in-memory (ArcSwap<Vec<AgentInfo>>
@@ -367,8 +387,62 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
     // extend with a JOIN. Enrichment is a secondary lookup against the
     // instance pool keyed on the agent's id.
     let ids: Vec<String> = configs.iter().map(|a| a.id.clone()).collect();
-    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "agent", &ids).await
+    let pool_opt = state.instance_pool.load().as_ref().as_ref().cloned();
+
+    // Scope filter resolves to an allowlist of ids that pass; None means
+    // no filter (unfiltered legacy path). Admin callers bypass the filter
+    // so the admin UI retains the full view. Pool-None under a requested
+    // scope degrades to empty (boot-window graceful degradation); query
+    // failure bubbles 500 so React Query surfaces an error state rather
+    // than leaving the user staring at a silently-empty section.
+    // Org short-circuits to `None` at the outer match arm so the inner
+    // scope-fetch block only ever sees Mine or Team.
+    let scope_allowlist: Option<std::collections::HashSet<String>> = match query.scope {
+        None => None,
+        Some(_) if auth_ctx.has_role(crate::auth::roles::ROLE_ADMIN) => None,
+        Some(ResourceScope::Org) => None,
+        Some(scope @ (ResourceScope::Mine | ResourceScope::Team)) => match pool_opt.as_ref() {
+            None => {
+                tracing::warn!(
+                    handler = "agents",
+                    actor = %auth_ctx.principal_key(),
+                    scope = scope.as_str(),
+                    "scope filter skipped: instance_pool not attached; returning empty"
+                );
+                Some(std::collections::HashSet::new())
+            }
+            Some(pool) => {
+                let key = auth_ctx.principal_key();
+                let fetched = match scope {
+                    ResourceScope::Mine => {
+                        crate::auth::repository::list_resource_ids_owned_by(pool, &key, "agent")
+                            .await
+                    }
+                    ResourceScope::Team => {
+                        crate::auth::repository::list_team_scoped_resource_ids(pool, &key, "agent")
+                            .await
+                    }
+                    ResourceScope::Org => unreachable!("Org handled above"),
+                };
+                match fetched {
+                    Ok(v) => Some(v.into_iter().collect()),
+                    Err(error) => {
+                        tracing::error!(
+                            %error,
+                            handler = "agents",
+                            actor = %key,
+                            scope = scope.as_str(),
+                            "scope filter query failed; returning 500"
+                        );
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                }
+            }
+        },
+    };
+
+    let tags = if let Some(pool) = pool_opt.as_ref() {
+        crate::api::resources::enrich_visibility_tags(pool, "agent", &ids).await
     } else {
         // I4: mirror the authz-skipped pattern.
         tracing::warn!(
@@ -378,8 +452,14 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
         );
         std::collections::HashMap::new()
     };
+
     let agents: Vec<AgentListItem> = configs
         .iter()
+        .filter(|agent| {
+            scope_allowlist
+                .as_ref()
+                .is_none_or(|set| set.contains(&agent.id))
+        })
         .map(|agent| {
             let tag = tags.get(&agent.id).cloned().unwrap_or_default();
             AgentListItem {
@@ -389,7 +469,7 @@ pub(super) async fn list_agents(State(state): State<Arc<ApiState>>) -> Json<Agen
         })
         .collect();
 
-    Json(AgentsResponse { agents })
+    Ok(Json(AgentsResponse { agents }))
 }
 
 /// List MCP connection status for an agent.

@@ -62,6 +62,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin-only: list active teams with member counts and staleness info. */
+        get: operations["list_admin_teams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/teams/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin-only: list the user roster for a specific team. Returns 200 with
+         *     an empty `members: []` array when the team exists but has no
+         *     memberships; returns 404 for a nonexistent team id so a typo'd path
+         *     surfaces distinctly from a real empty team. PR #115 review finding:
+         *     returning 200 for both cases masked real bugs (stale link, typo in
+         *     team id) as "team is empty" in the admin UI.
+         */
+        get: operations["list_team_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents": {
         parameters: {
             query?: never;
@@ -69,7 +110,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all configured agents with their config summaries. */
+        /**
+         * List all configured agents with their config summaries. Supports the
+         *     `?scope=mine|team|org` query param (absent = unfiltered, admin/script
+         *     behavior). Sidebar and admin list pages use the scope filter;
+         *     existing unfiltered callers keep working unchanged.
+         */
         get: operations["list_agents"];
         /** Update an agent's display_name and role in config.toml. */
         put: operations["update_agent"];
@@ -2600,6 +2646,41 @@ export interface components {
             platform: string;
             runtime_key: string;
         };
+        /**
+         * @description List row for `GET /admin/teams`. Trimmed versus [`crate::auth::principals::TeamRecord`]
+         *     so the wire response does not expose `external_id` (Entra group id) or
+         *     raw `created_at` / `updated_at` timestamps that the admin UI does not
+         *     surface. `last_sync_at` maps to `MAX(team_memberships.observed_at)` so
+         *     the UI can show "data is N hours stale" at a glance.
+         */
+        AdminTeamDetail: {
+            display_name: string;
+            id: string;
+            last_sync_at?: string | null;
+            /** Format: int64 */
+            member_count: number;
+            status: components["schemas"]["TeamStatus"];
+        };
+        /**
+         * @description Detail row for `GET /admin/teams/{id}/members`. Trimmed versus
+         *     [`crate::auth::principals::UserRecord`]: exposes display identity
+         *     (`principal_key`, `display_name`, `display_email`) and the
+         *     `observed_at` timestamp from the join row, but omits `tenant_id`,
+         *     `object_id`, raw user-row timestamps, and any photo cache fields.
+         */
+        AdminTeamMemberDetail: {
+            display_email?: string | null;
+            display_name?: string | null;
+            observed_at: string;
+            principal_key: string;
+            source: string;
+        };
+        AdminTeamMembersResponse: {
+            members: components["schemas"]["AdminTeamMemberDetail"][];
+        };
+        AdminTeamsResponse: {
+            teams: components["schemas"]["AdminTeamDetail"][];
+        };
         AgentConfigResponse: {
             browser: components["schemas"]["BrowserSection"];
             channel: components["schemas"]["ChannelSection"];
@@ -3861,8 +3942,16 @@ export interface components {
             tags: string[];
             updated_at: string;
         };
+        /**
+         * @description Project list row: the bare project shape plus a `VisibilityTag` flattened
+         *     into the same JSON object. Additive on the wire (clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag).
+         *     Mirrors `MemoryListItem` / `TaskListItem` / `WikiListItem` /
+         *     `CronListItem` / `PortalConversationListItem`.
+         */
+        ProjectListItem: components["schemas"]["Project"] & components["schemas"]["VisibilityTag"];
         ProjectListResponse: {
-            projects: components["schemas"]["Project"][];
+            projects: components["schemas"]["ProjectListItem"][];
         };
         ProjectRepo: {
             created_at: string;
@@ -4069,6 +4158,15 @@ export interface components {
             repo: components["schemas"]["ProjectRepo"];
         };
         /**
+         * @description Query-param scope for list endpoints that support narrowing results to
+         *     "resources the caller owns" / "resources in the caller's teams" / "the
+         *     full org view." Distinct from [`Visibility`], which is the persisted
+         *     property on each resource row. `ResourceScope` is the query-time lens
+         *     over ownership; `Visibility` is the storage-time classification.
+         * @enum {string}
+         */
+        ResourceScope: "mine" | "team" | "org";
+        /**
          * @description Response mode controls how the channel handles incoming messages.
          * @enum {string}
          */
@@ -4258,6 +4356,17 @@ export interface components {
             completed: boolean;
             title: string;
         };
+        /**
+         * @description Persisted team lifecycle state. Mirrors the CHECK constraint on
+         *     `teams.status` (`CHECK (status IN ('active', 'archived'))`) from
+         *     `migrations/global/20260420120002_teams.sql`. Typed here so the admin
+         *     wire response can't accidentally emit a string that doesn't match the
+         *     schema. `list_admin_teams` filters to `Active` at the SQL layer today,
+         *     but the `Archived` variant is present so a future "show archived
+         *     teams" admin toggle doesn't require a wire-shape migration.
+         * @enum {string}
+         */
+        TeamStatus: "active" | "archived";
         /**
          * @description Minimal team projection served by `GET /api/teams`. Only `id` +
          *     `display_name` cross the wire because the SPA's `ShareResourceModal`
@@ -4957,7 +5066,7 @@ export interface operations {
             };
         };
     };
-    list_agents: {
+    list_admin_teams: {
         parameters: {
             query?: never;
             header?: never;
@@ -4971,8 +5080,93 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["AdminTeamsResponse"];
+                };
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable or query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_team_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeamMembersResponse"];
+                };
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team id does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable or query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_agents: {
+        parameters: {
+            query?: {
+                scope?: null | components["schemas"]["ResourceScope"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["AgentsResponse"];
                 };
+            };
+            /** @description Scope-filter query failed (user-facing listing cannot silently degrade to empty) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6015,6 +6209,12 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                /**
+                 * @description Optional scope filter. Absent preserves legacy unfiltered behavior
+                 *     for admin callers and scripts; Sidebar / Workbench send an
+                 *     explicit scope to narrow the view.
+                 */
+                scope?: null | components["schemas"]["ResourceScope"];
             };
             header?: never;
             path?: never;
@@ -6032,6 +6232,13 @@ export interface operations {
             };
             /** @description No project store available */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Scope-filter query failed (user-facing listing cannot silently degrade to empty) */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

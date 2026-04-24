@@ -1,5 +1,5 @@
 import {useState, useEffect, useCallback} from "react";
-import {useNavigate} from "@tanstack/react-router";
+import {useNavigate, useSearch} from "@tanstack/react-router";
 import {ArrowLeft, PencilSimple, Trash, Plus, FolderSimple, Clock, DotsSixVertical} from "@phosphor-icons/react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
 import {
@@ -22,6 +22,7 @@ import {CSS} from "@dnd-kit/utilities";
 import {
 	api,
 	type Project,
+	type ProjectListItem,
 	type ProjectWorktreeWithRepo,
 	type ProjectRepo,
 	type CreateProjectRequest,
@@ -46,6 +47,16 @@ import {
 } from "@spacedrive/primitives";
 import {formatTimeAgo} from "@/lib/format";
 import {clsx} from "clsx";
+import {VisibilityChip} from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import {useTeams} from "@/auth/useMe";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,9 +78,11 @@ function formatBytes(bytes: number): string {
 function SortableProjectCard({
 	project,
 	onClick,
+	onShare,
 }: {
-	project: Project;
+	project: ProjectListItem;
 	onClick: () => void;
+	onShare: (p: ProjectListItem) => void;
 }) {
 	const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({
 		id: project.id,
@@ -142,6 +155,27 @@ function SortableProjectCard({
 						<FolderSimple className="size-3 shrink-0" weight="bold" />
 						<span className="truncate font-mono">{project.root_path}</span>
 					</span>
+					{/* Conditional render (no-auto-broadening policy): unowned
+					    projects show no chip. */}
+					{project.visibility && (
+						<VisibilityChip
+							visibility={project.visibility}
+							teamName={project.team_name ?? undefined}
+						/>
+					)}
+					<button
+						type="button"
+						onClick={(e) => {
+							e.stopPropagation();
+							onShare(project);
+						}}
+						className="opacity-0 transition-opacity group-hover:opacity-100"
+						title="Share"
+					>
+						<span className="rounded px-1 py-0.5 text-tiny font-medium text-ink-dull hover:bg-app-hover">
+							Share
+						</span>
+					</button>
 					<span className="ml-auto flex shrink-0 items-center gap-1">
 						<Clock className="size-3" weight="bold" />
 						{formatTimeAgo(project.updated_at)}
@@ -1026,30 +1060,64 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 	);
 
 	const [showCreate, setShowCreate] = useState(false);
-	const [localProjects, setLocalProjects] = useState<Project[]>([]);
+	const [localProjects, setLocalProjects] = useState<ProjectListItem[]>([]);
+	const [shareTarget, setShareTarget] = useState<ProjectListItem | null>(null);
 
-	const {data, isLoading} = useQuery({
-		queryKey: ["projects"],
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as Wiki / AgentMemories / AgentCron.
+	const urlSearch = useSearch({strict: false}) as {visibility?: string};
+	const visibilityFilter: VisibilityFilterValue =
+		urlSearch.visibility === "personal" ||
+		urlSearch.visibility === "team" ||
+		urlSearch.visibility === "org"
+			? urlSearch.visibility
+			: "all";
+
+	// Lazy-gate the teams fetch on modal-open so the dropdown only fires
+	// a /api/teams request when the user actually opens Share.
+	const teamsQuery = useTeams({enabled: shareTarget !== null});
+
+	const {data, isLoading, error: listError} = useQuery({
+		queryKey: ["projects", visibilityFilter],
 		queryFn: () => api.listProjects(),
 		refetchInterval: 15_000,
 	});
 
-	// Sync local order state from server whenever fresh data arrives,
-	// but only if we're not in the middle of a drag.
-	useEffect(() => {
-		setLocalProjects(data?.projects ?? []);
-	}, [data]);
-
 	const reorderMutation = useMutation({
 		mutationFn: (ids: string[]) => api.reorderProjects(ids),
 		onError: () => {
-			// Revert to last known server state on failure.
-			setLocalProjects(data?.projects ?? []);
+			// Revert to last known server state on failure, re-applying
+			// the current filter so the UI doesn't snap back to unfiltered.
+			const raw = data?.projects ?? [];
+			setLocalProjects(
+				visibilityFilter === "all"
+					? raw
+					: raw.filter((p) => p.visibility === visibilityFilter),
+			);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({queryKey: ["projects"]});
 		},
 	});
+
+	// Sync local order state from server whenever fresh data arrives,
+	// but skip while a reorder is in flight: a refetch mid-drag would
+	// snap the list back to server order and drop the user's pending
+	// reorder. `reorderMutation.isPending` is the drag-state guard
+	// (the mutation fires on drop, stays pending until the server
+	// acks). Client-side filter is applied here because the backend
+	// scope-query is orthogonal to the URL-backed visibility-tag
+	// filter (scope narrows by ownership, this filter narrows by
+	// classification).
+	useEffect(() => {
+		if (reorderMutation.isPending) return;
+		const raw = data?.projects ?? [];
+		const filtered =
+			visibilityFilter === "all"
+				? raw
+				: raw.filter((p) => p.visibility === visibilityFilter);
+		setLocalProjects(filtered);
+	}, [data, visibilityFilter, reorderMutation.isPending]);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {activationConstraint: {distance: 8}}),
@@ -1090,6 +1158,18 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 					<span className="text-xs text-ink-faint">
 						{localProjects.length} project{localProjects.length !== 1 ? "s" : ""}
 					</span>
+					<VisibilityFilter
+						value={visibilityFilter}
+						onChange={(v) =>
+							navigate({
+								to: ".",
+								search: (prev) => ({
+									...prev,
+									visibility: v === "all" ? undefined : v,
+								}),
+							})
+						}
+					/>
 				</div>
 				<Button variant="gray" size="md" onClick={() => setShowCreate(true)}>
 					<Plus className="mr-1 size-3.5" weight="bold" />
@@ -1103,20 +1183,31 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 						<div className="flex items-center justify-center py-20">
 							<div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
 						</div>
+					) : listError ? (
+						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-app-line py-20">
+							<p className="text-sm text-red-400">Failed to load projects.</p>
+							<p className="mt-1 font-mono text-[10px] text-ink-faint">
+								{(listError as Error).message}
+							</p>
+						</div>
 					) : localProjects.length === 0 ? (
 						<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-app-line py-20">
 							<FolderSimple className="mb-3 size-8 text-ink-faint" weight="bold" />
 							<p className="text-sm text-ink-faint">
-								No projects registered yet.
+								{visibilityFilter === "all"
+									? "No projects registered yet."
+									: `No ${visibilityFilter} projects.`}
 							</p>
-							<Button
-								variant="gray"
-								size="md"
-								className="mt-4"
-								onClick={() => setShowCreate(true)}
-							>
-								Create your first project
-							</Button>
+							{visibilityFilter === "all" && (
+								<Button
+									variant="gray"
+									size="md"
+									className="mt-4"
+									onClick={() => setShowCreate(true)}
+								>
+									Create your first project
+								</Button>
+							)}
 						</div>
 					) : (
 						<DndContext
@@ -1134,6 +1225,7 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 											key={project.id}
 											project={project}
 											onClick={() => setSelectedProjectId(project.id)}
+											onShare={setShareTarget}
 										/>
 									))}
 								</div>
@@ -1144,6 +1236,35 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 			</div>
 
 			<CreateProjectDialog open={showCreate} onOpenChange={setShowCreate} />
+			{shareTarget && (
+				<ShareResourceModal
+					resourceType="project"
+					resourceId={shareTarget.id}
+					currentVisibility={shareTarget.visibility ?? null}
+					teams={(teamsQuery.data ?? []).map((t) => ({
+						id: t.id,
+						name: t.display_name,
+					}))}
+					onSubmit={async (args: ShareSubmitArgs) => {
+						await api.setResourceVisibility(
+							"project",
+							shareTarget.id,
+							args,
+						);
+						// Rethrow on failure: Projects list has a
+						// 15s refetchInterval, so a silent swallow
+						// would only repair state after the next
+						// refetch. Invalidate the narrower
+						// `["projects", visibilityFilter]` key so the
+						// current filter's cache busts; other filter
+						// caches stay warm.
+						await queryClient.invalidateQueries({
+							queryKey: ["projects"],
+						});
+					}}
+					onClose={() => setShareTarget(null)}
+				/>
+			)}
 		</div>
 	);
 }

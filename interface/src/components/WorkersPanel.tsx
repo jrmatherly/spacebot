@@ -67,7 +67,7 @@ export function WorkersPanelContent() {
 	// Agent list for name lookups + per-agent worker history queries
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
 		staleTime: 30_000,
 	});
 	const agents = agentsData?.agents ?? [];

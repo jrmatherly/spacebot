@@ -399,3 +399,263 @@ async fn trigger_warmup_user_role_unfiltered_is_403() {
         "non-admin user calling unfiltered warmup must receive 403, not 200"
     );
 }
+
+// Scope-filter tests for GET /api/agents?scope=mine|team|org.
+// Agent configs are in-memory (ArcSwap) and resolved in-process; the
+// scope filter narrows the returned list via a SQL allowlist fetched
+// from resource_ownership + team_memberships. Tests exercise the four
+// relevant paths: Mine (owner-match), Team (team-share match), Org
+// (unfiltered), and admin-bypass (admin sees everything regardless
+// of scope).
+
+fn make_agent_info(id: &str) -> spacebot::api::AgentInfo {
+    spacebot::api::AgentInfo {
+        id: id.to_string(),
+        display_name: None,
+        role: None,
+        gradient_start: None,
+        gradient_end: None,
+        workspace: "/tmp/test".to_string(),
+        context_window: 200_000,
+        max_turns: 5,
+        max_concurrent_branches: 2,
+        max_concurrent_workers: 2,
+    }
+}
+
+async fn fetch_agents_with_scope(
+    app: axum::Router,
+    token: &str,
+    scope_query: Option<&str>,
+) -> serde_json::Value {
+    let uri = match scope_query {
+        Some(s) => format!("/api/agents?scope={s}"),
+        None => "/api/agents".to_string(),
+    };
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+fn agent_ids(body: &serde_json::Value) -> Vec<String> {
+    body["agents"]
+        .as_array()
+        .expect("agents array")
+        .iter()
+        .map(|a| a["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn list_agents_scope_mine_returns_only_owned_agents() {
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    seed_agent_ownership(&pool, "agent-alice", &alice).await;
+    seed_agent_ownership(&pool, "agent-bob", &bob).await;
+    seed_agent_ownership(&pool, "agent-unowned", &bob).await; // not Alice's
+
+    state.set_agent_configs(vec![
+        make_agent_info("agent-alice"),
+        make_agent_info("agent-bob"),
+        make_agent_info("agent-unowned"),
+    ]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let body = fetch_agents_with_scope(app, &token, Some("mine")).await;
+
+    let mut ids = agent_ids(&body);
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec!["agent-alice".to_string()],
+        "scope=mine must return only Alice's owned agent"
+    );
+}
+
+#[tokio::test]
+async fn list_agents_scope_team_returns_only_team_shared_agents() {
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+
+    let team = spacebot::auth::repository::upsert_team(&pool, "grp-x", "Team X")
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO team_memberships (principal_key, team_id, source) \
+         VALUES (?, ?, 'token_claim')",
+    )
+    .bind(alice.principal_key())
+    .bind(&team.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Bob owns agent-shared, shared to team-x (Alice's team)
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-shared",
+        None,
+        &bob.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+    // Alice owns her own agent (personal) — must NOT appear in team scope
+    seed_agent_ownership(&pool, "agent-alice-own", &alice).await;
+
+    state.set_agent_configs(vec![
+        make_agent_info("agent-shared"),
+        make_agent_info("agent-alice-own"),
+    ]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let body = fetch_agents_with_scope(app, &token, Some("team")).await;
+
+    assert_eq!(
+        agent_ids(&body),
+        vec!["agent-shared".to_string()],
+        "scope=team returns team-shared; excludes own personal + own-team-shares"
+    );
+}
+
+#[tokio::test]
+async fn list_agents_scope_org_matches_unfiltered_for_non_admin() {
+    // Org scope returns the full configured list, same as unfiltered.
+    // Distinct from Mine/Team, which narrow to ownership/membership.
+    // This test confirms Org is not accidentally empty for a user with
+    // no ownerships — it pins the decision that Org == unfiltered today.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    state.set_agent_configs(vec![
+        make_agent_info("agent-a"),
+        make_agent_info("agent-b"),
+        make_agent_info("agent-c"),
+    ]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let body = fetch_agents_with_scope(app, &token, Some("org")).await;
+
+    let mut ids = agent_ids(&body);
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec![
+            "agent-a".to_string(),
+            "agent-b".to_string(),
+            "agent-c".to_string()
+        ],
+        "scope=org returns all configured agents"
+    );
+}
+
+#[tokio::test]
+async fn list_agents_no_scope_param_preserves_legacy_unfiltered_behavior() {
+    // Absent scope param = unfiltered list. Regression guard against a
+    // refactor that accidentally applies a default scope. Admins, CLI
+    // scripts, and pre-PR-5 clients depend on this.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    state.set_agent_configs(vec![make_agent_info("agent-a"), make_agent_info("agent-b")]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let body = fetch_agents_with_scope(app, &token, None).await;
+
+    let mut ids = agent_ids(&body);
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec!["agent-a".to_string(), "agent-b".to_string()],
+        "no ?scope= param returns unfiltered list"
+    );
+}
+
+#[tokio::test]
+async fn list_agents_scope_admin_bypass_returns_unfiltered_even_with_scope_mine() {
+    // Admin's scope=mine returns the full list, because admin bypasses
+    // the ownership filter (same pattern as the per-row authz admin
+    // bypass). Distinguishes "admin with scope=mine" from "user with
+    // scope=mine" — admin sees everything.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
+    let bob = user_ctx("bob", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    seed_agent_ownership(&pool, "agent-bob", &bob).await; // admin does NOT own
+
+    state.set_agent_configs(vec![
+        make_agent_info("agent-bob"),
+        make_agent_info("agent-standalone"),
+    ]);
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&admin);
+    let body = fetch_agents_with_scope(app, &token, Some("mine")).await;
+
+    let mut ids = agent_ids(&body);
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec!["agent-bob".to_string(), "agent-standalone".to_string()],
+        "admin with scope=mine sees the full list; ownership filter does not apply to admins"
+    );
+}
+
+#[tokio::test]
+async fn list_agents_scope_mine_returns_500_when_scope_query_fails() {
+    // Regression guard for PR #115 review finding: scope-filter query
+    // failures must surface as 500, not degrade to 200-empty. A silent
+    // empty response leaves the Sidebar "My Agents" group silently
+    // empty with no indication anything broke, and the user's agent
+    // falls through to Org with no warning.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    state.set_agent_configs(vec![make_agent_info("agent-a")]);
+
+    // Close the instance pool so the scope-filter sqlx query fails.
+    pool.close().await;
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/agents?scope=mine")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "scope-filter query failure must surface as 500, not silent-empty 200"
+    );
+}

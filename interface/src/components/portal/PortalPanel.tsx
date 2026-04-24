@@ -111,7 +111,7 @@ export function PortalPanel({ agentId }: PortalPanelProps) {
 
 	const { data: projectsData } = useQuery({
 		queryKey: ["projects"],
-		queryFn: () => api.listProjects("active"),
+		queryFn: () => api.listProjects({ status: "active" }),
 		staleTime: 30_000,
 	});
 	const projects = projectsData?.projects ?? [];

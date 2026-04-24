@@ -40,6 +40,7 @@ import {
 	CalendarDots,
 	SlidersHorizontal,
 	BookBookmark,
+	WarningCircle,
 } from "@phosphor-icons/react";
 import {
 	CircleButton,
@@ -205,7 +206,29 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 
 	const {data: agentsData} = useQuery({
 		queryKey: ["agents"],
-		queryFn: api.agents,
+		queryFn: () => api.agents(),
+		refetchInterval: 30_000,
+	});
+
+	// Phase 7 PR 5 Task 7.16: split the flat agent list into My / Team /
+	// Org nav groups. The three scoped queries drive a classification
+	// map (agentId → scope group); the flat `agentsData` query above
+	// remains authoritative for display names, gradients, and the DnD
+	// ordering hook so reorder UX stays intact. Group headers hide when
+	// their slice is empty.
+	const {data: myAgentsData, isError: myAgentsError} = useQuery({
+		queryKey: ["agents", "mine"],
+		queryFn: () => api.agents({scope: "mine"}),
+		refetchInterval: 30_000,
+	});
+	const {data: teamAgentsData, isError: teamAgentsError} = useQuery({
+		queryKey: ["agents", "team"],
+		queryFn: () => api.agents({scope: "team"}),
+		refetchInterval: 30_000,
+	});
+	const {data: orgAgentsData, isError: orgAgentsError} = useQuery({
+		queryKey: ["agents", "org"],
+		queryFn: () => api.agents({scope: "org"}),
 		refetchInterval: 30_000,
 	});
 
@@ -217,7 +240,7 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 
 	const {data: projectsData} = useQuery({
 		queryKey: ["projects"],
-		queryFn: () => api.listProjects("active"),
+		queryFn: () => api.listProjects({status: "active"}),
 		staleTime: 30_000,
 	});
 
@@ -242,6 +265,41 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 		return map;
 	}, [agents]);
 	const [agentOrder, setAgentOrder] = useAgentOrder(agentIds);
+
+	// Scope-group membership sets derived from the three scoped queries.
+	// Mine + Team are the narrowing lenses; Org acts as the catch-all
+	// (the backend returns the full list for scope=org), so any agent
+	// not in Mine or Team falls into Org without needing the orgAgents
+	// set explicitly. The `useQuery` call above already registers the
+	// subscription + refetch interval on mount; this `void` exists
+	// purely to silence `noUnusedLocals` on the `orgAgentsData` binding
+	// we keep destructured so `orgAgentsError` remains available to
+	// the group-render block below.
+	void orgAgentsData;
+	const myAgentIds = useMemo(
+		() => new Set((myAgentsData?.agents ?? []).map((a) => a.id)),
+		[myAgentsData],
+	);
+	const teamAgentIds = useMemo(
+		() => new Set((teamAgentsData?.agents ?? []).map((a) => a.id)),
+		[teamAgentsData],
+	);
+
+	// Partition the ordered agent id list into three scope groups. An
+	// agent appears in exactly one group: Mine wins over Team, Team wins
+	// over Org catch-all. This matches the chip-model invariant (union
+	// of paths; render once per agent in the narrowest-scope group).
+	const [myIdsOrdered, teamIdsOrdered, orgIdsOrdered] = useMemo(() => {
+		const mine: string[] = [];
+		const team: string[] = [];
+		const org: string[] = [];
+		for (const id of agentOrder) {
+			if (myAgentIds.has(id)) mine.push(id);
+			else if (teamAgentIds.has(id)) team.push(id);
+			else org.push(id);
+		}
+		return [mine, team, org];
+	}, [agentOrder, myAgentIds, teamAgentIds]);
 
 	// Default-expand the first agent until the user explicitly picks another.
 	const expandedAgent = userExpandedAgent ?? agentOrder[0] ?? null;
@@ -410,7 +468,13 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 					</section>
 				)}
 
-				{/* Agents section */}
+				{/* Agents section — split into My / Team / Org groups. Each
+				    group renders its own DnD context so drag-reorder stays
+				    bounded to the group; cross-group reordering is
+				    out-of-scope here (it would require re-labeling the
+				    agent's ownership, which is a Share modal flow). Empty
+				    groups hide their header so callers with only personal
+				    agents aren't staring at empty "Team" / "Org" labels. */}
 				<section>
 					<div className="mb-2 flex items-center justify-between px-2">
 						<div className="text-sidebar-inkDull text-[11px] font-semibold uppercase tracking-[0.16em]">
@@ -425,38 +489,66 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 							/>
 						)}
 					</div>
-					<div className="space-y-0.5">
-						<DndContext
-							sensors={sensors}
-							collisionDetection={closestCenter}
-							onDragEnd={handleDragEnd}
-						>
-							<SortableContext
-								items={agentOrder}
-								strategy={verticalListSortingStrategy}
-							>
-								{agentOrder.map((agentId) => {
-									const isActive = !!matchRoute({
-										to: "/agents/$agentId",
-										params: {agentId},
-										fuzzy: true,
-									});
-									return (
-										<SortableAgentItem
-											key={agentId}
-											agentId={agentId}
-											displayName={agentDisplayNames[agentId]}
-											gradientStart={agentGradients[agentId]?.start}
-											gradientEnd={agentGradients[agentId]?.end}
-											isActive={isActive}
-											isExpanded={expandedAgent === agentId}
-											onToggle={() => setUserExpandedAgent(agentId)}
+					{([
+						["mine" as const, "My Agents", myIdsOrdered, myAgentsError],
+						["team" as const, "Team", teamIdsOrdered, teamAgentsError],
+						["org" as const, "Org", orgIdsOrdered, orgAgentsError],
+					] as const).map(([key, label, ids, isError]) => {
+						// Render the header when the group has agents OR when its
+						// scoped query errored: suppressing both would silently
+						// swallow a 500 and leave users wondering why their
+						// agent moved to a different group. Empty-and-no-error
+						// groups still hide their header so users with only
+						// personal agents don't see empty Team/Org labels.
+						if (ids.length === 0 && !isError) return null;
+						return (
+							<div key={key} className="mb-3 space-y-0.5">
+								<div
+									className="flex items-center gap-1.5 px-2 pb-1 text-sidebar-inkFaint text-[10px] font-medium uppercase tracking-[0.14em]"
+									data-testid={`sidebar-agents-group-${key}`}
+								>
+									<span>{label}</span>
+									{isError && (
+										<WarningCircle
+											className="size-3 text-amber-400"
+											weight="fill"
+											data-testid={`sidebar-agents-group-${key}-error`}
 										/>
-									);
-								})}
-							</SortableContext>
-						</DndContext>
-					</div>
+									)}
+								</div>
+								<DndContext
+									sensors={sensors}
+									collisionDetection={closestCenter}
+									onDragEnd={handleDragEnd}
+								>
+									<SortableContext
+										items={ids}
+										strategy={verticalListSortingStrategy}
+									>
+										{ids.map((agentId) => {
+											const isActive = !!matchRoute({
+												to: "/agents/$agentId",
+												params: {agentId},
+												fuzzy: true,
+											});
+											return (
+												<SortableAgentItem
+													key={agentId}
+													agentId={agentId}
+													displayName={agentDisplayNames[agentId]}
+													gradientStart={agentGradients[agentId]?.start}
+													gradientEnd={agentGradients[agentId]?.end}
+													isActive={isActive}
+													isExpanded={expandedAgent === agentId}
+													onToggle={() => setUserExpandedAgent(agentId)}
+												/>
+											);
+										})}
+									</SortableContext>
+								</DndContext>
+							</div>
+						);
+					})}
 				</section>
 			</div>
 			</div>

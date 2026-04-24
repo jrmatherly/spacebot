@@ -2,10 +2,10 @@
 
 use super::state::ApiState;
 use super::{
-    activity, agents, attachments, audit, auth_config, bindings, channels, config, cortex, cron,
-    factory, ingest, links, mcp, me, memories, messaging, models, notifications, opencode_proxy,
-    portal, projects, providers, resources, secrets, settings, skills, ssh, system, tasks, tools,
-    usage, wiki, workers,
+    activity, admin_teams, agents, attachments, audit, auth_config, bindings, channels, config,
+    cortex, cron, factory, ingest, links, mcp, me, memories, messaging, models, notifications,
+    opencode_proxy, portal, projects, providers, resources, secrets, settings, skills, ssh, system,
+    tasks, tools, usage, wiki, workers,
 };
 
 use axum::Json;
@@ -41,6 +41,16 @@ struct InterfaceAssets;
     ),
     servers(
         (url = "/api")
+    ),
+    components(
+        // Types referenced only from query-param structs (utoipa::IntoParams)
+        // are not auto-discovered by utoipa-axum; they must be listed here so
+        // the resulting `$ref` in the OpenAPI document resolves. Response
+        // body / request body types are still auto-registered via each
+        // handler's `#[utoipa::path(responses(...), body = ...)]`.
+        schemas(
+            crate::auth::principals::ResourceScope,
+        ),
     )
 )]
 struct ApiDoc;
@@ -285,6 +295,9 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Audit routes (admin-only, Phase 5)
         .routes(routes!(audit::list_audit_events))
         .routes(routes!(audit::verify_audit_chain))
+        // Admin team directory (admin-only, Phase 7 PR 5)
+        .routes(routes!(admin_teams::list_admin_teams))
+        .routes(routes!(admin_teams::list_team_members))
 }
 
 /// Start the HTTP server on the given address.
