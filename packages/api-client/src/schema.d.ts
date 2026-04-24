@@ -62,6 +62,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin-only: list active teams with member counts and staleness info. */
+        get: operations["list_admin_teams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/teams/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin-only: list the user roster for a specific team. Returns 200 with
+         *     an empty `members: []` array when the team exists but has no
+         *     memberships; returns 200 with empty members for a nonexistent team id
+         *     (the admin UI would render "No members" either way). Callers that
+         *     need strict existence semantics should issue `list_admin_teams` first
+         *     and filter client-side.
+         */
+        get: operations["list_team_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents": {
         parameters: {
             query?: never;
@@ -2605,6 +2646,41 @@ export interface components {
             platform: string;
             runtime_key: string;
         };
+        /**
+         * @description List row for `GET /admin/teams`. Trimmed versus [`crate::auth::principals::TeamRecord`]
+         *     so the wire response does not expose `external_id` (Entra group id) or
+         *     raw `created_at` / `updated_at` timestamps that the admin UI does not
+         *     surface. `last_sync_at` maps to `MAX(team_memberships.observed_at)` so
+         *     the UI can show "data is N hours stale" at a glance.
+         */
+        AdminTeamDetail: {
+            display_name: string;
+            id: string;
+            last_sync_at?: string | null;
+            /** Format: int64 */
+            member_count: number;
+            status: string;
+        };
+        /**
+         * @description Detail row for `GET /admin/teams/{id}/members`. Trimmed versus
+         *     [`crate::auth::principals::UserRecord`]: exposes display identity
+         *     (`principal_key`, `display_name`, `display_email`) and the
+         *     `observed_at` timestamp from the join row, but omits `tenant_id`,
+         *     `object_id`, raw user-row timestamps, and any photo cache fields.
+         */
+        AdminTeamMemberDetail: {
+            display_email?: string | null;
+            display_name?: string | null;
+            observed_at: string;
+            principal_key: string;
+            source: string;
+        };
+        AdminTeamMembersResponse: {
+            members: components["schemas"]["AdminTeamMemberDetail"][];
+        };
+        AdminTeamsResponse: {
+            teams: components["schemas"]["AdminTeamDetail"][];
+        };
         AgentConfigResponse: {
             browser: components["schemas"]["BrowserSection"];
             channel: components["schemas"]["ChannelSection"];
@@ -4972,6 +5048,75 @@ export interface operations {
             };
             /** @description Audit appender not yet attached */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_admin_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeamsResponse"];
+                };
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable or query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_team_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeamMembersResponse"];
+                };
+            };
+            /** @description Caller lacks SpacebotAdmin role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Instance pool unavailable or query failed */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
