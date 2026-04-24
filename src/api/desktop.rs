@@ -111,15 +111,15 @@ pub(super) async fn store_desktop_tokens(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    if let Some(rt) = tokens.refresh_token {
-        if let Err(e) = secrets.set("entra_refresh_token", &rt, SecretCategory::System) {
-            if format!("{e}").contains("locked") {
-                tracing::warn!("desktop token store rejected: daemon is locked");
-                return Err(StatusCode::SERVICE_UNAVAILABLE);
-            }
-            tracing::error!(?e, "secrets.set failed for entra_refresh_token");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    if let Some(rt) = tokens.refresh_token
+        && let Err(e) = secrets.set("entra_refresh_token", &rt, SecretCategory::System)
+    {
+        if format!("{e}").contains("locked") {
+            tracing::warn!("desktop token store rejected: daemon is locked");
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
         }
+        tracing::error!(?e, "secrets.set failed for entra_refresh_token");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     Ok(StatusCode::NO_CONTENT)
