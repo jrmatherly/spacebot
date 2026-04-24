@@ -47,6 +47,17 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 
+/// Resource-type key for cron ownership rows. Shared across
+/// `set_ownership` at the create path, `check_write` at mutate paths,
+/// and `enrich_visibility_tags` at the list handler. Extracting the
+/// string to a single constant prevents the BUG-C1 class of regression
+/// where the enrichment call is keyed on one resource family (e.g.
+/// `"cron"`, the metric-label namespace) while the ownership row was
+/// written under another (`"cron_job"`, the write-authz namespace);
+/// the SQL WHERE clause matches zero rows and chip fields silently
+/// render as `None` across the entire surface.
+const CRON_RESOURCE_TYPE: &str = "cron_job";
+
 #[derive(Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub(super) struct CronQuery {
     agent_id: String,
@@ -245,16 +256,11 @@ pub(super) async fn list_cron_jobs(
     // roundtrip against the instance pool. Cron lives in a per-agent
     // CronStore (cron_jobs.db per agent) while resource_ownership + teams
     // live in the instance pool, and SQLite does not support
-    // cross-database JOIN.
-    //
-    // Keyed on "cron_job" to match set_ownership at the create path
-    // (see create_or_update_cron) and check_write on the mutate path.
-    // All chip-enriched resources use their write-authz resource_type
-    // at enrichment sites so one SQL WHERE clause matches all three
-    // code paths (set, check, enrich).
+    // cross-database JOIN; see CRON_RESOURCE_TYPE for the keying
+    // invariant shared across set / check / enrich.
     let ids: Vec<String> = configs.iter().map(|c| c.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "cron_job", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, CRON_RESOURCE_TYPE, &ids).await
     } else {
         // I4: mirror the authz-skipped pattern.
         tracing::warn!(
@@ -552,26 +558,27 @@ pub(super) async fn create_or_update_cron(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         if !is_new {
-            let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "cron_job",
-                        resource_id = %request.id,
-                        "authz check_write failed"
-                    );
-                    cron_err(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "authz check failed".to_string(),
-                    )
-                })?;
+            let access =
+                crate::auth::check_write(&pool, &auth_ctx, CRON_RESOURCE_TYPE, &request.id)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(
+                            %error,
+                            actor = %auth_ctx.principal_key(),
+                            resource_type = CRON_RESOURCE_TYPE,
+                            resource_id = %request.id,
+                            "authz check_write failed"
+                        );
+                        cron_err(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "authz check failed".to_string(),
+                        )
+                    })?;
             if !access.is_allowed() {
                 crate::auth::policy::fire_denied_audit(
                     &state.audit,
                     &auth_ctx,
-                    "cron_job",
+                    CRON_RESOURCE_TYPE,
                     request.id.as_str(),
                 );
                 return Err(cron_err(
@@ -628,7 +635,7 @@ pub(super) async fn create_or_update_cron(
         if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
             crate::auth::repository::set_ownership(
                 &pool,
-                "cron_job",
+                CRON_RESOURCE_TYPE,
                 &request.id,
                 Some(&request.agent_id),
                 &auth_ctx.principal_key(),
@@ -691,13 +698,13 @@ pub(super) async fn delete_cron(
     // Phase 4 authz gate: per-cron write. NotOwned/NotYours both collapse
     // to 404 (hide existence).
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &query.cron_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, CRON_RESOURCE_TYPE, &query.cron_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "cron_job",
+                    resource_type = CRON_RESOURCE_TYPE,
                     resource_id = %query.cron_id,
                     "authz check_write failed"
                 );
@@ -707,7 +714,7 @@ pub(super) async fn delete_cron(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "cron_job",
+                CRON_RESOURCE_TYPE,
                 query.cron_id.as_str(),
             );
             return Err(access.to_status());
@@ -767,23 +774,24 @@ pub(super) async fn trigger_cron(
     // row (it mutates the scheduler's in-memory job state and causes a
     // side-effecting run).
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.cron_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "cron_job",
-                    resource_id = %request.cron_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, CRON_RESOURCE_TYPE, &request.cron_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = CRON_RESOURCE_TYPE,
+                        resource_id = %request.cron_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "cron_job",
+                CRON_RESOURCE_TYPE,
                 request.cron_id.as_str(),
             );
             return Err(access.to_status());
@@ -836,23 +844,24 @@ pub(super) async fn toggle_cron(
 ) -> Result<Json<CronActionResponse>, StatusCode> {
     // Phase 4 authz gate: enable/disable mutates cron state.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "cron_job", &request.cron_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "cron_job",
-                    resource_id = %request.cron_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, CRON_RESOURCE_TYPE, &request.cron_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = CRON_RESOURCE_TYPE,
+                        resource_id = %request.cron_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "cron_job",
+                CRON_RESOURCE_TYPE,
                 request.cron_id.as_str(),
             );
             return Err(access.to_status());

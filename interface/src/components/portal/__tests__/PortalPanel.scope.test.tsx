@@ -21,7 +21,7 @@ vi.mock("@/routes/AgentWorkers", () => ({
 
 // `@spacedrive/ai` barrel re-exports `InlineWorkerCard` which pulls
 // `react-loader-spinner` → `framer-motion` and crashes jsdom at
-// module-load with "be.div is not a function" (I-R6). Narrow stub
+// module-load with "be.div is not a function". Narrow stub
 // that exposes only the symbols PortalComposer / PortalTimeline /
 // PortalWorkerCard consume.
 vi.mock("@spacedrive/ai", () => ({
@@ -141,10 +141,11 @@ function setupMocks(
 					headers: { "content-type": "application/json" },
 				});
 			}
-			return new Response(JSON.stringify({}), {
-				status: 200,
-				headers: { "content-type": "application/json" },
-			});
+			// Fail loudly on unmatched URLs rather than returning an
+			// empty 200 payload: a typo in the substring routing above
+			// would otherwise silently satisfy the wrong endpoint and
+			// yield a false pass.
+			throw new Error(`unmocked fetch in PortalPanel scope test: ${url}`);
 		},
 	);
 }
@@ -175,7 +176,7 @@ describe("PortalPanel with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("Team chat")).toBeInTheDocument(),
 		);
-		const chips = document.body.querySelectorAll(".visibility-chip");
+		const chips = document.body.querySelectorAll('[data-testid="visibility-chip"]');
 		const chipLabels = Array.from(chips).map((n) => n.textContent);
 		expect(chipLabels).toContain("Personal");
 		expect(chipLabels).toContain("Team: Platform");
@@ -225,7 +226,7 @@ describe("PortalPanel with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("Orphan chat")).toBeInTheDocument(),
 		);
-		expect(document.body.querySelectorAll(".visibility-chip")).toHaveLength(0);
+		expect(document.body.querySelectorAll('[data-testid="visibility-chip"]')).toHaveLength(0);
 	});
 
 	it("renders no conversations when the list endpoint returns 500", async () => {

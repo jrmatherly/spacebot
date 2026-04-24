@@ -106,7 +106,7 @@ describe("AgentCron with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("daily-summary")).toBeInTheDocument(),
 		);
-		const chips = container.querySelectorAll(".visibility-chip");
+		const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 		const chipLabels = Array.from(chips).map((n) => n.textContent);
 		expect(chipLabels).toContain("Personal");
 		expect(chipLabels).toContain("Team: Platform");
@@ -180,7 +180,7 @@ describe("AgentCron with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("orphan-cron")).toBeInTheDocument(),
 		);
-		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+		expect(container.querySelectorAll('[data-testid="visibility-chip"]')).toHaveLength(0);
 	});
 
 	it("renders the error panel when the list endpoint returns 500", async () => {
