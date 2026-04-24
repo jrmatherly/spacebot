@@ -128,9 +128,22 @@ fn default_conversation_limit() -> i64 {
     100
 }
 
+/// Portal conversation list row: the bare conversation summary plus a
+/// `VisibilityTag` flattened into the same JSON object. Additive on the
+/// wire (clients that ignore unknown fields continue to work; chip-aware
+/// clients see the tag). Mirrors `MemoryListItem` / `TaskListItem` /
+/// `WikiListItem` / `CronListItem`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct PortalConversationListItem {
+    #[serde(flatten)]
+    summary: PortalConversationSummary,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct PortalConversationsResponse {
-    conversations: Vec<PortalConversationSummary>,
+    conversations: Vec<PortalConversationListItem>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -599,13 +612,38 @@ pub(super) async fn list_portal_conversations(
     }
 
     let store = conversation_store(&state, &query.agent_id)?;
-    let conversations = store
+    let summaries = store
         .list(&query.agent_id, query.include_archived, query.limit)
         .await
         .map_err(|error| {
             tracing::warn!(%error, agent_id = %query.agent_id, "failed to list portal conversations");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // Batch-enrich visibility + team_name for the whole page in one
+    // roundtrip against the instance pool. Mirrors the memory / task /
+    // wiki / cron_job enrichment call sites. Resource type string
+    // `"portal_conversation"` matches set_ownership in the create path
+    // and check_write at the mutate path.
+    let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, "portal_conversation", &ids).await
+    } else {
+        tracing::warn!(
+            handler = "portal",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+
+    let conversations: Vec<PortalConversationListItem> = summaries
+        .into_iter()
+        .map(|summary| {
+            let tag = tags.get(&summary.id).cloned().unwrap_or_default();
+            PortalConversationListItem { summary, tag }
+        })
+        .collect();
 
     Ok(Json(PortalConversationsResponse { conversations }))
 }

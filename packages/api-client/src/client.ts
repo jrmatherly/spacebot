@@ -104,7 +104,19 @@ export type {
 	AgentOverviewResponse,
 	AgentProfile,
 	AgentProfileResponse,
+	// Cron. `CronListItem = CronJobWithStats & VisibilityTag` on the
+	// wire; chips render on list rows only. CronExecutionsResponse,
+	// CronActionResponse, and CreateCronRequest move from handwritten
+	// interfaces to generated-schema aliases here. Matches the Task /
+	// Wiki / Memory precedent.
 	CronJobInfo,
+	CronJobWithStats,
+	CronListItem,
+	CronListResponse,
+	CronExecutionEntry,
+	CronExecutionsResponse,
+	CronActionResponse,
+	CreateCronRequest,
 	// Memory (schema types only)
 	Memory,
 	// MemoryItem aliases the generated `MemoryListItem` (Memory & VisibilityTag
@@ -173,6 +185,12 @@ import type {
 	TaskActionResponse,
 } from "./types";
 import type { WikiListResponse } from "./types";
+import type {
+	CronListResponse,
+	CronExecutionsResponse,
+	CronActionResponse,
+	CreateCronRequest,
+} from "./types";
 
 export type { TopologyAgent, TopologyLink, TopologyGroup, TopologyHuman, TopologyResponse };
 
@@ -838,64 +856,11 @@ export interface AgentConfigUpdateRequest {
 }
 
 // -- Cron Types --
-
-export interface CronJobWithStats {
-	id: string;
-	prompt: string;
-	cron_expr: string | null;
-	interval_secs: number;
-	delivery_target: string;
-	enabled: boolean;
-	run_once: boolean;
-	active_hours: [number, number] | null;
-	timeout_secs: number | null;
-	execution_success_count: number;
-	execution_failure_count: number;
-	delivery_success_count: number;
-	delivery_failure_count: number;
-	delivery_skipped_count: number;
-	last_executed_at: string | null;
-}
-
-export interface CronExecutionEntry {
-	id: string;
-	cron_id: string | null;
-	executed_at: string;
-	success: boolean;
-	execution_succeeded: boolean;
-	delivery_attempted: boolean;
-	delivery_succeeded: boolean | null;
-	result_summary: string | null;
-	execution_error: string | null;
-	delivery_error: string | null;
-}
-
-export interface CronListResponse {
-	jobs: CronJobWithStats[];
-	timezone: string;
-}
-
-export interface CronExecutionsResponse {
-	executions: CronExecutionEntry[];
-}
-
-export interface CronActionResponse {
-	success: boolean;
-	message: string;
-}
-
-export interface CreateCronRequest {
-	id: string;
-	prompt: string;
-	cron_expr?: string;
-	interval_secs?: number;
-	delivery_target: string;
-	active_start_hour?: number;
-	active_end_hour?: number;
-	enabled: boolean;
-	run_once: boolean;
-	timeout_secs?: number;
-}
+// The wire-response shapes (CronJobWithStats, CronListItem,
+// CronListResponse, CronExecutionEntry, CronExecutionsResponse,
+// CronActionResponse, CreateCronRequest) are aliased from the generated
+// schema via `./types`. See the top-of-file `import type` block for
+// the names brought into local scope.
 
 export interface CronExecutionsParams {
 	cron_id?: string;
@@ -1662,7 +1627,10 @@ export const api = {
 		return fetchJson<CronExecutionsResponse>(`/agents/cron/executions?${search}`);
 	},
 
-	createCronJob: async (agentId: string, request: CreateCronRequest) => {
+	createCronJob: async (
+		agentId: string,
+		request: Omit<CreateCronRequest, "agent_id">,
+	) => {
 		const response = await authedFetch(`${getApiBase()}/agents/cron`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },

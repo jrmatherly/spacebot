@@ -28,7 +28,9 @@ use spacebot::api::ApiState;
 use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
-use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
+use spacebot::auth::repository::{
+    get_ownership, set_ownership, upsert_team, upsert_user_from_auth,
+};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -441,4 +443,92 @@ async fn pool_none_skip_portal_history() {
         StatusCode::FORBIDDEN,
         "authz skip must not cause a 403"
     );
+}
+
+#[tokio::test]
+async fn list_portal_conversations_enriches_team_scoped_conversation_with_chip_fields() {
+    // The SPA consumes `visibility` + `team_name` on each conversation
+    // row to render the chip. This pins the list-endpoint wire shape so
+    // a regression to `Vec<PortalConversationSummary>` (chip absent) or
+    // a drift in the resource_type string used at enrichment trips CI
+    // before the SPA notices. Resource_type is "portal_conversation" at
+    // all three code paths (set_ownership, check_write, enrich).
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let agent_pool = attach_agent_pool(&state, "agent-a").await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team = upsert_team(&pool, "grp-platform", "Platform")
+        .await
+        .unwrap();
+    // Alice owns agent-a so the agent-scoped read gate on list passes.
+    set_ownership(
+        &pool,
+        "agent",
+        "agent-a",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Seed a portal_conversation row directly via the store (same
+    // insert path the handler uses at create time).
+    let store = spacebot::conversation::PortalConversationStore::new(agent_pool);
+    let convo = store
+        .create("agent-a", Some("Team Chat"), None)
+        .await
+        .expect("create portal conversation");
+
+    // Upsert the ownership row to Team scope. `set_ownership` is an
+    // upsert on (resource_type, resource_id), so this overrides any
+    // Personal default a future auto-create path might introduce.
+    set_ownership(
+        &pool,
+        "portal_conversation",
+        &convo.id,
+        Some("agent-a"),
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team.id),
+    )
+    .await
+    .unwrap();
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let req = Request::builder()
+        .uri("/api/portal/conversations?agent_id=agent-a")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let conversations = body["conversations"]
+        .as_array()
+        .expect("conversations array present");
+    let row = conversations
+        .iter()
+        .find(|c| c["id"] == convo.id.as_str())
+        .expect("seeded conversation present in list response");
+    assert_eq!(
+        row["visibility"].as_str(),
+        Some("team"),
+        "chip visibility field must be present on team-scoped conversation"
+    );
+    assert_eq!(
+        row["team_name"].as_str(),
+        Some("Platform"),
+        "chip team_name must resolve to the team's display_name"
+    );
+    // Confirm the flattened summary fields still cross the wire
+    // (additive shape via #[serde(flatten)], not a rewrap).
+    assert_eq!(row["agent_id"].as_str(), Some("agent-a"));
+    assert_eq!(row["title"].as_str(), Some("Team Chat"));
 }

@@ -3205,17 +3205,18 @@ export interface components {
             last_executed_at?: string | null;
             prompt: string;
             run_once: boolean;
-            team_name?: string | null;
             /** Format: int64 */
             timeout_secs?: number | null;
-            /**
-             * @description Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
-             *     `None` encodes "unowned/legacy" per the no-auto-broadening policy.
-             */
-            visibility?: string | null;
         };
+        /**
+         * @description Cron list row: the bare job shape plus a `VisibilityTag` flattened
+         *     into the same JSON object. Additive on the wire (clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag).
+         *     Mirrors `MemoryListItem` / `TaskListItem` / `WikiListItem`.
+         */
+        CronListItem: components["schemas"]["CronJobWithStats"] & components["schemas"]["VisibilityTag"];
         CronListResponse: {
-            jobs: components["schemas"]["CronJobWithStats"][];
+            jobs: components["schemas"]["CronListItem"][];
             timezone: string;
         };
         DayCount: {
@@ -3747,6 +3748,14 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /**
+         * @description Portal conversation list row: the bare conversation summary plus a
+         *     `VisibilityTag` flattened into the same JSON object. Additive on the
+         *     wire (clients that ignore unknown fields continue to work; chip-aware
+         *     clients see the tag). Mirrors `MemoryListItem` / `TaskListItem` /
+         *     `WikiListItem` / `CronListItem`.
+         */
+        PortalConversationListItem: components["schemas"]["PortalConversationSummary"] & components["schemas"]["VisibilityTag"];
         PortalConversationResponse: {
             conversation: components["schemas"]["PortalConversation"];
         };
@@ -3769,7 +3778,7 @@ export interface components {
             updated_at: string;
         };
         PortalConversationsResponse: {
-            conversations: components["schemas"]["PortalConversationSummary"][];
+            conversations: components["schemas"]["PortalConversationListItem"][];
         };
         PortalHistoryMessage: {
             content: string;

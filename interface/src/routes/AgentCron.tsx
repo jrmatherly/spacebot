@@ -1,11 +1,23 @@
-import {useState} from "react";
+import {useMemo, useState} from "react";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
+import {useNavigate, useSearch} from "@tanstack/react-router";
 import {
 	api,
 	type CronJobWithStats,
+	type CronListItem,
 	type CreateCronRequest,
 	type ChannelInfo,
 } from "@spacebot/api-client/client";
+import {VisibilityChip} from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import {useTeams} from "@/auth/useMe";
 import {formatCronSchedule, formatTimeAgo} from "@/lib/format";
 import {
 	Clock,
@@ -114,7 +126,9 @@ function jobToFormData(job: CronJobWithStats): CronFormData {
 	};
 }
 
-function formDataToRequest(data: CronFormData): CreateCronRequest {
+function formDataToRequest(
+	data: CronFormData,
+): Omit<CreateCronRequest, "agent_id"> {
 	const active_start = data.active_start_hour
 		? parseInt(data.active_start_hour, 10)
 		: undefined;
@@ -170,12 +184,39 @@ export function AgentCron({agentId}: AgentCronProps) {
 	const [formData, setFormData] = useState<CronFormData>(defaultFormData());
 	const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+	const [shareTarget, setShareTarget] = useState<CronListItem | null>(null);
+
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as AgentMemories and Wiki.
+	const urlSearch = useSearch({strict: false}) as {visibility?: string};
+	const navigate = useNavigate();
+	const visibilityFilter: VisibilityFilterValue =
+		urlSearch.visibility === "personal" ||
+		urlSearch.visibility === "team" ||
+		urlSearch.visibility === "org"
+			? urlSearch.visibility
+			: "all";
+
+	// Lazy-gate the teams fetch until the Share modal opens.
+	const teamsQuery = useTeams({enabled: shareTarget !== null});
 
 	const {data, isLoading, error} = useQuery({
-		queryKey: ["cron-jobs", agentId],
+		queryKey: ["cron-jobs", agentId, visibilityFilter],
 		queryFn: () => api.listCronJobs(agentId),
 		refetchInterval: 15_000,
 	});
+
+	// Client-side visibility filter: the backend list endpoint does not
+	// yet accept a `visibility=` param, so queryKey isolation keeps
+	// caches per-filter and the filter runs against the shared payload.
+	const allJobs = data?.jobs ?? [];
+	const jobs: CronListItem[] = useMemo(
+		() =>
+			visibilityFilter === "all"
+				? allJobs
+				: allJobs.filter((j) => j.visibility === visibilityFilter),
+		[allJobs, visibilityFilter],
+	);
 
 	const {data: channelsData} = useQuery({
 		queryKey: ["channels"],
@@ -225,7 +266,7 @@ export function AgentCron({agentId}: AgentCronProps) {
 	});
 
 	const saveMutation = useMutation({
-		mutationFn: (request: CreateCronRequest) =>
+		mutationFn: (request: Omit<CreateCronRequest, "agent_id">) =>
 			api.createCronJob(agentId, request),
 		onSuccess: () => {
 			queryClient.invalidateQueries({queryKey: ["cron-jobs", agentId]});
@@ -241,9 +282,12 @@ export function AgentCron({agentId}: AgentCronProps) {
 		setIsModalOpen(true);
 	};
 
-	const openEdit = (job: CronJobWithStats) => {
-		setEditingJob(job);
-		setFormData(jobToFormData(job));
+	const openEdit = (item: CronListItem) => {
+		// The form only cares about the domain shape; chip fields
+		// (visibility / team_name) come from the flattened VisibilityTag
+		// and are managed by the Share modal, not the edit form.
+		setEditingJob(item);
+		setFormData(jobToFormData(item));
 		setIsModalOpen(true);
 	};
 
@@ -317,6 +361,19 @@ export function AgentCron({agentId}: AgentCronProps) {
 
 					<div className="flex-1" />
 
+					<VisibilityFilter
+						value={visibilityFilter}
+						onChange={(v) =>
+							navigate({
+								to: ".",
+								search: (prev) => ({
+									...prev,
+									visibility: v === "all" ? undefined : v,
+								}),
+							})
+						}
+					/>
+
 					<Button onClick={openCreate} variant="gray" size="md">
 						+ New Job
 					</Button>
@@ -357,9 +414,15 @@ export function AgentCron({agentId}: AgentCronProps) {
 					</div>
 				)}
 
-				{totalJobs > 0 && (
+				{!isLoading && !error && totalJobs > 0 && jobs.length === 0 && (
+					<div className="rounded-xl border border-dashed border-app-line/50 bg-app-dark-box/20 px-4 py-6 text-center text-sm text-ink-dull">
+						No cron jobs match the current visibility filter.
+					</div>
+				)}
+
+				{jobs.length > 0 && (
 					<div className="flex flex-col gap-3">
-						{data!.jobs.map((job) => (
+						{jobs.map((job) => (
 							<CronJobCard
 								key={job.id}
 								job={job}
@@ -372,6 +435,7 @@ export function AgentCron({agentId}: AgentCronProps) {
 								onTrigger={() => triggerMutation.mutate(job.id)}
 								onEdit={() => openEdit(job)}
 								onDelete={() => setDeleteConfirmId(job.id)}
+								onShare={() => setShareTarget(job)}
 								isToggling={toggleMutation.isPending}
 								isTriggering={triggerMutation.isPending}
 							/>
@@ -709,6 +773,41 @@ export function AgentCron({agentId}: AgentCronProps) {
 					</div>
 				</DialogContent>
 			</DialogRoot>
+
+			{shareTarget && (
+				<ShareResourceModal
+					resourceType="cron_job"
+					resourceId={shareTarget.id}
+					currentVisibility={shareTarget.visibility ?? null}
+					teams={(teamsQuery.data ?? []).map((t) => ({
+						id: t.id,
+						name: t.display_name,
+					}))}
+					onSubmit={async (args: ShareSubmitArgs) => {
+						await api.setResourceVisibility(
+							"cron_job",
+							shareTarget.id,
+							args,
+						);
+						// Log and swallow on invalidate failure: the
+						// 15-second refetchInterval on the cron-jobs query
+						// repairs stale chip state well within any human
+						// perception window, matching the Tasks precedent
+						// for refetch-backed routes.
+						try {
+							await queryClient.invalidateQueries({
+								queryKey: ["cron-jobs", agentId],
+							});
+						} catch (e) {
+							console.error(
+								"AgentCron: failed to invalidate cron-jobs cache after share",
+								e,
+							);
+						}
+					}}
+					onClose={() => setShareTarget(null)}
+				/>
+			)}
 		</div>
 	);
 }
@@ -733,10 +832,11 @@ function CronJobCard({
 	onTrigger,
 	onEdit,
 	onDelete,
+	onShare,
 	isToggling,
 	isTriggering,
 }: {
-	job: CronJobWithStats;
+	job: CronListItem;
 	agentId: string;
 	isExpanded: boolean;
 	onToggleExpand: () => void;
@@ -744,6 +844,7 @@ function CronJobCard({
 	onTrigger: () => void;
 	onEdit: () => void;
 	onDelete: () => void;
+	onShare: () => void;
 	isToggling: boolean;
 	isTriggering: boolean;
 }) {
@@ -752,7 +853,7 @@ function CronJobCard({
 		totalRuns > 0
 			? Math.round((job.execution_success_count / totalRuns) * 100)
 			: null;
-	const schedule = formatCronSchedule(job.cron_expr, job.interval_secs);
+	const schedule = formatCronSchedule(job.cron_expr ?? null, job.interval_secs);
 
 	return (
 		<div className="overflow-hidden rounded-xl border border-app-line bg-app-dark-box">
@@ -789,6 +890,15 @@ function CronJobCard({
 							<span className="rounded bg-accent/20 px-1.5 py-0.5 text-tiny text-accent">
 								one-time
 							</span>
+						)}
+						{/* Conditional render: unowned jobs show no chip,
+						    matching the no-auto-broadening policy used
+						    across memory, task, and wiki list rows. */}
+						{job.visibility && (
+							<VisibilityChip
+								visibility={job.visibility}
+								teamName={job.team_name ?? undefined}
+							/>
 						)}
 					</div>
 
@@ -868,6 +978,9 @@ function CronJobCard({
 					</Button>
 					<Button title="Edit" onClick={onEdit} variant="gray" size="sm">
 						<PencilSimple className="h-3.5 w-3.5" />
+					</Button>
+					<Button title="Share" onClick={onShare} variant="gray" size="sm">
+						<span className="text-tiny font-medium">Share</span>
 					</Button>
 					<Button
 						title="Delete"

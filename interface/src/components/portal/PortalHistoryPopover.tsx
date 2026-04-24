@@ -1,13 +1,21 @@
 import { useState } from "react";
 import { SearchBar } from "@spacedrive/primitives";
-import type { PortalConversationSummary } from "@spacebot/api-client/types";
+import type { PortalConversationListItem } from "@spacebot/api-client/types";
+import { VisibilityChip } from "@/components/VisibilityChip";
+import {
+	VisibilityFilter,
+	type VisibilityFilterValue,
+} from "@/components/VisibilityFilter";
 
 interface PortalHistoryPopoverProps {
-	conversations: PortalConversationSummary[];
+	conversations: PortalConversationListItem[];
 	activeConversationId: string | null;
 	onSelect: (id: string) => void;
 	onDelete: (id: string) => void;
 	onArchive: (id: string, archived: boolean) => void;
+	onShare: (conv: PortalConversationListItem) => void;
+	visibilityFilter: VisibilityFilterValue;
+	onVisibilityFilterChange: (v: VisibilityFilterValue) => void;
 }
 
 function formatTimestamp(iso: string): string {
@@ -30,6 +38,9 @@ export function PortalHistoryPopover({
 	onSelect,
 	onDelete,
 	onArchive,
+	onShare,
+	visibilityFilter,
+	onVisibilityFilterChange,
 }: PortalHistoryPopoverProps) {
 	const [search, setSearch] = useState("");
 
@@ -53,6 +64,12 @@ export function PortalHistoryPopover({
 					onChange={setSearch}
 					placeholder="Search conversations..."
 				/>
+				<div className="mt-2">
+					<VisibilityFilter
+						value={visibilityFilter}
+						onChange={onVisibilityFilterChange}
+					/>
+				</div>
 			</div>
 
 			<div className="flex-1 overflow-y-auto p-1">
@@ -72,6 +89,7 @@ export function PortalHistoryPopover({
 								onSelect={() => onSelect(conv.id)}
 								onArchive={() => onArchive(conv.id, true)}
 								onDelete={() => onDelete(conv.id)}
+								onShare={() => onShare(conv)}
 							/>
 						))}
 					</div>
@@ -91,6 +109,7 @@ export function PortalHistoryPopover({
 									onSelect={() => onSelect(conv.id)}
 									onArchive={() => onArchive(conv.id, false)}
 									onDelete={() => onDelete(conv.id)}
+									onShare={() => onShare(conv)}
 									archived
 								/>
 							))}
@@ -108,13 +127,15 @@ function HistoryRow({
 	onSelect,
 	onArchive,
 	onDelete,
+	onShare,
 	archived = false,
 }: {
-	conv: PortalConversationSummary;
+	conv: PortalConversationListItem;
 	isActive: boolean;
 	onSelect: () => void;
 	onArchive: () => void;
 	onDelete: () => void;
+	onShare: () => void;
 	archived?: boolean;
 }) {
 	return (
@@ -125,7 +146,18 @@ function HistoryRow({
 			onClick={onSelect}
 		>
 			<div className="min-w-0 flex-1">
-				<div className="truncate font-medium">{conv.title}</div>
+				<div className="flex items-center gap-1.5">
+					<span className="truncate font-medium">{conv.title}</span>
+					{/* Conditional render: unowned conversations show no
+					    chip, matching the no-auto-broadening policy used
+					    across memory, task, wiki, and cron list rows. */}
+					{conv.visibility && (
+						<VisibilityChip
+							visibility={conv.visibility}
+							teamName={conv.team_name ?? undefined}
+						/>
+					)}
+				</div>
 				{conv.last_message_preview && (
 					<div className="mt-0.5 truncate text-[10px] text-ink-faint">
 						{conv.last_message_preview}
@@ -136,6 +168,16 @@ function HistoryRow({
 				{formatTimestamp(conv.updated_at)}
 			</span>
 			<div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+				<button
+					onClick={(e) => {
+						e.stopPropagation();
+						onShare();
+					}}
+					className="rounded px-1 py-0.5 text-[10px] font-medium text-ink-faint hover:bg-app-hover hover:text-ink"
+					title="Share"
+				>
+					Share
+				</button>
 				<button
 					onClick={(e) => {
 						e.stopPropagation();

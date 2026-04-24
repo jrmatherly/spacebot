@@ -26,7 +26,11 @@ export function VisibilityChip({
 					: "warning";
 
 	return (
-		<span data-tone={tone} className="visibility-chip">
+		<span
+			data-tone={tone}
+			data-testid="visibility-chip"
+			className="visibility-chip"
+		>
 			{label}
 		</span>
 	);
