@@ -65,12 +65,20 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Auth bypass for this path is wired in the middleware allowlists
         // below (static-token) and in src/auth/middleware.rs (Entra JWT).
         .routes(routes!(auth_config::get_auth_config))
-        // Phase 8 Task 8.A.4 — loopback-only token ingestion from the
-        // Tauri desktop app. Bypasses the auth middleware because the
-        // desktop has no bearer token yet; the JWT being delivered is
-        // what will unlock future authenticated requests. Transport
-        // protection lives in the handler (peer IP + Host header).
-        .routes(routes!(desktop::store_desktop_tokens))
+        // Phase 8 — loopback-only Entra-token endpoints for the Tauri
+        // desktop app. POST (Task 8.A.4) ingests freshly minted tokens.
+        // GET + DELETE (Task 8.B.0) read and clear the cached tokens
+        // for cold-start sessions and sign-out. All three bypass the
+        // auth middleware because the desktop has no bearer token at
+        // call time. Transport protection (peer IP + Host header)
+        // lives in the handler via `enforce_loopback_preconditions`.
+        // The bypass entry at `src/auth/bypass.rs` is path-only, so
+        // GET and DELETE inherit it without further edits.
+        .routes(routes!(
+            desktop::store_desktop_tokens,
+            desktop::get_desktop_tokens,
+            desktop::delete_desktop_tokens,
+        ))
         // Consolidated identity endpoint (Phase 6 PR C, A-18). Returns
         // principal_key + tid/oid + roles + groups + photo/initials in
         // one payload so the SPA's useMe hook does not have to assemble

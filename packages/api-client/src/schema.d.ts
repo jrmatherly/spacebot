@@ -1184,14 +1184,26 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Return the cached access token persisted by an earlier
+         *     `store_desktop_tokens` call, or `null` if none exists.
+         * @description Same loopback + Host defenses as the POST sibling. The Tauri shim
+         *     uses this on cold start to seed an `AccountInfo` into MSAL without
+         *     re-running the system-browser sign-in flow.
+         */
+        get: operations["get_desktop_tokens"];
         put?: never;
         /**
          * Accept tokens acquired by the Tauri desktop app's loopback auth flow
          *     and persist them via the daemon's `SecretsStore`.
          */
         post: operations["store_desktop_tokens"];
-        delete?: never;
+        /**
+         * Wipe both `entra_access_token` and `entra_refresh_token` from the
+         *     daemon's secret store. Idempotent: returns 204 whether or not the
+         *     keys were present.
+         */
+        delete: operations["delete_desktop_tokens"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3356,6 +3368,15 @@ export interface components {
          * @enum {string}
          */
         Deployment: "docker" | "hosted" | "native";
+        DesktopTokenStatus: {
+            access_token?: string | null;
+            /**
+             * Format: int64
+             * @description Reserved for a future PR that persists the access-token expiry
+             *     alongside the token itself. Always `None` today.
+             */
+            expires_in_epoch?: number | null;
+        };
         DesktopTokens: {
             access_token: string;
             /** Format: int64 */
@@ -7934,6 +7955,47 @@ export interface operations {
             };
         };
     };
+    get_desktop_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cached access token (may be null) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopTokenStatus"];
+                };
+            };
+            /** @description Request not from loopback */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Secret store read failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon secret store is locked */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     store_desktop_tokens: {
         parameters: {
             query?: never;
@@ -7962,6 +8024,45 @@ export interface operations {
                 content?: never;
             };
             /** @description Secret store write failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daemon secret store is locked */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_desktop_tokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tokens cleared (or already absent) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request not from loopback */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Secret store delete failed */
             500: {
                 headers: {
                     [name: string]: unknown;
