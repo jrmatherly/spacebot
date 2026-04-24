@@ -14,7 +14,8 @@ import type {
 	ConversationDefaultsResponse,
 	ConversationSettings,
 } from "@spacebot/api-client/client";
-import type {PortalConversationSummary} from "@spacebot/api-client/types";
+import type {PortalConversationListItem} from "@spacebot/api-client/types";
+import type {VisibilityFilterValue} from "@/components/VisibilityFilter";
 import type {ActiveWorker} from "@/hooks/useChannelLiveState";
 
 interface PortalHeaderProps {
@@ -35,12 +36,15 @@ interface PortalHeaderProps {
 	saving: boolean;
 
 	// Conversation actions
-	conversations: PortalConversationSummary[];
+	conversations: PortalConversationListItem[];
 	activeConversationId: string;
 	onNewConversation: () => void;
 	onSelectConversation: (id: string) => void;
 	onDeleteConversation: (id: string) => void;
 	onArchiveConversation: (id: string, archived: boolean) => void;
+	onShareConversation: (conv: PortalConversationListItem) => void;
+	visibilityFilter: VisibilityFilterValue;
+	onVisibilityFilterChange: (v: VisibilityFilterValue) => void;
 	showHistory: boolean;
 	onToggleHistory: (open: boolean) => void;
 }
@@ -65,6 +69,9 @@ export function PortalHeader({
 	onSelectConversation,
 	onDeleteConversation,
 	onArchiveConversation,
+	onShareConversation,
+	visibilityFilter,
+	onVisibilityFilterChange,
 	showHistory,
 	onToggleHistory,
 }: PortalHeaderProps) {
@@ -132,6 +139,9 @@ export function PortalHeader({
 							}}
 							onDelete={onDeleteConversation}
 							onArchive={onArchiveConversation}
+							onShare={onShareConversation}
+							visibilityFilter={visibilityFilter}
+							onVisibilityFilterChange={onVisibilityFilterChange}
 						/>
 					</PopoverContent>
 				</PopoverRoot>

@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { usePortal, getPortalSessionId } from "@/hooks/usePortal";
 import { useLiveContext } from "@/hooks/useLiveContext";
 import { api, type ConversationDefaultsResponse, type ConversationSettings } from "@spacebot/api-client/client";
+import type { PortalConversationListItem } from "@spacebot/api-client/types";
+import { type VisibilityFilterValue } from "@/components/VisibilityFilter";
+import {
+	ShareResourceModal,
+	type ShareSubmitArgs,
+} from "@/components/ShareResourceModal";
+import { useTeams } from "@/auth/useMe";
 import { PortalHeader } from "./PortalHeader";
 import { PortalTimeline } from "./PortalTimeline";
 import { PortalComposer } from "./PortalComposer";
@@ -28,13 +36,47 @@ export function PortalPanel({ agentId }: PortalPanelProps) {
 	// Track uploaded attachment IDs keyed by file name+size for deduplication.
 	const uploadedIds = useRef<Map<string, string>>(new Map());
 
-	// Fetch conversations list
+	// Visibility filter state persists to URL query params so a reload
+	// restores the filter. Same pattern as AgentCron and Wiki.
+	const urlSearch = useSearch({ strict: false }) as { visibility?: string };
+	const navigate = useNavigate();
+	const visibilityFilter: VisibilityFilterValue =
+		urlSearch.visibility === "personal" ||
+		urlSearch.visibility === "team" ||
+		urlSearch.visibility === "org"
+			? urlSearch.visibility
+			: "all";
+	const setVisibilityFilter = (v: VisibilityFilterValue) =>
+		navigate({
+			to: ".",
+			search: (prev) => ({
+				...prev,
+				visibility: v === "all" ? undefined : v,
+			}),
+		});
+
+	const [shareTarget, setShareTarget] =
+		useState<PortalConversationListItem | null>(null);
+	// Lazy-gate the teams fetch until the Share modal opens.
+	const teamsQuery = useTeams({ enabled: shareTarget !== null });
+
+	// Fetch conversations list. QueryKey includes the filter so cache
+	// entries stay isolated per visibility; the filter itself is applied
+	// client-side because the backend does not yet accept a `visibility=`
+	// param on this endpoint.
 	const { data: conversationsData } = useQuery({
-		queryKey: ["portal-conversations", agentId],
+		queryKey: ["portal-conversations", agentId, visibilityFilter],
 		queryFn: () => api.listPortalConversations(agentId),
 	});
 
-	const conversations = conversationsData?.conversations ?? [];
+	const allConversations = conversationsData?.conversations ?? [];
+	const conversations = useMemo(
+		() =>
+			visibilityFilter === "all"
+				? allConversations
+				: allConversations.filter((c) => c.visibility === visibilityFilter),
+		[allConversations, visibilityFilter],
+	);
 
 	// Auto-select the newest conversation on first load
 	useEffect(() => {
@@ -238,6 +280,9 @@ export function PortalPanel({ agentId }: PortalPanelProps) {
 					onArchiveConversation={(id, archived) =>
 						archiveConversationMutation.mutate({ id, archived })
 					}
+					onShareConversation={(conv) => setShareTarget(conv)}
+					visibilityFilter={visibilityFilter}
+					onVisibilityFilterChange={setVisibilityFilter}
 					showHistory={showHistory}
 					onToggleHistory={setShowHistory}
 				/>
@@ -303,6 +348,44 @@ export function PortalPanel({ agentId }: PortalPanelProps) {
 					</>
 				)}
 				</div>
+
+				{shareTarget && (
+					<ShareResourceModal
+						resourceType="portal_conversation"
+						resourceId={shareTarget.id}
+						currentVisibility={shareTarget.visibility ?? null}
+						teams={(teamsQuery.data ?? []).map((t) => ({
+							id: t.id,
+							name: t.display_name,
+						}))}
+						onSubmit={async (args: ShareSubmitArgs) => {
+							await api.setResourceVisibility(
+								"portal_conversation",
+								shareTarget.id,
+								args,
+							);
+							// Rethrow on invalidate failure: the
+							// conversations query has no refetchInterval
+							// and no SSE-driven invalidation, so a silent
+							// swallow would leave stale chip state visible
+							// until the user manually reopens the history
+							// popover. Matches the Wiki pattern for routes
+							// without a refetch backstop.
+							try {
+								await queryClient.invalidateQueries({
+									queryKey: ["portal-conversations", agentId],
+								});
+							} catch (e) {
+								console.error(
+									"PortalPanel: failed to invalidate portal-conversations cache after share",
+									e,
+								);
+								throw e;
+							}
+						}}
+						onClose={() => setShareTarget(null)}
+					/>
+				)}
 		</div>
 	);
 }
