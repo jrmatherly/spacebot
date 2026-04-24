@@ -1,15 +1,24 @@
 //! Unit tests for the Entra authorization-request helpers.
-//!
-//! Sibling file to `auth.rs` (not nested under it), so imports use
-//! `crate::auth::*` rather than `super::auth`.
 
-use crate::auth::{build_authorize_url, generate_state, AuthorizeParams};
+use crate::auth::{
+    AuthorizeParams, DESKTOP_PORT_RANGE, bind_loopback, build_authorize_url, generate_pkce,
+    generate_state,
+};
 
 #[test]
-fn state_is_url_safe_and_non_empty() {
+fn state_is_at_least_32_chars() {
+    let s = generate_state();
+    assert!(
+        s.len() >= 32,
+        "state must be at least 32 chars for entropy; got {}",
+        s.len()
+    );
+}
+
+#[test]
+fn state_is_url_safe_base64() {
     let s = generate_state();
     assert!(!s.is_empty());
-    assert!(s.len() >= 32, "state must be at least 32 chars for entropy");
     for b in s.bytes() {
         assert!(
             b.is_ascii_alphanumeric() || b == b'-' || b == b'_',
@@ -23,6 +32,32 @@ fn generated_states_are_unique() {
     let a = generate_state();
     let b = generate_state();
     assert_ne!(a, b, "fresh states must differ (CSPRNG output)");
+}
+
+#[test]
+fn pkce_challenge_is_s256_of_verifier() {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let (verifier, challenge) = generate_pkce();
+    assert!(
+        verifier.len() >= 43,
+        "PKCE verifier must be at least 43 chars per RFC 7636; got {}",
+        verifier.len()
+    );
+    let expected =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    assert_eq!(challenge, expected, "challenge must equal S256(verifier)");
+}
+
+#[test]
+fn bind_loopback_returns_port_in_documented_range() {
+    let (listener, port) = bind_loopback().expect("bind loopback on a free range port");
+    assert!(
+        DESKTOP_PORT_RANGE.contains(&port),
+        "bound port {port} must fall inside DESKTOP_PORT_RANGE {:?}",
+        DESKTOP_PORT_RANGE
+    );
+    drop(listener);
 }
 
 #[test]
@@ -48,5 +83,11 @@ fn authorize_url_includes_all_required_params() {
     assert_eq!(q.get("state").map(|s| s.as_str()), Some("state-xyz"));
     assert_eq!(q.get("code_challenge").map(|s| s.as_str()), Some("pkce-chal"));
     assert_eq!(q.get("code_challenge_method").map(|s| s.as_str()), Some("S256"));
-    assert!(q.get("scope").unwrap().contains("api.access"));
+    // Scope must be space-joined verbatim. A refactor that joins with `,`
+    // or URL-double-encodes would pass `contains("api.access")` but break
+    // auth, so pin the exact string instead.
+    assert_eq!(
+        q.get("scope").map(|s| s.as_str()),
+        Some("api://web-api/api.access offline_access")
+    );
 }

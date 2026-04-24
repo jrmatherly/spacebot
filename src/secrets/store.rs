@@ -294,9 +294,7 @@ impl SecretsStore {
         let _guard = self.mutation_guard.lock().expect("mutation guard poisoned");
         let state = self.state();
         if state == StoreState::Locked {
-            return Err(SecretsError::Other(anyhow::anyhow!(
-                "secret store is locked — unlock with master key first"
-            )));
+            return Err(SecretsError::StoreLocked);
         }
 
         let stored_value = self.encode_value(value)?;
@@ -350,9 +348,7 @@ impl SecretsStore {
     pub fn get(&self, name: &str) -> Result<DecryptedSecret, SecretsError> {
         let state = self.state();
         if state == StoreState::Locked {
-            return Err(SecretsError::Other(anyhow::anyhow!(
-                "secret store is locked — unlock with master key first"
-            )));
+            return Err(SecretsError::StoreLocked);
         }
 
         let read_txn = self.db.begin_read().map_err(|error| {
@@ -826,9 +822,7 @@ impl SecretsStore {
     /// at rest). If the store is locked, returns an error.
     pub fn export_all(&self) -> Result<ExportData, SecretsError> {
         if self.state() == StoreState::Locked {
-            return Err(SecretsError::Other(anyhow::anyhow!(
-                "secret store is locked — unlock before exporting"
-            )));
+            return Err(SecretsError::StoreLocked);
         }
 
         let metadata = self.list_metadata()?;
@@ -864,9 +858,7 @@ impl SecretsStore {
         overwrite: bool,
     ) -> Result<ImportResult, SecretsError> {
         if self.state() == StoreState::Locked {
-            return Err(SecretsError::Other(anyhow::anyhow!(
-                "secret store is locked — unlock before importing"
-            )));
+            return Err(SecretsError::StoreLocked);
         }
 
         let mut imported = 0usize;

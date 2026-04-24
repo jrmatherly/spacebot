@@ -209,6 +209,22 @@ async fn sign_in_with_entra(
     scopes: Vec<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
+    sign_in_with_entra_inner(server_url, tenant_id, client_id, scopes, app_handle)
+        .await
+        // Collapse the anyhow chain into one string at the Tauri boundary.
+        // `{e:#}` renders outer: middle: inner so every `.context()` call
+        // from auth.rs survives all the way to the SPA error handler.
+        .map_err(|e| format!("{e:#}"))
+}
+
+async fn sign_in_with_entra_inner(
+    server_url: String,
+    tenant_id: String,
+    client_id: String,
+    scopes: Vec<String>,
+    app_handle: tauri::AppHandle,
+) -> anyhow::Result<serde_json::Value> {
+    use anyhow::Context as _;
     use tauri_plugin_opener::OpenerExt;
 
     let (listener, port) = crate::auth::bind_loopback()?;
@@ -225,10 +241,19 @@ async fn sign_in_with_entra(
         code_challenge: &pkce_challenge,
     });
 
+    // Log the URL so a user whose system has no default browser can
+    // copy-paste to complete sign-in from another window. The URL is
+    // public-safe: PKCE keeps it useless to anyone not holding the
+    // in-memory verifier.
+    tracing::info!(
+        url = %authorize_url,
+        "opening Entra sign-in in system browser; if no browser opens, copy this URL"
+    );
+
     app_handle
         .opener()
         .open_url(&authorize_url, None::<String>)
-        .map_err(|e| e.to_string())?;
+        .context("open system browser via tauri-plugin-opener")?;
 
     let code = crate::auth::accept_callback(listener, &state).await?;
 
@@ -252,16 +277,25 @@ async fn sign_in_with_entra(
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .context("POST tokens to daemon /api/desktop/tokens")?;
     let status = res.status();
-    if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
-        return Err(
-            "Spacebot is locked. Unlock it from the tray or settings and try signing in again."
-                .to_string(),
-        );
-    }
-    if !status.is_success() {
-        return Err(format!("daemon rejected token store: {status}"));
+    match status {
+        reqwest::StatusCode::NO_CONTENT => {}
+        reqwest::StatusCode::SERVICE_UNAVAILABLE => {
+            anyhow::bail!(
+                "Spacebot is locked. Unlock it from the tray or settings and try signing in again."
+            );
+        }
+        reqwest::StatusCode::FORBIDDEN => {
+            tracing::error!(%status, url = %server_url, "daemon refused loopback token post");
+            anyhow::bail!(
+                "daemon refused the loopback token post; verify server_url points at the local daemon ({server_url}), not a remote or proxied endpoint"
+            );
+        }
+        other => {
+            tracing::error!(status = %other, "daemon rejected /api/desktop/tokens");
+            anyhow::bail!("daemon rejected token store: {other}");
+        }
     }
 
     Ok(serde_json::json!({

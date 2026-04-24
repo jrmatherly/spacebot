@@ -3,7 +3,7 @@
 //!
 //! This endpoint bypasses the auth middleware (registered in
 //! `src/auth/bypass.rs`) because the desktop has no bearer token at call
-//! time; the JWT it is delivering is exactly what will unlock future
+//! time. The JWT it is delivering is exactly what will unlock future
 //! authenticated requests. Protection is therefore transport-level, not
 //! middleware-level, enforced three ways:
 //!
@@ -13,7 +13,7 @@
 //!      (defends against DNS-rebinding attacks where an attacker-controlled
 //!      name resolves to 127.0.0.1 in the victim's browser).
 //!   3. Tokens land in `SecretCategory::System`, which the daemon's secret
-//!      store refuses to persist when locked — surfacing a distinct
+//!      store refuses to persist when locked. That surfaces a distinct
 //!      `SERVICE_UNAVAILABLE` the Tauri side translates into a user-facing
 //!      unlock prompt.
 
@@ -25,15 +25,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::state::ApiState;
-use crate::secrets::store::SecretCategory;
+use crate::error::SecretsError;
+use crate::secrets::store::{SecretCategory, SecretsStore};
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct DesktopTokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
-    // The Tauri side sends this alongside the tokens; the daemon will
-    // eventually stash it for refresh-deadline tracking, at which point
-    // the allow goes away.
+    // TODO: persist for refresh-deadline tracking; removes the need for
+    // #[allow(dead_code)] when the refresh-scheduler lands in Phase 8 PR B.
     #[allow(dead_code)]
     pub expires_in: u64,
 }
@@ -77,8 +77,7 @@ pub(super) async fn store_desktop_tokens(
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let host_name = host.split(':').next().unwrap_or("");
-    if !matches!(host_name, "127.0.0.1" | "[::1]" | "localhost") {
+    if !is_loopback_host(host) {
         tracing::warn!(host = %host, "/api/desktop/tokens rejected non-loopback Host");
         return Err(StatusCode::FORBIDDEN);
     }
@@ -91,36 +90,80 @@ pub(super) async fn store_desktop_tokens(
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if let Err(e) = secrets.set(
+    let has_refresh = tokens.refresh_token.is_some();
+
+    classify_secret_write(
+        secrets.set(
+            "entra_access_token",
+            &tokens.access_token,
+            SecretCategory::System,
+        ),
         "entra_access_token",
-        &tokens.access_token,
-        SecretCategory::System,
-    ) {
-        // `SecretsError` does not currently expose a `Locked` arm as a
-        // named public variant. The Display impl at
-        // src/secrets/store.rs:122 writes the literal `"locked"` for
-        // StoreState::Locked, so substring-match is the cheapest
-        // discriminator. If the phrase shifts, the fallback arm returns
-        // 500 — a locked store would surface as 500 instead of 503 until
-        // this gets updated.
-        if format!("{e}").contains("locked") {
-            tracing::warn!("desktop token store rejected: daemon is locked");
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        tracing::error!(?e, "secrets.set failed for entra_access_token");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
+    )?;
 
     if let Some(rt) = tokens.refresh_token
-        && let Err(e) = secrets.set("entra_refresh_token", &rt, SecretCategory::System)
+        && let Err(status) = classify_secret_write(
+            secrets.set("entra_refresh_token", &rt, SecretCategory::System),
+            "entra_refresh_token",
+        )
     {
-        if format!("{e}").contains("locked") {
-            tracing::warn!("desktop token store rejected: daemon is locked");
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        tracing::error!(?e, "secrets.set failed for entra_refresh_token");
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        // Access-token write already succeeded. Roll it back so the
+        // store doesn't carry a stranded access token whose paired
+        // refresh token never landed. Failure to roll back is logged
+        // but cannot be surfaced to the caller (the original status
+        // is what they need to act on).
+        rollback_access_token(&secrets);
+        return Err(status);
     }
 
+    tracing::info!(
+        peer_ip = %peer.ip(),
+        has_refresh_token = has_refresh,
+        expires_in = tokens.expires_in,
+        "desktop sign-in tokens stored via /api/desktop/tokens"
+    );
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Translate a `SecretsStore::set` outcome into the HTTP contract:
+/// `StoreLocked` is the documented 503 surface (the Tauri side translates
+/// it into an "unlock and retry" prompt). Every other failure is a 500.
+fn classify_secret_write(result: Result<(), SecretsError>, key: &str) -> Result<(), StatusCode> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(SecretsError::StoreLocked) => {
+            tracing::warn!(%key, "desktop token store rejected: daemon is locked");
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+        Err(e) => {
+            tracing::error!(%key, error = %e, "secrets.set failed");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Return `true` when the raw `Host` header names a loopback target.
+///
+/// Handles three forms: bare hostname (`localhost`), IPv4 with optional
+/// port (`127.0.0.1`, `127.0.0.1:19898`), and bracketed IPv6 with
+/// optional port (`[::1]`, `[::1]:19898`). A naive `split(':')` breaks
+/// the IPv6 case because every IPv6 address contains colons.
+fn is_loopback_host(raw: &str) -> bool {
+    if let Some(rest) = raw.strip_prefix('[') {
+        // IPv6 bracketed literal. Take everything up to the matching `]`.
+        let addr = rest.split(']').next().unwrap_or("");
+        return addr == "::1";
+    }
+    let host_name = raw.split(':').next().unwrap_or("");
+    matches!(host_name, "127.0.0.1" | "localhost")
+}
+
+fn rollback_access_token(secrets: &SecretsStore) {
+    if let Err(e) = secrets.delete("entra_access_token") {
+        tracing::error!(
+            error = %e,
+            "failed to roll back entra_access_token after refresh_token write failed; \
+             operator cleanup required"
+        );
+    }
 }
