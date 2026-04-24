@@ -87,6 +87,7 @@ export type {
 	// System
 	StatusResponse,
 	InstanceOverviewResponse,
+	ResourceScope,
 	// Channels
 	ChannelResponse,
 	ChannelsResponse,
@@ -185,7 +186,7 @@ import type {
 	TaskActionResponse,
 } from "./types";
 import type { WikiListResponse } from "./types";
-import type { ProjectListResponse } from "./types";
+import type { ProjectListResponse, ResourceScope } from "./types";
 import type {
 	CronListResponse,
 	CronExecutionsResponse,
@@ -2434,9 +2435,27 @@ export const api = {
 	},
 
 	// Projects API
-	listProjects: (status?: ProjectStatus) => {
+	listProjects: (
+		statusOrOpts?: ProjectStatus | { status?: ProjectStatus; scope?: ResourceScope },
+		scope?: ResourceScope,
+	) => {
+		// Backwards-compatible positional signature: callers pre-PR-5 pass
+		// a bare status string. New callers pass an options object. The
+		// 2-arg positional form (status, scope) is also accepted so
+		// existing "active" callers can add scope without refactoring to
+		// options-object form.
+		let statusParam: ProjectStatus | undefined;
+		let scopeParam: ResourceScope | undefined;
+		if (typeof statusOrOpts === "string") {
+			statusParam = statusOrOpts;
+			scopeParam = scope;
+		} else if (statusOrOpts) {
+			statusParam = statusOrOpts.status;
+			scopeParam = statusOrOpts.scope;
+		}
 		const search = new URLSearchParams();
-		if (status) search.set("status", status);
+		if (statusParam) search.set("status", statusParam);
+		if (scopeParam) search.set("scope", scopeParam);
 		const qs = search.toString();
 		return fetchJson<ProjectListResponse>(`/agents/projects${qs ? `?${qs}` : ""}`);
 	},

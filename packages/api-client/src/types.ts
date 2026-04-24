@@ -11,6 +11,13 @@ export type HealthResponse = components["schemas"]["HealthResponse"];
 export type InstanceOverviewResponse =
   components["schemas"]["InstanceOverviewResponse"];
 
+/// Query-time scope filter for list endpoints that support narrowing to
+/// "resources I own" / "resources in my teams" / "the full org view."
+/// Distinct from `VisibilityTag.visibility` (the persisted classification
+/// on each row). Applied at call time via `api.listProjects({ scope: ... })`
+/// or `api.agents({ scope: ... })`.
+export type ResourceScope = components["schemas"]["ResourceScope"];
+
 // =============================================================================
 // Auth Types (Phase 6)
 // =============================================================================
