@@ -1,7 +1,7 @@
-// Phase 8 Task 8.B.2 — Tauri-mode replacement for `@azure/msal-browser`'s
+// Tauri-mode replacement for `@azure/msal-browser`'s
 // `PublicClientApplication`. Returns the access token acquired via the
-// system-browser loopback flow (Phase 8 PR A) instead of running MSAL's
-// own cache and redirect dance.
+// system-browser loopback flow instead of running MSAL's own cache and
+// redirect dance.
 //
 // Why a shim, not real MSAL:
 //   * MSAL.js v5 in a Tauri WebView assumes `localStorage` survives a
@@ -12,11 +12,9 @@
 //     keep the rest of the SPA (AuthGate, useAccount, AuthenticatedTemplate)
 //     unchanged.
 //
-// Option-C precedent: `mockMsal.ts` has shipped a structural duck-type
-// PCA since Phase 6 Task 6.A.5 with no `MsalProvider` crash. This shim
-// is the same pattern, with a strict superset of mockMsal's surface so
-// any future MSAL method MsalProvider touches at mount survives both
-// VITE_AUTH_MOCK=1 and Tauri builds.
+// Option-C precedent: `mockMsal.ts` ships a structural duck-type PCA
+// without a `MsalProvider` crash. This shim is the same pattern, with
+// a strict superset of mockMsal's surface.
 //
 // State machine:
 //   uninitialized → initialized (cached?)
@@ -24,10 +22,11 @@
 //                ↳ initialized (cached)   → signed-in (cold start happy path)
 //   signed-in → logoutRedirect → uninitialized
 
-import type {
-	AccountInfo,
-	AuthenticationResult,
-	PublicClientApplication,
+import {
+	InteractionRequiredAuthError,
+	type AccountInfo,
+	type AuthenticationResult,
+	type PublicClientApplication,
 } from "@azure/msal-browser";
 import {
 	clearDesktopTokens,
@@ -37,9 +36,13 @@ import {
 import type { AuthConfigResponse } from "@spacebot/api-client/types";
 
 /**
- * JWT payload shape we actually use. Tokens minted by Entra carry many
- * more claims; this is the minimum the shim needs to seed an
- * `AccountInfo` for `MsalProvider` consumers.
+ * Subset of JWT claims the shim reads. All fields are optional because
+ * the shim never validates the token (the daemon already did before
+ * persisting), and a malformed payload should degrade to "no claims" not
+ * a parse exception. Production Entra v2 tokens always carry `tid`,
+ * `oid`, and at least one of `preferred_username`/`upn`; absence of any
+ * of these from a daemon-supplied token is treated as a fail-closed
+ * condition by the callers below.
  */
 interface MinimalJwtClaims {
 	tid?: string;
@@ -51,10 +54,9 @@ interface MinimalJwtClaims {
 }
 
 /**
- * Best-effort JWT decode. Real MSAL parses with full validation; the
- * shim does not validate (the daemon already validated before storing).
- * Returns null on any structural failure so callers can fall back to
- * an empty account.
+ * Best-effort JWT decode. Returns null on any structural failure.
+ * Callers must treat null as fail-closed (clear cached state, show
+ * sign-in) rather than synthesizing a placeholder identity.
  */
 function decodeJwtClaims(token: string): MinimalJwtClaims | null {
 	const parts = token.split(".");
@@ -68,11 +70,16 @@ function decodeJwtClaims(token: string): MinimalJwtClaims | null {
 	}
 }
 
-function makeAccountFromClaims(claims: MinimalJwtClaims): AccountInfo {
-	const oid = claims.oid ?? claims.sub ?? "tauri-account";
-	const tid = claims.tid ?? "tauri-tenant";
-	const username =
-		claims.preferred_username ?? claims.upn ?? `${oid}@unknown`;
+function makeAccountFromClaims(claims: MinimalJwtClaims): AccountInfo | null {
+	// Refuse to synthesize an identity from missing claims. Returning
+	// null forces the caller to either clear cached state (cold start)
+	// or surface a sign-in error (loginRedirect post-mint). Producing
+	// a placeholder `tauri-account@unknown` would let `<UserMenu>`
+	// display a fake identity for a real but corrupted token.
+	const oid = claims.oid ?? claims.sub;
+	const tid = claims.tid;
+	if (!oid || !tid) return null;
+	const username = claims.preferred_username ?? claims.upn ?? `${oid}@unknown`;
 	return {
 		homeAccountId: `${oid}.${tid}`,
 		environment: "login.microsoftonline.com",
@@ -83,17 +90,19 @@ function makeAccountFromClaims(claims: MinimalJwtClaims): AccountInfo {
 	};
 }
 
+function tokenPreview(token: string): string {
+	if (token.length <= 12) return token.slice(0, 4);
+	return `${token.slice(0, 8)}...${token.slice(-4)}`;
+}
+
 /**
  * Build the structural duck-type that satisfies MsalProvider's
  * mount-time surface. Cast to PublicClientApplication at the boundary
  * the same way mockMsal does.
  *
- * The serverUrl is captured at construction time (acquired once at
- * shim build via the Tauri `get_server_url` command in
- * `desktop/src-tauri/src/main.rs:30`). Daemon URL changes after
- * mount are rare enough that re-acquiring per-call is overkill;
- * AuthGate's bootstrap effect re-runs when serverReady flips, which
- * also rebuilds the shim.
+ * The serverUrl is captured at construction time. AuthGate's bootstrap
+ * effect re-runs when serverReady flips, which rebuilds the shim with
+ * a fresh URL.
  */
 export async function getTauriMsalInstance(
 	_cfg: AuthConfigResponse,
@@ -106,20 +115,26 @@ export async function getTauriMsalInstance(
 	let cachedToken: string | null = null;
 
 	// Cold-start path: ask the daemon for any persisted access token.
-	// On hit, seed activeAccount so getAllAccounts() returns non-empty
-	// and MsalProvider lights up <AuthenticatedTemplate>. On miss, fall
+	// On hit with valid claims, seed activeAccount so getAllAccounts()
+	// returns non-empty and MsalProvider lights up
+	// <AuthenticatedTemplate>. On miss or claims-decode failure, fall
 	// through; the SPA will render <UnauthenticatedTemplate>.
 	const initialToken = await getCachedAccessToken(serverUrl);
 	if (initialToken) {
 		const claims = decodeJwtClaims(initialToken);
-		if (claims) {
-			activeAccount = makeAccountFromClaims(claims);
+		const account = claims ? makeAccountFromClaims(claims) : null;
+		if (account) {
+			activeAccount = account;
 			cachedToken = initialToken;
+		} else {
+			console.warn(
+				`[tauriMsalShim] cold-start token failed to decode (preview=${tokenPreview(initialToken)}); falling back to sign-in`,
+			);
 		}
 	}
 
 	const instance = {
-		// Lifecycle no-ops — MsalProvider calls these on mount.
+		// Lifecycle no-ops MsalProvider calls on mount.
 		initialize: async () => {},
 		handleRedirectPromise: async (): Promise<AuthenticationResult | null> =>
 			null,
@@ -136,7 +151,10 @@ export async function getTauriMsalInstance(
 			trace: () => {},
 		}),
 		getConfiguration: () => ({
-			auth: { clientId, authority: `https://login.microsoftonline.com/${tenantId}` },
+			auth: {
+				clientId,
+				authority: `https://login.microsoftonline.com/${tenantId}`,
+			},
 		}),
 
 		// Account state.
@@ -148,8 +166,10 @@ export async function getTauriMsalInstance(
 		},
 
 		// Sign-in: route through the system-browser loopback flow.
-		// `loginRedirect` is what MsalProvider's AuthenticatedTemplate
-		// calls when the SignInPrompt button fires.
+		// MsalProvider's AuthenticatedTemplate calls this when
+		// SignInPrompt fires. Throws if the daemon-returned token cannot
+		// be decoded — better than seeding a placeholder account that
+		// would put a fake identity in the UI.
 		loginRedirect: async (_request?: unknown): Promise<void> => {
 			const result = await signInWithEntraDesktop({
 				serverUrl,
@@ -157,24 +177,28 @@ export async function getTauriMsalInstance(
 				clientId,
 				scopes,
 			});
-			cachedToken = result.access_token;
 			const claims = decodeJwtClaims(result.access_token);
-			activeAccount = claims
-				? makeAccountFromClaims(claims)
-				: makeAccountFromClaims({});
+			const account = claims ? makeAccountFromClaims(claims) : null;
+			if (!account) {
+				const preview = tokenPreview(result.access_token);
+				throw new Error(
+					`sign_in_with_entra returned a token whose claims could not be decoded (preview=${preview}); refusing to seed a placeholder identity`,
+				);
+			}
+			cachedToken = result.access_token;
+			activeAccount = account;
 		},
 
 		// Token acquisition. Silent path returns the cached token if
-		// present; throws InteractionRequiredAuthError-shape if not so
-		// makeTokenProvider() in AuthGate falls into its redirect
-		// branch, which calls acquireTokenRedirect → loginRedirect.
+		// present; throws the real `InteractionRequiredAuthError` if not
+		// so makeTokenProvider's `instanceof` check passes and the
+		// redirect branch fires.
 		acquireTokenSilent: async (): Promise<AuthenticationResult> => {
 			if (!cachedToken || !activeAccount) {
-				const error = new Error("interaction_required") as Error & {
-					name: string;
-				};
-				error.name = "InteractionRequiredAuthError";
-				throw error;
+				throw new InteractionRequiredAuthError(
+					"interaction_required",
+					"tauri shim has no cached token; full sign-in required",
+				);
 			}
 			return {
 				accessToken: cachedToken,
@@ -192,21 +216,33 @@ export async function getTauriMsalInstance(
 			} as unknown as AuthenticationResult;
 		},
 
-		// Interactive token: route through the same sign-in flow. The
-		// real MSAL.js variant returns void and triggers a navigation;
-		// the Tauri flow opens the system browser, awaits the loopback
-		// callback, persists tokens, and resolves. Same observable
-		// effect: by the time the promise resolves, sign-in is done.
+		// Interactive token: route through the same sign-in flow. Real
+		// MSAL.js returns void and triggers a navigation; the Tauri flow
+		// opens the system browser, awaits the loopback callback,
+		// persists tokens, and resolves.
 		acquireTokenRedirect: async (_request?: unknown): Promise<void> => {
-			await (instance.loginRedirect as () => Promise<void>)();
+			await instance.loginRedirect();
 		},
 
-		// Sign-out: wipe the daemon-side cache, then forget local state.
+		// Sign-out: wipe the daemon-side cache, then forget local state
+		// AND navigate, regardless of whether the daemon delete
+		// succeeded. A failed daemon delete must never leave the user
+		// believing they signed out while the local UI keeps showing
+		// them as signed in — that is a SOC 2 / shared-device hazard.
+		// Surface the failure via console; a future toast can pick it up.
 		logoutRedirect: async (opts?: { postLogoutRedirectUri?: string }) => {
-			await clearDesktopTokens(serverUrl);
-			activeAccount = null;
-			cachedToken = null;
-			window.location.href = opts?.postLogoutRedirectUri ?? "/";
+			try {
+				await clearDesktopTokens(serverUrl);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error(
+					`[tauriMsalShim] sign-out: daemon delete failed (${message}); wiping local state and navigating anyway`,
+				);
+			} finally {
+				activeAccount = null;
+				cachedToken = null;
+				window.location.href = opts?.postLogoutRedirectUri ?? "/";
+			}
 		},
 	};
 

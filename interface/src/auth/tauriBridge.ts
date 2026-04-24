@@ -1,19 +1,23 @@
-// Phase 8 Task 8.B.1 — typed wrappers for the three Tauri commands the
-// MSAL shim needs (sign-in, cached-token read, sign-out clear).
+// Typed wrappers for the three Tauri commands the MSAL shim needs:
+// sign-in, cached-token read, sign-out clear.
 //
-// All three route through `platform.invoke` — the existing host-IPC
-// primitive at platform.ts:146 — to honor the module-level rule that
+// All three route through `platform.invoke` (the host-IPC primitive
+// re-exported from `@/platform`) to honor the module-level rule that
 // `@tauri-apps/api` may only be imported from `platform.ts`. Browser
-// mode short-circuits cleanly: invoke returns `undefined`, the
-// helpers below translate that into the absent-token shape so the
-// SPA can fall back to interactive sign-in.
+// mode short-circuits cleanly via the `IS_DESKTOP` guards.
 //
-// Daemon contract (Phase 8 Task 8.B.0):
-//   sign_in_with_entra(server_url, tenant_id, client_id, scopes)
-//     → JSON { access_token, expires_in } on success
-//     → string error on failure (locked store, browser, etc.)
-//   get_cached_access_token(server_url) → Option<String>
-//   clear_auth_tokens(server_url) → Result<(), String>
+// Daemon command contract:
+//   sign_in_with_entra(serverUrl, tenantId, clientId, scopes)
+//     → JSON { access_token, expires_in } on success (snake_case fields
+//       mirror the Rust struct's serde shape)
+//     → string error on failure (locked store, browser failure, etc.)
+//   get_cached_access_token(serverUrl) → Option<String>
+//   clear_auth_tokens(serverUrl) → Result<(), String>
+//
+// Naming convention: TS-side IPC arg interfaces use camelCase (idiomatic
+// JS); the result shape uses snake_case to match the Rust struct's
+// serde fields verbatim. The wrapper at the call site is the single
+// translation point — do not "fix" one side in isolation.
 
 import { IS_DESKTOP, invoke } from "@/platform";
 

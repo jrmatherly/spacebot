@@ -1,5 +1,5 @@
-// Phase 6 Task 6.A.5 — React wrapper that gates the app shell behind
-// Entra sign-in. Exposes a five-state machine:
+// React wrapper that gates the app shell behind Entra sign-in. Exposes
+// a six-state machine:
 //
 //   waiting_for_server — Tauri cold-start: daemon URL not resolved yet.
 //                        Defers loadAuthConfig() until ServerProvider
@@ -10,14 +10,16 @@
 //                        directly.
 //   unauthenticated    — Entra configured but no active account yet.
 //   authenticated      — MSAL has an account, token provider is wired.
+//   error              — bootstrap failed; show a diagnostic banner
+//                        instead of fail-open to entra_disabled.
 //
 // Responsibilities:
 //   - handleRedirectPromise for return-from-Entra redirect flows
 //   - setActiveAccount so MsalProvider has a stable account throughout the tree
 //   - setAuthTokenProvider wires a silent-acquisition closure into the
 //     api-client so every outbound call can attach a Bearer token
-//   - SignInPrompt child renders the interactive sign-in button + A-17
-//     "stay signed in on this device" opt-in checkbox
+//   - SignInPrompt child renders the interactive sign-in button (and a
+//     "stay signed in on this device" opt-in checkbox in browser mode)
 
 import {
 	InteractionRequiredAuthError,
@@ -198,14 +200,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			</MsalProvider>
 		);
 	}
-	return <MsalProvider instance={state.msal}>{children}</MsalProvider>;
+	if (state.kind === "authenticated") {
+		return <MsalProvider instance={state.msal}>{children}</MsalProvider>;
+	}
+	// Exhaustiveness guard: a new GateState variant added without
+	// updating this render chain becomes a TypeScript compile error
+	// (assignment to `never`), not a silent default-case render.
+	const _exhaustive: never = state;
+	return _exhaustive;
 }
 
 /// Builds the closure that `api-client/client.ts` calls on every request
 /// that needs a Bearer token. Silent acquisition is the happy path; if
 /// MSAL says "user must interact," we kick off a full-page redirect and
-/// return a never-resolving Promise so authedFetch (Task 6.B.1) suspends
-/// gracefully until the redirect completes and the tab reloads.
+/// return a never-resolving Promise so authedFetch suspends gracefully
+/// until the redirect completes and the tab reloads.
 function makeTokenProvider(
 	msal: PublicClientApplication,
 	account: AccountInfo,
@@ -218,12 +227,39 @@ function makeTokenProvider(
 			return result.accessToken;
 		} catch (err) {
 			if (err instanceof InteractionRequiredAuthError) {
-				// Full-page navigation; the returned Promise resolves after
-				// the page is gone. Using `never` ensures authedFetch's retry
-				// loop suspends rather than racing the navigation.
-				void msal.acquireTokenRedirect({ scopes, account });
+				// Kick off the redirect. Real MSAL navigates the page;
+				// the Tauri shim opens the system browser. Both resolve
+				// to a "page is gone or about to be" state, so we
+				// return a never-resolving Promise and let authedFetch
+				// suspend. If the redirect itself fails (locked store,
+				// daemon unreachable in Tauri mode), surface it via
+				// `spacebot:auth-exhausted` so the listener at the top
+				// of AuthGate logs it and a future toast can pick it up
+				// — never silently leave authedFetch hanging.
+				msal.acquireTokenRedirect({ scopes, account }).catch((redirectErr) => {
+					const message =
+						redirectErr instanceof Error
+							? redirectErr.message
+							: String(redirectErr);
+					console.error(
+						`[AuthGate] acquireTokenRedirect failed: ${message}`,
+					);
+					window.dispatchEvent(
+						new CustomEvent<AuthExhaustedDetail>(
+							"spacebot:auth-exhausted",
+							{
+								detail: {
+									url: "(internal:acquireTokenRedirect)",
+									reason: "refresh_failed",
+								},
+							},
+						),
+					);
+				});
 				return new Promise<string | null>(() => {
-					/* never resolves; page navigates away */
+					/* never resolves; page navigates away or the
+					 * auth-exhausted dispatch above is the user's
+					 * recovery path. */
 				});
 			}
 			throw err;
