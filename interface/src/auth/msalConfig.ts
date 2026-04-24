@@ -108,6 +108,35 @@ export async function getMsalInstance(): Promise<MsalInstanceResult> {
 			return { ok: true, instance: cachedInstance };
 		}
 
+		// Tauri desktop mode: replace MSAL.js with the loopback-shim
+		// PCA. Real MSAL.js cannot complete the sign-in dance from
+		// inside a Tauri WebView because the system-browser redirect
+		// returns to the loopback HTTP server, not the WebView, so
+		// MSAL's localStorage cache never sees the redirect_state.
+		// Phase 8 PR A introduced the loopback flow; the shim adapts
+		// it to MsalProvider's structural contract. Dynamic import
+		// keeps the shim and tauriBridge out of the browser bundle.
+		const { IS_DESKTOP } = await import("@/platform");
+		if (IS_DESKTOP) {
+			const { getApiBase } = await import("@spacebot/api-client/client");
+			const { getTauriMsalInstance } = await import(
+				/* @vite-ignore */ "./tauriMsalShim"
+			);
+			// getApiBase returns "<serverUrl>/api"; the daemon endpoints
+			// the shim hits live under that prefix already, so strip the
+			// trailing "/api" to get the bare server URL.
+			const apiBase = getApiBase();
+			const serverUrl = apiBase.replace(/\/api$/, "");
+			cachedInstance = await getTauriMsalInstance(
+				cfg,
+				serverUrl,
+				cfg.scopes ?? [],
+				cfg.tenant_id ?? "",
+				cfg.client_id ?? "",
+			);
+			return { ok: true, instance: cachedInstance };
+		}
+
 		const trustThisDevice =
 			window.localStorage.getItem(TRUST_DEVICE_KEY) === "true";
 
