@@ -3748,6 +3748,14 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /**
+         * @description Portal conversation list row: the bare conversation summary plus a
+         *     `VisibilityTag` flattened into the same JSON object. Additive on the
+         *     wire (clients that ignore unknown fields continue to work; chip-aware
+         *     clients see the tag). Mirrors `MemoryListItem` / `TaskListItem` /
+         *     `WikiListItem` / `CronListItem`.
+         */
+        PortalConversationListItem: components["schemas"]["PortalConversationSummary"] & components["schemas"]["VisibilityTag"];
         PortalConversationResponse: {
             conversation: components["schemas"]["PortalConversation"];
         };
@@ -3770,7 +3778,7 @@ export interface components {
             updated_at: string;
         };
         PortalConversationsResponse: {
-            conversations: components["schemas"]["PortalConversationSummary"][];
+            conversations: components["schemas"]["PortalConversationListItem"][];
         };
         PortalHistoryMessage: {
             content: string;
