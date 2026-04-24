@@ -54,6 +54,14 @@ use crate::projects::store::{
     UpdateProjectInput,
 };
 
+/// `resource_type` value used by every authz gate + ownership-write call in
+/// this handler file. Extracted to a const so the type system rejects a
+/// future revert that accidentally introduces a stray literal mismatch
+/// between `set_ownership("project", ...)` and a downstream lookup that
+/// keys on the wrong string. Mirrors the `CRON_RESOURCE_TYPE` precedent
+/// in `src/api/cron.rs`.
+const PROJECT_RESOURCE_TYPE: &str = "project";
+
 // ---------------------------------------------------------------------------
 // Path sanitization
 // ---------------------------------------------------------------------------
@@ -162,9 +170,22 @@ pub(super) struct CreateWorktreeRequest {
 // Response types
 // ---------------------------------------------------------------------------
 
+/// Project list row: the bare project shape plus a `VisibilityTag` flattened
+/// into the same JSON object. Additive on the wire (clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag).
+/// Mirrors `MemoryListItem` / `TaskListItem` / `WikiListItem` /
+/// `CronListItem` / `PortalConversationListItem`.
+#[derive(Serialize, utoipa::ToSchema)]
+pub(super) struct ProjectListItem {
+    #[serde(flatten)]
+    project: crate::projects::Project,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct ProjectListResponse {
-    projects: Vec<crate::projects::Project>,
+    projects: Vec<ProjectListItem>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -417,7 +438,33 @@ pub(super) async fn list_projects(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    Ok(Json(ProjectListResponse { projects }))
+    // Phase 7 PR 5 Task 7.12 enrichment. Project data lives in the
+    // per-agent (and global) project store, while visibility lives in
+    // the instance `resource_ownership` table. Post-fetch enrichment
+    // mirrors every other chip-aware list handler.
+    let ids: Vec<String> = projects.iter().map(|p| p.id.clone()).collect();
+    let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
+        crate::api::resources::enrich_visibility_tags(&pool, PROJECT_RESOURCE_TYPE, &ids).await
+    } else {
+        // Boot-window fallback: chips render as unowned until the pool
+        // attaches. Mirrors the agents / cron / portal enrichment path.
+        tracing::warn!(
+            handler = "projects",
+            count = ids.len(),
+            "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
+        );
+        std::collections::HashMap::new()
+    };
+
+    let items: Vec<ProjectListItem> = projects
+        .into_iter()
+        .map(|project| {
+            let tag = tags.get(&project.id).cloned().unwrap_or_default();
+            ProjectListItem { project, tag }
+        })
+        .collect();
+
+    Ok(Json(ProjectListResponse { projects: items }))
 }
 
 /// POST /agents/projects: create a new project.
@@ -461,7 +508,7 @@ pub(super) async fn create_project(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "project",
+            PROJECT_RESOURCE_TYPE,
             &project.id,
             None,
             &auth_ctx.principal_key(),
@@ -575,24 +622,28 @@ pub(super) async fn get_project(
     // ownership row keys on the same value. No fetch-before-gate
     // indirection is required here.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "project",
-                        resource_id = %project_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            PROJECT_RESOURCE_TYPE,
+            &project_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = PROJECT_RESOURCE_TYPE,
+                resource_id = %project_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -601,7 +652,7 @@ pub(super) async fn get_project(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
         }
@@ -654,13 +705,13 @@ pub(super) async fn update_project(
     Json(request): Json<UpdateProjectRequest>,
 ) -> Result<Json<ProjectResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -670,7 +721,7 @@ pub(super) async fn update_project(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -745,13 +796,13 @@ pub(super) async fn delete_project(
     Path(project_id): Path<String>,
 ) -> Result<Json<ActionResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -761,7 +812,7 @@ pub(super) async fn delete_project(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -821,13 +872,13 @@ pub(super) async fn scan_project(
     // scan_project mutates on-disk discovery + DB rows (repo current_branch,
     // worktree registrations, disk usage, logo path). Gate as a write.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -837,7 +888,7 @@ pub(super) async fn scan_project(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -963,13 +1014,13 @@ pub(super) async fn create_repo(
     // Repos are child resources under a project and share its ownership
     // row. Gate on the parent `project_id` with `check_write`.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -979,7 +1030,7 @@ pub(super) async fn create_repo(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1054,13 +1105,13 @@ pub(super) async fn delete_repo(
     // Repos are child resources under a project and share its ownership
     // row. Gate on the parent `project_id` with `check_write`.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -1070,7 +1121,7 @@ pub(super) async fn delete_repo(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1142,13 +1193,13 @@ pub(super) async fn create_worktree(
     // Worktrees are child resources under a project and share its
     // ownership row. Gate on the parent `project_id` with `check_write`.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -1158,7 +1209,7 @@ pub(super) async fn create_worktree(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1280,13 +1331,13 @@ pub(super) async fn delete_worktree(
     // Worktrees are child resources under a project and share its
     // ownership row. Gate on the parent `project_id` with `check_write`.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "project", &project_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PROJECT_RESOURCE_TYPE, &project_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "project",
+                    resource_type = PROJECT_RESOURCE_TYPE,
                     resource_id = %project_id,
                     "authz check_write failed"
                 );
@@ -1296,7 +1347,7 @@ pub(super) async fn delete_worktree(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1399,24 +1450,28 @@ pub(super) async fn disk_usage(
     Path(project_id): Path<String>,
 ) -> Result<Json<DiskUsageResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "project",
-                        resource_id = %project_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            PROJECT_RESOURCE_TYPE,
+            &project_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = PROJECT_RESOURCE_TYPE,
+                resource_id = %project_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1425,7 +1480,7 @@ pub(super) async fn disk_usage(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
         }
@@ -1522,24 +1577,28 @@ pub(super) async fn serve_logo(
     Path(project_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "project", &project_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "project",
-                        resource_id = %project_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            PROJECT_RESOURCE_TYPE,
+            &project_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = PROJECT_RESOURCE_TYPE,
+                resource_id = %project_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
             return Err(access.to_status());
@@ -1548,7 +1607,7 @@ pub(super) async fn serve_logo(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "project",
+                PROJECT_RESOURCE_TYPE,
                 project_id.as_str(),
             );
         }
@@ -1636,4 +1695,102 @@ async fn dir_size(path: &std::path::Path) -> u64 {
     }
 
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Serialized `ProjectListItem` must expose the union of `Project` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `Project`
+    /// field whose name happens to match an existing tag field. This
+    /// guard serializes a fully-populated instance and asserts the
+    /// resulting key count equals the sum of each type's field count —
+    /// a collision would show up as a missing key.
+    #[test]
+    fn project_list_item_flatten_has_no_key_collision() {
+        let project = crate::projects::Project {
+            id: "proj-1".to_string(),
+            name: "Test".to_string(),
+            description: "d".to_string(),
+            icon: "📁".to_string(),
+            tags: vec!["a".to_string()],
+            root_path: "/tmp/x".to_string(),
+            logo_path: None,
+            settings: serde_json::Value::Null,
+            status: crate::projects::store::ProjectStatus::Active,
+            sort_order: 0,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        // Populate VisibilityTag with Team so team_name is also present.
+        let tag = crate::api::resources::VisibilityTag::new(
+            Some(crate::auth::principals::Visibility::Team),
+            Some("Platform".to_string()),
+        );
+
+        let item = ProjectListItem {
+            project: project.clone(),
+            tag,
+        };
+        let serialized = serde_json::to_value(&item).expect("serialize ProjectListItem");
+        let obj = serialized.as_object().expect("top-level object");
+
+        // Project has 12 serializable fields (logo_path skipped when None).
+        // VisibilityTag emits up to 2 (visibility + team_name, both
+        // skipped when None). With `logo_path = None` and Team+team_name
+        // populated, expect 11 project keys + 2 tag keys = 13.
+        let project_keys: Vec<String> = serde_json::to_value(&project)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        let wrapper_keys: Vec<String> = obj.keys().cloned().collect();
+
+        // Every Project key must survive the flatten.
+        for key in &project_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "Project field `{key}` was dropped by #[serde(flatten)] \
+                 collision with VisibilityTag; serialized wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        // Tag fields must both be present (Team variant populates both).
+        assert!(
+            wrapper_keys.contains(&"visibility".to_string()),
+            "VisibilityTag.visibility missing from wrapper; keys: {wrapper_keys:?}"
+        );
+        assert!(
+            wrapper_keys.contains(&"team_name".to_string()),
+            "VisibilityTag.team_name missing from wrapper; keys: {wrapper_keys:?}"
+        );
+
+        // Tag keys must not overlap with Project keys (if they do, flatten
+        // silently overwrote). Project's renamable fields (`id`, `name`,
+        // `status`, `tags`, `created_at`, etc.) are all candidates for a
+        // future collision if VisibilityTag grows; this assertion pins
+        // the current non-collision.
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !project_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both Project and VisibilityTag; \
+                 #[serde(flatten)] would silently drop one. Resolve by renaming."
+            );
+        }
+
+        // Total key count sanity: project keys + 2 tag keys.
+        assert_eq!(
+            wrapper_keys.len(),
+            project_keys.len() + 2,
+            "wrapper key count should be Project fields + 2 VisibilityTag fields; \
+             got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            project_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }

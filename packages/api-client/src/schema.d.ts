@@ -3866,8 +3866,16 @@ export interface components {
             tags: string[];
             updated_at: string;
         };
+        /**
+         * @description Project list row: the bare project shape plus a `VisibilityTag` flattened
+         *     into the same JSON object. Additive on the wire (clients that ignore
+         *     unknown fields continue to work; chip-aware clients see the tag).
+         *     Mirrors `MemoryListItem` / `TaskListItem` / `WikiListItem` /
+         *     `CronListItem` / `PortalConversationListItem`.
+         */
+        ProjectListItem: components["schemas"]["Project"] & components["schemas"]["VisibilityTag"];
         ProjectListResponse: {
-            projects: components["schemas"]["Project"][];
+            projects: components["schemas"]["ProjectListItem"][];
         };
         ProjectRepo: {
             created_at: string;
