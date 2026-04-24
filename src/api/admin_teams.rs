@@ -29,6 +29,21 @@ use std::sync::Arc;
 use crate::auth::context::AuthContext;
 use crate::auth::roles::{ROLE_ADMIN, require_role};
 
+/// Persisted team lifecycle state. Mirrors the CHECK constraint on
+/// `teams.status` (`CHECK (status IN ('active', 'archived'))`) from
+/// `migrations/global/20260420120002_teams.sql`. Typed here so the admin
+/// wire response can't accidentally emit a string that doesn't match the
+/// schema. `list_admin_teams` filters to `Active` at the SQL layer today,
+/// but the `Archived` variant is present so a future "show archived
+/// teams" admin toggle doesn't require a wire-shape migration.
+#[derive(Debug, Clone, Copy, Serialize, utoipa::ToSchema, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(rename_all = "lowercase")]
+pub(super) enum TeamStatus {
+    Active,
+    Archived,
+}
+
 /// SQL projection row for `list_admin_teams`. Local to this module because
 /// the shape is the query's output, not a broader domain type. Named
 /// fields (vs a tuple) keep the `list_admin_teams` body readable and
@@ -37,7 +52,7 @@ use crate::auth::roles::{ROLE_ADMIN, require_role};
 struct AdminTeamRow {
     id: String,
     display_name: String,
-    status: String,
+    status: TeamStatus,
     member_count: i64,
     last_sync_at: Option<String>,
 }
@@ -63,7 +78,7 @@ struct AdminTeamMemberRow {
 pub(super) struct AdminTeamDetail {
     id: String,
     display_name: String,
-    status: String,
+    status: TeamStatus,
     member_count: i64,
     last_sync_at: Option<String>,
 }
@@ -151,10 +166,10 @@ pub(super) async fn list_admin_teams(
 
 /// Admin-only: list the user roster for a specific team. Returns 200 with
 /// an empty `members: []` array when the team exists but has no
-/// memberships; returns 200 with empty members for a nonexistent team id
-/// (the admin UI would render "No members" either way). Callers that
-/// need strict existence semantics should issue `list_admin_teams` first
-/// and filter client-side.
+/// memberships; returns 404 for a nonexistent team id so a typo'd path
+/// surfaces distinctly from a real empty team. PR #115 review finding:
+/// returning 200 for both cases masked real bugs (stale link, typo in
+/// team id) as "team is empty" in the admin UI.
 #[utoipa::path(
     get,
     path = "/admin/teams/{id}/members",
@@ -164,6 +179,7 @@ pub(super) async fn list_admin_teams(
     responses(
         (status = 200, body = AdminTeamMembersResponse),
         (status = 403, description = "Caller lacks SpacebotAdmin role"),
+        (status = 404, description = "Team id does not exist"),
         (status = 500, description = "Instance pool unavailable or query failed"),
     ),
     tag = "admin",
@@ -181,6 +197,22 @@ pub(super) async fn list_team_members(
         .as_ref()
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Existence check: distinguish "team exists, no members" from
+    // "team id does not exist." Without this the two cases collapse
+    // into an identical 200 + empty array, and a typo in the URL
+    // looks identical to a real empty team.
+    let team_exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM teams WHERE id = ?")
+        .bind(&team_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, team_id = %team_id, "list_team_members existence check failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    if team_exists.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
 
     let rows: Vec<AdminTeamMemberRow> = sqlx::query_as(
         "SELECT u.principal_key, u.display_name, u.display_email, \

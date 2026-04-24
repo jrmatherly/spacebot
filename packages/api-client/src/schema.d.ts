@@ -89,10 +89,10 @@ export interface paths {
         /**
          * Admin-only: list the user roster for a specific team. Returns 200 with
          *     an empty `members: []` array when the team exists but has no
-         *     memberships; returns 200 with empty members for a nonexistent team id
-         *     (the admin UI would render "No members" either way). Callers that
-         *     need strict existence semantics should issue `list_admin_teams` first
-         *     and filter client-side.
+         *     memberships; returns 404 for a nonexistent team id so a typo'd path
+         *     surfaces distinctly from a real empty team. PR #115 review finding:
+         *     returning 200 for both cases masked real bugs (stale link, typo in
+         *     team id) as "team is empty" in the admin UI.
          */
         get: operations["list_team_members"];
         put?: never;
@@ -2659,7 +2659,7 @@ export interface components {
             last_sync_at?: string | null;
             /** Format: int64 */
             member_count: number;
-            status: string;
+            status: components["schemas"]["TeamStatus"];
         };
         /**
          * @description Detail row for `GET /admin/teams/{id}/members`. Trimmed versus
@@ -4357,6 +4357,17 @@ export interface components {
             title: string;
         };
         /**
+         * @description Persisted team lifecycle state. Mirrors the CHECK constraint on
+         *     `teams.status` (`CHECK (status IN ('active', 'archived'))`) from
+         *     `migrations/global/20260420120002_teams.sql`. Typed here so the admin
+         *     wire response can't accidentally emit a string that doesn't match the
+         *     schema. `list_admin_teams` filters to `Active` at the SQL layer today,
+         *     but the `Archived` variant is present so a future "show archived
+         *     teams" admin toggle doesn't require a wire-shape migration.
+         * @enum {string}
+         */
+        TeamStatus: "active" | "archived";
+        /**
          * @description Minimal team projection served by `GET /api/teams`. Only `id` +
          *     `display_name` cross the wire because the SPA's `ShareResourceModal`
          *     renders `display_name` and sends `id` back on submit. Status is
@@ -5115,6 +5126,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Team id does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Instance pool unavailable or query failed */
             500: {
                 headers: {
@@ -5142,6 +5160,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AgentsResponse"];
                 };
+            };
+            /** @description Scope-filter query failed (user-facing listing cannot silently degrade to empty) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6207,6 +6232,13 @@ export interface operations {
             };
             /** @description No project store available */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Scope-filter query failed (user-facing listing cannot silently degrade to empty) */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

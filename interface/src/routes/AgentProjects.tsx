@@ -1083,20 +1083,6 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 		refetchInterval: 15_000,
 	});
 
-	// Sync local order state from server whenever fresh data arrives,
-	// but only if we're not in the middle of a drag. Client-side filter
-	// is applied here because the backend scope-query is orthogonal to
-	// the URL-backed visibility-tag filter (scope narrows by ownership,
-	// this filter narrows by classification).
-	useEffect(() => {
-		const raw = data?.projects ?? [];
-		const filtered =
-			visibilityFilter === "all"
-				? raw
-				: raw.filter((p) => p.visibility === visibilityFilter);
-		setLocalProjects(filtered);
-	}, [data, visibilityFilter]);
-
 	const reorderMutation = useMutation({
 		mutationFn: (ids: string[]) => api.reorderProjects(ids),
 		onError: () => {
@@ -1113,6 +1099,25 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 			queryClient.invalidateQueries({queryKey: ["projects"]});
 		},
 	});
+
+	// Sync local order state from server whenever fresh data arrives,
+	// but skip while a reorder is in flight: a refetch mid-drag would
+	// snap the list back to server order and drop the user's pending
+	// reorder. `reorderMutation.isPending` is the drag-state guard
+	// (the mutation fires on drop, stays pending until the server
+	// acks). Client-side filter is applied here because the backend
+	// scope-query is orthogonal to the URL-backed visibility-tag
+	// filter (scope narrows by ownership, this filter narrows by
+	// classification).
+	useEffect(() => {
+		if (reorderMutation.isPending) return;
+		const raw = data?.projects ?? [];
+		const filtered =
+			visibilityFilter === "all"
+				? raw
+				: raw.filter((p) => p.visibility === visibilityFilter);
+		setLocalProjects(filtered);
+	}, [data, visibilityFilter, reorderMutation.isPending]);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {activationConstraint: {distance: 8}}),

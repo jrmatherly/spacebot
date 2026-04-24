@@ -40,6 +40,7 @@ import {
 	CalendarDots,
 	SlidersHorizontal,
 	BookBookmark,
+	WarningCircle,
 } from "@phosphor-icons/react";
 import {
 	CircleButton,
@@ -215,17 +216,17 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 	// remains authoritative for display names, gradients, and the DnD
 	// ordering hook so reorder UX stays intact. Group headers hide when
 	// their slice is empty.
-	const {data: myAgentsData} = useQuery({
+	const {data: myAgentsData, isError: myAgentsError} = useQuery({
 		queryKey: ["agents", "mine"],
 		queryFn: () => api.agents({scope: "mine"}),
 		refetchInterval: 30_000,
 	});
-	const {data: teamAgentsData} = useQuery({
+	const {data: teamAgentsData, isError: teamAgentsError} = useQuery({
 		queryKey: ["agents", "team"],
 		queryFn: () => api.agents({scope: "team"}),
 		refetchInterval: 30_000,
 	});
-	const {data: orgAgentsData} = useQuery({
+	const {data: orgAgentsData, isError: orgAgentsError} = useQuery({
 		queryKey: ["agents", "org"],
 		queryFn: () => api.agents({scope: "org"}),
 		refetchInterval: 30_000,
@@ -239,7 +240,7 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 
 	const {data: projectsData} = useQuery({
 		queryKey: ["projects"],
-		queryFn: () => api.listProjects("active"),
+		queryFn: () => api.listProjects({status: "active"}),
 		staleTime: 30_000,
 	});
 
@@ -269,9 +270,11 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 	// Mine + Team are the narrowing lenses; Org acts as the catch-all
 	// (the backend returns the full list for scope=org), so any agent
 	// not in Mine or Team falls into Org without needing the orgAgents
-	// set explicitly. Reading `orgAgentsData` keeps the query wired
-	// (React Query needs the subscription to refetch + stay warm) even
-	// though the ids themselves are not referenced here.
+	// set explicitly. The `useQuery` call above already registers the
+	// subscription + refetch interval on mount; this `void` exists
+	// purely to silence `noUnusedLocals` on the `orgAgentsData` binding
+	// we keep destructured so `orgAgentsError` remains available to
+	// the group-render block below.
 	void orgAgentsData;
 	const myAgentIds = useMemo(
 		() => new Set((myAgentsData?.agents ?? []).map((a) => a.id)),
@@ -487,18 +490,31 @@ export function Sidebar({liveStates: _liveStates}: SidebarProps) {
 						)}
 					</div>
 					{([
-						["mine" as const, "My Agents", myIdsOrdered],
-						["team" as const, "Team", teamIdsOrdered],
-						["org" as const, "Org", orgIdsOrdered],
-					] as const).map(([key, label, ids]) => {
-						if (ids.length === 0) return null;
+						["mine" as const, "My Agents", myIdsOrdered, myAgentsError],
+						["team" as const, "Team", teamIdsOrdered, teamAgentsError],
+						["org" as const, "Org", orgIdsOrdered, orgAgentsError],
+					] as const).map(([key, label, ids, isError]) => {
+						// Render the header when the group has agents OR when its
+						// scoped query errored: suppressing both would silently
+						// swallow a 500 and leave users wondering why their
+						// agent moved to a different group. Empty-and-no-error
+						// groups still hide their header so users with only
+						// personal agents don't see empty Team/Org labels.
+						if (ids.length === 0 && !isError) return null;
 						return (
 							<div key={key} className="mb-3 space-y-0.5">
 								<div
-									className="px-2 pb-1 text-sidebar-inkFaint text-[10px] font-medium uppercase tracking-[0.14em]"
+									className="flex items-center gap-1.5 px-2 pb-1 text-sidebar-inkFaint text-[10px] font-medium uppercase tracking-[0.14em]"
 									data-testid={`sidebar-agents-group-${key}`}
 								>
-									{label}
+									<span>{label}</span>
+									{isError && (
+										<WarningCircle
+											className="size-3 text-amber-400"
+											weight="fill"
+											data-testid={`sidebar-agents-group-${key}-error`}
+										/>
+									)}
 								</div>
 								<DndContext
 									sensors={sensors}

@@ -625,3 +625,37 @@ async fn list_agents_scope_admin_bypass_returns_unfiltered_even_with_scope_mine(
         "admin with scope=mine sees the full list; ownership filter does not apply to admins"
     );
 }
+
+#[tokio::test]
+async fn list_agents_scope_mine_returns_500_when_scope_query_fails() {
+    // Regression guard for PR #115 review finding: scope-filter query
+    // failures must surface as 500, not degrade to 200-empty. A silent
+    // empty response leaves the Sidebar "My Agents" group silently
+    // empty with no indication anything broke, and the user's agent
+    // falls through to Org with no warning.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    state.set_agent_configs(vec![make_agent_info("agent-a")]);
+
+    // Close the instance pool so the scope-filter sqlx query fails.
+    pool.close().await;
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/agents?scope=mine")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "scope-filter query failure must surface as 500, not silent-empty 200"
+    );
+}

@@ -55,11 +55,17 @@ use crate::projects::store::{
 };
 
 /// `resource_type` value used by every authz gate + ownership-write call in
-/// this handler file. Extracted to a const so the type system rejects a
-/// future revert that accidentally introduces a stray literal mismatch
-/// between `set_ownership("project", ...)` and a downstream lookup that
-/// keys on the wrong string. Mirrors the `CRON_RESOURCE_TYPE` precedent
-/// in `src/api/cron.rs`.
+/// this handler file. A `const &str` is not a newtype (the Rust type
+/// system still accepts bare `"project"` literals at any `&str`
+/// parameter), so this doesn't structurally prevent drift. It IS a
+/// single grep-discoverable source of truth: a rename propagates via
+/// one edit, and review tooling can pattern-match call sites against
+/// the constant's name. Mirrors the `CRON_RESOURCE_TYPE` precedent in
+/// `src/api/cron.rs` that closed BUG-C1 (a `set_ownership("cron_job", ...)`
+/// vs `enrich_visibility_tags("cron", ...)` mismatch). True type-system
+/// enforcement would require a newtype like
+/// `pub struct ResourceType(&'static str)`; we defer that to Phase 8
+/// once the set of resource types stabilizes.
 const PROJECT_RESOURCE_TYPE: &str = "project";
 
 // ---------------------------------------------------------------------------
@@ -420,6 +426,7 @@ pub(super) async fn reorder_projects(
     responses(
         (status = 200, body = ProjectListResponse),
         (status = 404, description = "No project store available"),
+        (status = 500, description = "Scope-filter query failed (user-facing listing cannot silently degrade to empty)"),
     ),
     tag = "projects",
 )]
@@ -490,14 +497,14 @@ pub(super) async fn list_projects(
                 match fetched {
                     Ok(v) => Some(v.into_iter().collect()),
                     Err(error) => {
-                        tracing::warn!(
+                        tracing::error!(
                             %error,
                             handler = "projects",
                             actor = %key,
                             scope = scope.as_str(),
-                            "scope filter query failed; returning empty"
+                            "scope filter query failed; returning 500"
                         );
-                        Some(std::collections::HashSet::new())
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 }
             }
@@ -1809,10 +1816,13 @@ mod tests {
         let serialized = serde_json::to_value(&item).expect("serialize ProjectListItem");
         let obj = serialized.as_object().expect("top-level object");
 
-        // Project has 12 serializable fields (logo_path skipped when None).
-        // VisibilityTag emits up to 2 (visibility + team_name, both
-        // skipped when None). With `logo_path = None` and Team+team_name
-        // populated, expect 11 project keys + 2 tag keys = 13.
+        // Project has 12 fields, all serialized unconditionally (no
+        // `#[serde(skip_serializing_if)]` attributes — `logo_path: None`
+        // emits as `"logo_path": null` rather than being absent).
+        // VisibilityTag emits up to 2 (visibility + team_name), both
+        // with `skip_serializing_if = "Option::is_none"`. For the
+        // Team+team_name case below, expect 12 project keys + 2 tag
+        // keys = 14 total.
         let project_keys: Vec<String> = serde_json::to_value(&project)
             .unwrap()
             .as_object()

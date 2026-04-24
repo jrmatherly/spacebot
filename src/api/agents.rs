@@ -364,6 +364,7 @@ fn resolve_warmup_agent_ids(
     params(AgentsQuery),
     responses(
         (status = 200, body = AgentsResponse),
+        (status = 500, description = "Scope-filter query failed (user-facing listing cannot silently degrade to empty)"),
     ),
     tag = "agents",
 )]
@@ -371,7 +372,7 @@ pub(super) async fn list_agents(
     State(state): State<Arc<ApiState>>,
     auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<AgentsQuery>,
-) -> Json<AgentsResponse> {
+) -> Result<Json<AgentsResponse>, StatusCode> {
     // TODO(phase-5): per-row `check_read` once the audit log lands.
     // Today this returns every configured agent's summary to any
     // authenticated caller when no scope is provided. Scope-narrowed
@@ -389,10 +390,13 @@ pub(super) async fn list_agents(
     let pool_opt = state.instance_pool.load().as_ref().as_ref().cloned();
 
     // Scope filter resolves to an allowlist of ids that pass; None means
-    // no filter (unfiltered legacy path). Pool-None under a requested
-    // scope degrades to empty with a warn — same pattern as enrichment
-    // below. Admin callers bypass the filter so the admin UI retains
-    // the full view.
+    // no filter (unfiltered legacy path). Admin callers bypass the filter
+    // so the admin UI retains the full view. Pool-None under a requested
+    // scope degrades to empty (boot-window graceful degradation); query
+    // failure bubbles 500 so React Query surfaces an error state rather
+    // than leaving the user staring at a silently-empty section.
+    // Org short-circuits to `None` at the outer match arm so the inner
+    // scope-fetch block only ever sees Mine or Team.
     let scope_allowlist: Option<std::collections::HashSet<String>> = match query.scope {
         None => None,
         Some(_) if auth_ctx.has_role(crate::auth::roles::ROLE_ADMIN) => None,
@@ -423,14 +427,14 @@ pub(super) async fn list_agents(
                 match fetched {
                     Ok(v) => Some(v.into_iter().collect()),
                     Err(error) => {
-                        tracing::warn!(
+                        tracing::error!(
                             %error,
                             handler = "agents",
                             actor = %key,
                             scope = scope.as_str(),
-                            "scope filter query failed; returning empty"
+                            "scope filter query failed; returning 500"
                         );
-                        Some(std::collections::HashSet::new())
+                        return Err(StatusCode::INTERNAL_SERVER_ERROR);
                     }
                 }
             }
@@ -465,7 +469,7 @@ pub(super) async fn list_agents(
         })
         .collect();
 
-    Json(AgentsResponse { agents })
+    Ok(Json(AgentsResponse { agents }))
 }
 
 /// List MCP connection status for an agent.

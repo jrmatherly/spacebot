@@ -540,3 +540,43 @@ async fn list_projects_scope_admin_bypass_returns_unfiltered_even_with_scope_min
         "admin + scope=mine sees every project (bypass ownership)"
     );
 }
+
+#[tokio::test]
+async fn list_projects_scope_mine_returns_500_when_scope_query_fails() {
+    // Regression guard for PR #115 review finding: scope-filter query
+    // failures must surface as 500, not degrade to 200-empty. A silent
+    // empty response leaves the user staring at a missing agent list
+    // with no indication anything broke.
+    //
+    // Force the failure by closing the instance pool after state is
+    // built but before the request reaches the handler. The scope-filter
+    // helper will see a closed pool and return Err.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    attach_project_store(&state, &pool);
+    let alice = user_ctx("alice", vec![ROLE_USER]);
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+
+    // Close the instance pool so the scope-filter sqlx query fails.
+    // The pool reference on ApiState is an Arc<Option<SqlitePool>>; the
+    // clone we hold here and the clone ApiState holds point at the
+    // same underlying connections. Closing one is visible to both.
+    pool.close().await;
+
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&alice);
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/agents/projects?scope=mine")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "scope-filter query failure must surface as 500, not silent-empty 200"
+    );
+}

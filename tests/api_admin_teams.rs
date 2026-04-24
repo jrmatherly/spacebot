@@ -190,17 +190,39 @@ async fn admin_list_team_members_returns_trimmed_rows() {
 }
 
 #[tokio::test]
-async fn admin_list_team_members_returns_empty_array_for_unknown_team() {
-    // Callers that hit a nonexistent team id get 200 with an empty
-    // members array rather than 404. The admin UI renders "No members"
-    // either way, and a 404 would require the UI to distinguish between
-    // "team exists, no members" and "team doesn't exist at all" which it
-    // does not need to.
+async fn admin_list_team_members_returns_404_for_unknown_team() {
+    // PR #115 review finding: callers that hit a nonexistent team id
+    // must see 404, not 200 + empty. The earlier "200 either way"
+    // behavior masked typos and stale links as "team is empty" in the
+    // admin UI. A real empty team still returns 200 + empty (see the
+    // empty-team LEFT JOIN test above).
     let (state, _pool) = ApiState::new_test_state_with_mock_entra().await;
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&user("admin", vec!["SpacebotAdmin"]));
     let req = Request::builder()
         .uri("/api/admin/teams/team-does-not-exist/members")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::NOT_FOUND,
+        "unknown team id must surface as 404, not masquerade as an empty team"
+    );
+}
+
+#[tokio::test]
+async fn admin_list_team_members_returns_200_for_real_empty_team() {
+    // A team with zero memberships still returns 200 + empty array
+    // (distinct from the unknown-team 404 case above). Mirrors
+    // `admin_list_admin_teams_includes_empty_team_with_null_last_sync`.
+    let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let team = upsert_team(&pool, "grp-empty", "Empty Team").await.unwrap();
+    let app = build_test_router_entra(state);
+    let token = mint_mock_token(&user("admin", vec!["SpacebotAdmin"]));
+    let req = Request::builder()
+        .uri(format!("/api/admin/teams/{}/members", team.id))
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();

@@ -2444,27 +2444,16 @@ export const api = {
 	},
 
 	// Projects API
-	listProjects: (
-		statusOrOpts?: ProjectStatus | { status?: ProjectStatus; scope?: ResourceScope },
-		scope?: ResourceScope,
-	) => {
-		// Backwards-compatible positional signature: callers pre-PR-5 pass
-		// a bare status string. New callers pass an options object. The
-		// 2-arg positional form (status, scope) is also accepted so
-		// existing "active" callers can add scope without refactoring to
-		// options-object form.
-		let statusParam: ProjectStatus | undefined;
-		let scopeParam: ResourceScope | undefined;
-		if (typeof statusOrOpts === "string") {
-			statusParam = statusOrOpts;
-			scopeParam = scope;
-		} else if (statusOrOpts) {
-			statusParam = statusOrOpts.status;
-			scopeParam = statusOrOpts.scope;
-		}
+	listProjects: (opts?: { status?: ProjectStatus; scope?: ResourceScope }) => {
+		// Single options-object signature. An earlier dual positional /
+		// options overload was a type-narrowing footgun:
+		// `listProjects(undefined, "mine")` silently dropped the scope
+		// arg on the positional path. All two pre-PR-5 callers migrated
+		// to the options-object form in the same PR, and the generated
+		// schema's query-param surface matches this shape exactly.
 		const search = new URLSearchParams();
-		if (statusParam) search.set("status", statusParam);
-		if (scopeParam) search.set("scope", scopeParam);
+		if (opts?.status) search.set("status", opts.status);
+		if (opts?.scope) search.set("scope", opts.scope);
 		const qs = search.toString();
 		return fetchJson<ProjectListResponse>(`/agents/projects${qs ? `?${qs}` : ""}`);
 	},
