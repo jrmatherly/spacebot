@@ -1,6 +1,10 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth;
+#[cfg(test)]
+mod auth_tests;
+
 use std::fs;
 use std::path::PathBuf;
 use tauri::Emitter;
