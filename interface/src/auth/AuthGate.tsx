@@ -1,10 +1,15 @@
 // Phase 6 Task 6.A.5 — React wrapper that gates the app shell behind
-// Entra sign-in. Exposes a four-state machine:
+// Entra sign-in. Exposes a five-state machine:
 //
-//   loading        — pre-init, async bootstrap in-flight
-//   entra_disabled — daemon is in static-token mode; render children directly
-//   unauthenticated — Entra configured but no active account yet
-//   authenticated  — MSAL has an account and token provider is wired
+//   waiting_for_server — Tauri cold-start: daemon URL not resolved yet.
+//                        Defers loadAuthConfig() until ServerProvider
+//                        publishes a usable URL.
+//   loading            — async bootstrap in-flight (loadAuthConfig +
+//                        getMsalInstance + handleRedirectPromise).
+//   entra_disabled     — daemon is in static-token mode; render children
+//                        directly.
+//   unauthenticated    — Entra configured but no active account yet.
+//   authenticated      — MSAL has an account, token provider is wired.
 //
 // Responsibilities:
 //   - handleRedirectPromise for return-from-Entra redirect flows
@@ -25,11 +30,14 @@ import {
 	type AuthExhaustedDetail,
 } from "@spacebot/api-client/client";
 import { useEffect, useState, type ReactNode } from "react";
+import { useServer } from "@/hooks/useServer";
+import { IS_DESKTOP } from "@/platform";
 import { getActiveScopes, getMsalInstance, loadAuthConfig } from "./msalConfig";
 
 const TRUST_DEVICE_KEY = "spacebot.auth.trust_device";
 
 type GateState =
+	| { kind: "waiting_for_server" }
 	| { kind: "loading" }
 	| { kind: "entra_disabled" }
 	| { kind: "unauthenticated"; msal: PublicClientApplication }
@@ -37,7 +45,16 @@ type GateState =
 	| { kind: "error"; message: string };
 
 export function AuthGate({ children }: { children: ReactNode }) {
-	const [state, setState] = useState<GateState>({ kind: "loading" });
+	// In desktop mode the daemon URL is async (Tauri command +
+	// localStorage reconcile in useServer). Until ServerProvider
+	// publishes a non-empty URL, loadAuthConfig() would fetch against
+	// an unresolved/stale base. Browser mode is same-origin (relative
+	// API base) so the URL gate is a no-op there.
+	const { serverUrl } = useServer();
+	const serverReady = !IS_DESKTOP || serverUrl.length > 0;
+	const [state, setState] = useState<GateState>(
+		serverReady ? { kind: "loading" } : { kind: "waiting_for_server" },
+	);
 
 	// authedFetch dispatches `spacebot:auth-exhausted` on 401
 	// refresh-exhaustion. SSE via fetchEventSource(fetch: authedFetch)
@@ -60,6 +77,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	}, []);
 
 	useEffect(() => {
+		if (!serverReady) return;
+		// Re-entering the bootstrap (e.g. desktop URL just resolved):
+		// flip out of waiting_for_server so the user sees "Signing in…"
+		// rather than nothing.
+		setState((prev) =>
+			prev.kind === "waiting_for_server" ? { kind: "loading" } : prev,
+		);
 		let cancelled = false;
 
 		(async () => {
@@ -121,8 +145,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [serverReady]);
 
+	if (state.kind === "waiting_for_server") {
+		return (
+			<div
+				data-testid="auth-gate-waiting-server"
+				role="status"
+				aria-live="polite"
+			>
+				Connecting to Spacebot…
+			</div>
+		);
+	}
 	if (state.kind === "loading") {
 		return (
 			<div data-testid="auth-gate-loading" role="status" aria-live="polite">
