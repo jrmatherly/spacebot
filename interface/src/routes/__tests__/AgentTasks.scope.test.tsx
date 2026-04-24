@@ -137,10 +137,10 @@ describe("AgentTasks with visibility", () => {
 		// Click the team-scoped task's row to open the detail panel.
 		fireEvent.click(screen.getByText("second task"));
 		await waitFor(() => {
-			const chips = container.querySelectorAll(".visibility-chip");
+			const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 			expect(chips.length).toBeGreaterThan(0);
 		});
-		const chips = container.querySelectorAll(".visibility-chip");
+		const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 		const chipLabels = Array.from(chips).map((n) => n.textContent);
 		expect(chipLabels).toContain("Team: Platform");
 	});
@@ -207,7 +207,7 @@ describe("AgentTasks with visibility", () => {
 		);
 		fireEvent.click(screen.getByText("orphan task"));
 		// The detail panel opens, but no chip should render.
-		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+		expect(container.querySelectorAll('[data-testid="visibility-chip"]')).toHaveLength(0);
 	});
 
 	it("renders the error panel when the list endpoint returns 500", async () => {

@@ -47,6 +47,18 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for wiki-page ownership rows. Shared across
+/// `set_ownership` at the create path, `check_read_with_audit` /
+/// `check_write` at read and mutate paths, and `enrich_visibility_tags`
+/// at the list handler. Extracting the string to a single constant
+/// prevents the BUG-C1 class of regression where the enrichment call is
+/// keyed on one resource family (e.g. `"wiki"`, the metric-label
+/// namespace) while the ownership row was written under another
+/// (`"wiki_page"`, the write-authz namespace); the SQL WHERE clause
+/// matches zero rows and chip fields silently render as `None` across
+/// the entire surface.
+const WIKI_RESOURCE_TYPE: &str = "wiki_page";
+
 /// Map a crate-level wiki error to an HTTP status.
 fn wiki_error_status(error: CrateError) -> StatusCode {
     match error {
@@ -215,14 +227,16 @@ fn parse_page_type(s: Option<&str>) -> Result<Option<WikiPageType>, StatusCode> 
 /// pick up a startup-ordering bug.
 async fn enrich_wiki_list(
     state: &ApiState,
+    auth_ctx: &crate::auth::context::AuthContext,
     summaries: Vec<crate::wiki::WikiPageSummary>,
 ) -> Vec<WikiListItem> {
     let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "wiki_page", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, WIKI_RESOURCE_TYPE, &ids).await
     } else {
         tracing::warn!(
             handler = "wiki",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );
@@ -254,7 +268,7 @@ async fn enrich_wiki_list(
 )]
 pub(super) async fn list_pages(
     State(state): State<Arc<ApiState>>,
-    _auth_ctx: crate::auth::context::AuthContext,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<WikiListQuery>,
 ) -> Result<Json<WikiListResponse>, StatusCode> {
     // TODO(phase-5): gate this unfiltered listing path (currently returns
@@ -262,11 +276,13 @@ pub(super) async fn list_pages(
     // caller). Wiki content is generally team-shared by convention, so
     // the exposure is milder than `list_tasks`, but the correct fix is
     // per-row `check_read` once the audit log lands and can absorb the
-    // N+1 emission cost.
+    // N+1 emission cost. `auth_ctx` is consumed by the enrichment
+    // `actor` log field; keep it non-prefixed so the Phase-5 gate has
+    // no signature churn when it lands.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
     let summaries = store.list(page_type).await.map_err(wiki_error_status)?;
-    let pages = enrich_wiki_list(&state, summaries).await;
+    let pages = enrich_wiki_list(&state, &auth_ctx, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }
@@ -284,19 +300,20 @@ pub(super) async fn list_pages(
 )]
 pub(super) async fn search_pages(
     State(state): State<Arc<ApiState>>,
-    _auth_ctx: crate::auth::context::AuthContext,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<WikiSearchQuery>,
 ) -> Result<Json<WikiListResponse>, StatusCode> {
     // TODO(phase-5): same Phase-5 TODO as `list_pages` — unfiltered
     // search results are returned to any authenticated caller today;
-    // per-row `check_read` post-filter is the planned fix.
+    // per-row `check_read` post-filter is the planned fix. `auth_ctx`
+    // is consumed by the enrichment `actor` log field.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
     let summaries = store
         .search(&query.query, page_type)
         .await
         .map_err(wiki_error_status)?;
-    let pages = enrich_wiki_list(&state, summaries).await;
+    let pages = enrich_wiki_list(&state, &auth_ctx, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }
@@ -339,7 +356,7 @@ pub(super) async fn create_page(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "wiki_page",
+            WIKI_RESOURCE_TYPE,
             &page.id,
             None,
             &auth_ctx.principal_key(),
@@ -403,13 +420,13 @@ pub(super) async fn get_page(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "wiki_page", &page.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &page.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "wiki_page",
+                        resource_type = WIKI_RESOURCE_TYPE,
                         resource_id = %page.id,
                         "authz check_read_with_audit failed"
                     );
@@ -419,7 +436,7 @@ pub(super) async fn get_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 page.id.as_str(),
             );
             return Err(access.to_status());
@@ -428,7 +445,7 @@ pub(super) async fn get_page(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 page.id.as_str(),
             );
         }
@@ -480,13 +497,13 @@ pub(super) async fn edit_page(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -496,7 +513,7 @@ pub(super) async fn edit_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -561,13 +578,13 @@ pub(super) async fn get_history(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "wiki_page", &existing.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "wiki_page",
+                        resource_type = WIKI_RESOURCE_TYPE,
                         resource_id = %existing.id,
                         "authz check_read_with_audit failed"
                     );
@@ -577,7 +594,7 @@ pub(super) async fn get_history(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -586,7 +603,7 @@ pub(super) async fn get_history(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
         }
@@ -640,13 +657,13 @@ pub(super) async fn restore_version(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -656,7 +673,7 @@ pub(super) async fn restore_version(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -713,13 +730,13 @@ pub(super) async fn archive_page(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -729,7 +746,7 @@ pub(super) async fn archive_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -752,4 +769,78 @@ pub(super) async fn archive_page(
         success: true,
         message: format!("Page '{slug}' archived"),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WikiListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::wiki::WikiPageSummary;
+
+    fn sample_summary(slug: &str) -> WikiPageSummary {
+        WikiPageSummary {
+            id: format!("wiki-{slug}"),
+            slug: slug.into(),
+            title: "t".into(),
+            page_type: "general".into(),
+            version: 1,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            updated_by: "test".into(),
+        }
+    }
+
+    /// Serialized `WikiListItem` must expose the union of `WikiPageSummary`
+    /// and `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new
+    /// `WikiPageSummary` field whose name happens to match an existing tag
+    /// field. Mirrors `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn wiki_list_item_flatten_has_no_key_collision() {
+        let summary = sample_summary("intro");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = WikiListItem {
+            summary: summary.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize WikiListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let summary_keys: Vec<String> = serde_json::to_value(&summary)
+            .expect("serialize WikiPageSummary")
+            .as_object()
+            .expect("summary object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &summary_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "WikiPageSummary field `{key}` was dropped by #[serde(flatten)] \
+                 collision with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !summary_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both WikiPageSummary and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            "wrapper key count should be WikiPageSummary fields + 2 VisibilityTag \
+             fields; got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }

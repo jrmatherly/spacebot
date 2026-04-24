@@ -39,6 +39,16 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for memory ownership rows. Used by
+/// `enrich_visibility_tags` at the list handler. Note that the authz
+/// gates in this file key on `"agent"` (not memory) because memory reads
+/// ride the agent's ownership row; the memory-specific resource-type
+/// namespace only surfaces at enrichment time. Extracting the string to
+/// a single constant prevents the BUG-C1 class of regression where a
+/// future caller reaches for `"memories"` (the metric-label namespace,
+/// plural) and silently breaks enrichment.
+const MEMORY_RESOURCE_TYPE: &str = "memory";
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct MemoriesListResponse {
     memories: Vec<MemoryListItem>,
@@ -276,7 +286,7 @@ pub(super) async fn list_memories(
     // state.instance_pool and attach visibility + team_name inline.
     let ids: Vec<String> = page.iter().map(|m| m.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, MEMORY_RESOURCE_TYPE, &ids).await
     } else {
         // I4: match the authz-skipped observability pattern above. A
         // persistent pool-None on this path means enrichment is silently
@@ -285,6 +295,7 @@ pub(super) async fn list_memories(
         // "boot window" vs "startup-ordering bug" is distinguishable.
         tracing::warn!(
             handler = "memories",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );
@@ -636,4 +647,66 @@ pub(super) async fn memory_graph_neighbors(
         })?;
 
     Ok(Json(MemoryGraphNeighborsResponse { nodes, edges }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MemoryListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::memory::types::{Memory, MemoryType};
+
+    /// Serialized `MemoryListItem` must expose the union of `Memory` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `Memory` field
+    /// whose name happens to match an existing tag field. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn memory_list_item_flatten_has_no_key_collision() {
+        let memory = Memory::new("test memory", MemoryType::Fact);
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = MemoryListItem {
+            memory: memory.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize MemoryListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let memory_keys: Vec<String> = serde_json::to_value(&memory)
+            .expect("serialize Memory")
+            .as_object()
+            .expect("memory object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &memory_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "Memory field `{key}` was dropped by #[serde(flatten)] collision \
+                 with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !memory_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both Memory and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            memory_keys.len() + 2,
+            "wrapper key count should be Memory fields + 2 VisibilityTag fields; \
+             got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            memory_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }

@@ -36,6 +36,21 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for task ownership rows. Shared across
+/// `check_read_with_audit` / `check_write` at the authz gates and
+/// `enrich_visibility_tags` at the list handler. Extracting the string
+/// to a single constant prevents the BUG-C1 class of regression where
+/// the enrichment call is keyed on one resource family (e.g. `"tasks"`,
+/// the metric-label namespace, plural) while the ownership row was
+/// written under another (`"task"`, the write-authz namespace, singular);
+/// the SQL WHERE clause matches zero rows and chip fields silently
+/// render as `None` across the entire surface. The unrelated
+/// `related_entity_type: Some("task")` and `dismiss_by_entity("task_approval", "task", ...)`
+/// notification-store literals are intentionally kept as bare strings;
+/// they live in a different namespace and a future rename of the authz
+/// key should not touch the notification schema.
+const TASK_RESOURCE_TYPE: &str = "task";
+
 // ---------------------------------------------------------------------------
 // Request / response types
 // ---------------------------------------------------------------------------
@@ -331,12 +346,13 @@ pub(super) async fn list_tasks(
     // so readers do not context-switch on backing-store choice.
     let ids: Vec<String> = tasks_raw.iter().map(|t| t.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, TASK_RESOURCE_TYPE, &ids).await
     } else {
         // I4: mirror the authz-skipped pattern. Silent enrichment miss at
         // the startup window would leave every task list unchipped.
         tracing::warn!(
             handler = "tasks",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );
@@ -388,13 +404,13 @@ pub(super) async fn get_task(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "task", &task.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &task.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "task",
+                        resource_type = TASK_RESOURCE_TYPE,
                         resource_id = %task.id,
                         "authz check_read_with_audit failed"
                     );
@@ -404,7 +420,7 @@ pub(super) async fn get_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
             return Err(access.to_status());
@@ -413,7 +429,7 @@ pub(super) async fn get_task(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
         }
@@ -484,7 +500,7 @@ pub(super) async fn create_task(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "task",
+            TASK_RESOURCE_TYPE,
             &task.id,
             None,
             &auth_ctx.principal_key(),
@@ -554,13 +570,13 @@ pub(super) async fn update_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -570,7 +586,7 @@ pub(super) async fn update_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -652,13 +668,13 @@ pub(super) async fn delete_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &task.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &task.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %task.id,
                     "authz check_write failed"
                 );
@@ -668,7 +684,7 @@ pub(super) async fn delete_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
             return Err(access.to_status());
@@ -747,13 +763,13 @@ pub(super) async fn approve_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -763,7 +779,7 @@ pub(super) async fn approve_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -802,6 +818,13 @@ pub(super) async fn approve_task(
     // Auto-dismiss any pending task_approval notification for this task.
     if let Some(store) = state.notification_store.load().as_ref().clone()
         && let Err(error) = store
+            // Bare `"task"` intentional: `related_entity_type` is a
+            // notification-schema namespace, not the authz resource_type.
+            // Pairing it with `TASK_RESOURCE_TYPE` would silently couple
+            // two independent namespaces; a future rename of the authz
+            // key would break the WHERE clause here while the emit-side
+            // INSERT at line 226 keeps writing `"task"`, dropping
+            // auto-dismiss to `Ok(0)` with no error.
             .dismiss_by_entity("task_approval", "task", &number.to_string())
             .await
     {
@@ -847,13 +870,13 @@ pub(super) async fn execute_task(
     // Gate on the already-fetched task.id (UUID); URL path carries only
     // task_number. Missing-task 404 and NotOwned 404 collapse.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &current.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &current.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %current.id,
                     "authz check_write failed"
                 );
@@ -863,7 +886,7 @@ pub(super) async fn execute_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 current.id.as_str(),
             );
             return Err(access.to_status());
@@ -950,13 +973,13 @@ pub(super) async fn assign_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -966,7 +989,7 @@ pub(super) async fn assign_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -1002,4 +1025,89 @@ pub(super) async fn assign_task(
 
     emit_task_event(&state, &task, "updated");
     Ok(Json(TaskResponse { task }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TaskListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::tasks::{Task, TaskPriority, TaskStatus};
+
+    fn sample_task(id: &str) -> Task {
+        Task {
+            id: id.into(),
+            task_number: 1,
+            title: "t".into(),
+            description: None,
+            status: TaskStatus::Ready,
+            priority: TaskPriority::Medium,
+            owner_agent_id: "agent-1".into(),
+            assigned_agent_id: "agent-1".into(),
+            subtasks: vec![],
+            metadata: serde_json::Value::Null,
+            source_memory_id: None,
+            worker_id: None,
+            created_by: "test".into(),
+            approved_at: None,
+            approved_by: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            completed_at: None,
+        }
+    }
+
+    /// Serialized `TaskListItem` must expose the union of `Task` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `Task` field
+    /// whose name happens to match an existing tag field. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn task_list_item_flatten_has_no_key_collision() {
+        let task = sample_task("t-1");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = TaskListItem {
+            task: task.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize TaskListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let task_keys: Vec<String> = serde_json::to_value(&task)
+            .expect("serialize Task")
+            .as_object()
+            .expect("task object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &task_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "Task field `{key}` was dropped by #[serde(flatten)] collision \
+                 with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !task_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both Task and VisibilityTag; \
+                 #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            task_keys.len() + 2,
+            "wrapper key count should be Task fields + 2 VisibilityTag fields; \
+             got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            task_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }

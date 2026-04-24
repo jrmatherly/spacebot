@@ -52,6 +52,19 @@ use sqlx::Row as _;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// Resource-type key for agent ownership rows. Shared across
+/// `set_ownership` at the create path, `check_read_with_audit` /
+/// `check_write` at read and mutate paths, `list_resource_ids_owned_by`
+/// / `list_team_scoped_resource_ids` at the scope-filter path, and
+/// `enrich_visibility_tags` at the list handler. Extracting the string
+/// to a single constant prevents the BUG-C1 class of regression where
+/// the enrichment call is keyed on one resource family (e.g. `"agents"`,
+/// the metric-label namespace, plural) while the ownership row was
+/// written under another (`"agent"`, the write-authz namespace,
+/// singular); the SQL WHERE clause matches zero rows and chip fields
+/// silently render as `None` across the entire surface.
+const AGENT_RESOURCE_TYPE: &str = "agent";
+
 fn hosted_agent_limit() -> Option<usize> {
     let deployment = std::env::var("SPACEBOT_DEPLOYMENT").ok()?;
     if !deployment.eq_ignore_ascii_case("hosted") {
@@ -76,7 +89,7 @@ pub async fn register_agent_ownership(
 ) -> anyhow::Result<()> {
     crate::auth::repository::set_ownership(
         pool,
-        "agent",
+        AGENT_RESOURCE_TYPE,
         agent_id,
         None,
         &ctx.principal_key(),
@@ -415,12 +428,20 @@ pub(super) async fn list_agents(
                 let key = auth_ctx.principal_key();
                 let fetched = match scope {
                     ResourceScope::Mine => {
-                        crate::auth::repository::list_resource_ids_owned_by(pool, &key, "agent")
-                            .await
+                        crate::auth::repository::list_resource_ids_owned_by(
+                            pool,
+                            &key,
+                            AGENT_RESOURCE_TYPE,
+                        )
+                        .await
                     }
                     ResourceScope::Team => {
-                        crate::auth::repository::list_team_scoped_resource_ids(pool, &key, "agent")
-                            .await
+                        crate::auth::repository::list_team_scoped_resource_ids(
+                            pool,
+                            &key,
+                            AGENT_RESOURCE_TYPE,
+                        )
+                        .await
                     }
                     ResourceScope::Org => unreachable!("Org handled above"),
                 };
@@ -442,7 +463,7 @@ pub(super) async fn list_agents(
     };
 
     let tags = if let Some(pool) = pool_opt.as_ref() {
-        crate::api::resources::enrich_visibility_tags(pool, "agent", &ids).await
+        crate::api::resources::enrich_visibility_tags(pool, AGENT_RESOURCE_TYPE, &ids).await
     } else {
         // I4: mirror the authz-skipped pattern.
         tracing::warn!(
@@ -491,24 +512,28 @@ pub(super) async fn list_agent_mcp(
     Query(query): Query<AgentMcpQuery>,
 ) -> Result<Json<AgentMcpResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
-                        resource_id = %query.agent_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            AGENT_RESOURCE_TYPE,
+            &query.agent_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = AGENT_RESOURCE_TYPE,
+                resource_id = %query.agent_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -517,7 +542,7 @@ pub(super) async fn list_agent_mcp(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
         }
@@ -561,23 +586,24 @@ pub(super) async fn reconnect_agent_mcp(
     Json(request): Json<ReconnectMcpRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &request.agent_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
-                    resource_id = %request.agent_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &request.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = AGENT_RESOURCE_TYPE,
+                        resource_id = %request.agent_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 request.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -645,27 +671,32 @@ pub(super) async fn get_warmup_status(
     if let Some(agent_id) = query.agent_id.as_deref() {
         if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
             let (access, admin_override) =
-                crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", agent_id)
+                crate::auth::check_read_with_audit(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, agent_id)
                     .await
                     .map_err(|error| {
                         tracing::warn!(
                             %error,
                             actor = %auth_ctx.principal_key(),
-                            resource_type = "agent",
+                            resource_type = AGENT_RESOURCE_TYPE,
                             resource_id = %agent_id,
                             "authz check_read_with_audit failed"
                         );
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
             if !access.is_allowed() {
-                crate::auth::policy::fire_denied_audit(&state.audit, &auth_ctx, "agent", agent_id);
+                crate::auth::policy::fire_denied_audit(
+                    &state.audit,
+                    &auth_ctx,
+                    AGENT_RESOURCE_TYPE,
+                    agent_id,
+                );
                 return Err(access.to_status());
             }
             if admin_override {
                 crate::auth::policy::fire_admin_read_audit(
                     &state.audit,
                     &auth_ctx,
-                    "agent",
+                    AGENT_RESOURCE_TYPE,
                     agent_id,
                 );
             }
@@ -735,20 +766,25 @@ pub(super) async fn trigger_warmup(
     //    from launching warmup coroutines for agents they cannot read.
     if let Some(agent_id) = request.agent_id.as_deref() {
         if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-            let access = crate::auth::check_write(&pool, &auth_ctx, "agent", agent_id)
+            let access = crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, agent_id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
+                        resource_type = AGENT_RESOURCE_TYPE,
                         resource_id = %agent_id,
                         "authz check_write failed"
                     );
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
             if !access.is_allowed() {
-                crate::auth::policy::fire_denied_audit(&state.audit, &auth_ctx, "agent", agent_id);
+                crate::auth::policy::fire_denied_audit(
+                    &state.audit,
+                    &auth_ctx,
+                    AGENT_RESOURCE_TYPE,
+                    agent_id,
+                );
                 return Err(access.to_status());
             }
         } else {
@@ -1561,13 +1597,13 @@ pub(super) async fn update_agent(
     }
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &agent_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &agent_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
+                    resource_type = AGENT_RESOURCE_TYPE,
                     resource_id = %agent_id,
                     "authz check_write failed"
                 );
@@ -1577,7 +1613,7 @@ pub(super) async fn update_agent(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -1735,13 +1771,13 @@ pub(super) async fn delete_agent(
     }
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &agent_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &agent_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
+                    resource_type = AGENT_RESOURCE_TYPE,
                     resource_id = %agent_id,
                     "authz check_write failed"
                 );
@@ -1751,7 +1787,7 @@ pub(super) async fn delete_agent(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -1926,24 +1962,28 @@ pub(super) async fn agent_overview(
     Query(query): Query<AgentOverviewQuery>,
 ) -> Result<Json<AgentOverviewResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
-                        resource_id = %query.agent_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            AGENT_RESOURCE_TYPE,
+            &query.agent_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = AGENT_RESOURCE_TYPE,
+                resource_id = %query.agent_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -1952,7 +1992,7 @@ pub(super) async fn agent_overview(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
         }
@@ -2271,24 +2311,28 @@ pub(super) async fn get_agent_profile(
     Query(query): Query<AgentOverviewQuery>,
 ) -> Result<Json<AgentProfileResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
-                        resource_id = %query.agent_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            AGENT_RESOURCE_TYPE,
+            &query.agent_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = AGENT_RESOURCE_TYPE,
+                resource_id = %query.agent_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -2297,7 +2341,7 @@ pub(super) async fn get_agent_profile(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
         }
@@ -2341,24 +2385,28 @@ pub(super) async fn get_identity(
     Query(query): Query<IdentityQuery>,
 ) -> Result<Json<IdentityResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
-                        resource_id = %query.agent_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            AGENT_RESOURCE_TYPE,
+            &query.agent_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = AGENT_RESOURCE_TYPE,
+                resource_id = %query.agent_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -2367,7 +2415,7 @@ pub(super) async fn get_identity(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
         }
@@ -2417,23 +2465,24 @@ pub(super) async fn update_identity(
     axum::Json(request): axum::Json<IdentityUpdateRequest>,
 ) -> Result<Json<IdentityResponse>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &request.agent_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
-                    resource_id = %request.agent_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &request.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = AGENT_RESOURCE_TYPE,
+                        resource_id = %request.agent_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 request.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -2678,6 +2727,78 @@ mod tests {
 
         assert_eq!(accepted, vec![String::from("main")]);
     }
+
+    /// Serialized `AgentListItem` must expose the union of `AgentInfo` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `AgentInfo`
+    /// field whose name happens to match an existing tag field.
+    /// `AgentInfo` uses `#[serde(skip_serializing_if = "Option::is_none")]`
+    /// on four fields, so this fixture populates every Option as `Some(...)`
+    /// to pin a deterministic key count. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn agent_list_item_flatten_has_no_key_collision() {
+        use super::{AgentInfo, AgentListItem};
+        use crate::api::resources::VisibilityTag;
+        use crate::auth::principals::Visibility;
+
+        let agent = AgentInfo {
+            id: "agent-1".into(),
+            display_name: Some("Agent One".into()),
+            role: Some("worker".into()),
+            gradient_start: Some("#000000".into()),
+            gradient_end: Some("#ffffff".into()),
+            workspace: "/tmp/a".into(),
+            context_window: 1,
+            max_turns: 1,
+            max_concurrent_branches: 1,
+            max_concurrent_workers: 1,
+        };
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = AgentListItem {
+            agent: agent.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize AgentListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let agent_keys: Vec<String> = serde_json::to_value(&agent)
+            .expect("serialize AgentInfo")
+            .as_object()
+            .expect("agent object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &agent_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "AgentInfo field `{key}` was dropped by #[serde(flatten)] \
+                 collision with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !agent_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both AgentInfo and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            agent_keys.len() + 2,
+            "wrapper key count should be AgentInfo fields + 2 VisibilityTag \
+             fields; got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            agent_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }
 
 // -- Avatar upload / serve / delete --
@@ -2706,24 +2827,28 @@ pub(super) async fn get_avatar(
     Query(query): Query<AvatarQuery>,
 ) -> Result<axum::response::Response, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "agent", &query.agent_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(
-                        %error,
-                        actor = %auth_ctx.principal_key(),
-                        resource_type = "agent",
-                        resource_id = %query.agent_id,
-                        "authz check_read_with_audit failed"
-                    );
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+        let (access, admin_override) = crate::auth::check_read_with_audit(
+            &pool,
+            &auth_ctx,
+            AGENT_RESOURCE_TYPE,
+            &query.agent_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                actor = %auth_ctx.principal_key(),
+                resource_type = AGENT_RESOURCE_TYPE,
+                resource_id = %query.agent_id,
+                "authz check_read_with_audit failed"
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -2732,7 +2857,7 @@ pub(super) async fn get_avatar(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
         }
@@ -2803,23 +2928,24 @@ pub(super) async fn upload_avatar(
     request: axum::extract::Request,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &query.agent_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
-                    resource_id = %query.agent_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = AGENT_RESOURCE_TYPE,
+                        resource_id = %query.agent_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());
@@ -2907,23 +3033,24 @@ pub(super) async fn delete_avatar(
     Query(query): Query<AvatarQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "agent", &query.agent_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(
-                    %error,
-                    actor = %auth_ctx.principal_key(),
-                    resource_type = "agent",
-                    resource_id = %query.agent_id,
-                    "authz check_write failed"
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        let access =
+            crate::auth::check_write(&pool, &auth_ctx, AGENT_RESOURCE_TYPE, &query.agent_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        %error,
+                        actor = %auth_ctx.principal_key(),
+                        resource_type = AGENT_RESOURCE_TYPE,
+                        resource_id = %query.agent_id,
+                        "authz check_write failed"
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         if !access.is_allowed() {
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "agent",
+                AGENT_RESOURCE_TYPE,
                 query.agent_id.as_str(),
             );
             return Err(access.to_status());

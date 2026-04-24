@@ -93,10 +93,10 @@ describe("AgentMemories with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("first memory content")).toBeInTheDocument(),
 		);
-		// Narrow the Personal match to chips (class `visibility-chip`) so
+		// Narrow the Personal match to chips via the data-testid attr so
 		// the VisibilityFilter's Personal radio label doesn't collide with
 		// the chip label in the assertion.
-		const chips = container.querySelectorAll(".visibility-chip");
+		const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 		const chipLabels = Array.from(chips).map((n) => n.textContent);
 		expect(chipLabels).toContain("Personal");
 		expect(chipLabels).toContain("Team: Platform");
@@ -157,7 +157,7 @@ describe("AgentMemories with visibility", () => {
 		await waitFor(() =>
 			expect(screen.getByText("unowned memory")).toBeInTheDocument(),
 		);
-		const chips = container.querySelectorAll(".visibility-chip");
+		const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 		expect(chips).toHaveLength(0);
 	});
 
@@ -181,6 +181,6 @@ describe("AgentMemories with visibility", () => {
 		fireEvent.click(graphToggle);
 		// After switching to graph view, the MemoryGraph component stub
 		// renders nothing and the chip grid is gone. No chip elements.
-		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+		expect(container.querySelectorAll('[data-testid="visibility-chip"]')).toHaveLength(0);
 	});
 });

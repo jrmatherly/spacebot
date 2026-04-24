@@ -137,11 +137,11 @@ describe("GlobalTasks with visibility", () => {
 		);
 		fireEvent.click(screen.getByText("global second"));
 		await waitFor(() => {
-			const chips = container.querySelectorAll(".visibility-chip");
+			const chips = container.querySelectorAll('[data-testid="visibility-chip"]');
 			expect(chips.length).toBeGreaterThan(0);
 		});
 		const chipLabels = Array.from(
-			container.querySelectorAll(".visibility-chip"),
+			container.querySelectorAll('[data-testid="visibility-chip"]'),
 		).map((n) => n.textContent);
 		expect(chipLabels).toContain("Team: Platform");
 	});
@@ -210,7 +210,7 @@ describe("GlobalTasks with visibility", () => {
 			expect(screen.getByText("orphan global")).toBeInTheDocument(),
 		);
 		fireEvent.click(screen.getByText("orphan global"));
-		expect(container.querySelectorAll(".visibility-chip")).toHaveLength(0);
+		expect(container.querySelectorAll('[data-testid="visibility-chip"]')).toHaveLength(0);
 	});
 
 	it("renders the error panel when the list endpoint returns 500", async () => {
