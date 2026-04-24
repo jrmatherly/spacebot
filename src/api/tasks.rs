@@ -818,7 +818,14 @@ pub(super) async fn approve_task(
     // Auto-dismiss any pending task_approval notification for this task.
     if let Some(store) = state.notification_store.load().as_ref().clone()
         && let Err(error) = store
-            .dismiss_by_entity("task_approval", TASK_RESOURCE_TYPE, &number.to_string())
+            // Bare `"task"` intentional: `related_entity_type` is a
+            // notification-schema namespace, not the authz resource_type.
+            // Pairing it with `TASK_RESOURCE_TYPE` would silently couple
+            // two independent namespaces; a future rename of the authz
+            // key would break the WHERE clause here while the emit-side
+            // INSERT at line 226 keeps writing `"task"`, dropping
+            // auto-dismiss to `Ok(0)` with no error.
+            .dismiss_by_entity("task_approval", "task", &number.to_string())
             .await
     {
         tracing::warn!(%error, task_number = number, "failed to auto-dismiss approval notification");

@@ -21,8 +21,8 @@ In practice, this shapes how handwritten types relate to the schema:
 
 - `types.ts` exports **aliases** over schema components (for example, `ProjectListItem = components["schemas"]["ProjectListItem"]`). The alias gives consumers an ergonomic import path without re-declaring field shapes.
 - `types.ts` may **narrow** a schema type (restrict an enum to a known subset, refine a string union) but may not **widen** or **rename** fields. Widening loses the wire contract; renaming forces consumers to maintain a translation layer that will silently drift.
-- When a handler changes its Rust response shape, regenerate the schema first (`just typegen`), then update the handwritten adapter to match. The reverse order — editing `types.ts` to describe a new intended shape, then back-filling the Rust handler — will pass tsc but fail the `check-typegen` gate.
-- When both a generated and a handwritten definition exist for the same name, prefer the generated one; delete the handwritten definition and re-export the schema alias instead. Phase 7 PR 5 consolidated `ProjectListResponse`, `CronListItem`, and `PortalConversationListItem` under this rule.
+- When a handler changes its Rust response shape, regenerate the schema first (`just typegen`), then update the handwritten adapter to match. The reverse order does not work. Editing `types.ts` to describe a new intended shape and back-filling the Rust handler afterwards will pass tsc but fail the `check-typegen` gate.
+- When both a generated and a handwritten definition exist for the same name, prefer the generated one. Delete the handwritten definition and re-export the schema alias instead. Phase 7 PR 5 deleted the handwritten `ProjectListResponse` interface in `client.ts` and re-exported it from `types.ts`; this is the canonical example. `CronListItem` and `PortalConversationListItem` are schema aliases by construction (Phase 7 PR 4) and never had a handwritten predecessor to collapse.
 
 ## Regenerating the schema
 
