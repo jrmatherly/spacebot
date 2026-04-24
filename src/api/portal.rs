@@ -75,6 +75,17 @@ use std::sync::Arc;
 const PORTAL_VISIBILITY: crate::auth::principals::Visibility =
     crate::auth::principals::Visibility::Personal;
 
+/// Resource-type key for portal-conversation ownership rows. Shared
+/// across `set_ownership` at the create path, `check_write` at mutate
+/// paths, and `enrich_visibility_tags` at the list handler. Extracting
+/// the string to a single constant prevents the BUG-C1 class of
+/// regression where the enrichment call is keyed on one resource family
+/// (e.g. `"portal"`, the metric-label namespace) while the ownership row
+/// was written under another (`"portal_conversation"`, the write-authz
+/// namespace); the SQL WHERE clause matches zero rows and chip fields
+/// silently render as `None` across the entire surface.
+const PORTAL_RESOURCE_TYPE: &str = "portal_conversation";
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct PortalSendRequest {
     agent_id: String,
@@ -228,7 +239,7 @@ pub(super) async fn portal_send(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let existing = crate::auth::repository::get_ownership(
             &pool,
-            "portal_conversation",
+            PORTAL_RESOURCE_TYPE,
             &request.session_id,
         )
         .await
@@ -236,7 +247,7 @@ pub(super) async fn portal_send(
             tracing::warn!(
                 %error,
                 actor = %auth_ctx.principal_key(),
-                resource_type = "portal_conversation",
+                resource_type = PORTAL_RESOURCE_TYPE,
                 resource_id = %request.session_id,
                 "authz get_ownership failed"
             );
@@ -246,7 +257,7 @@ pub(super) async fn portal_send(
             let access = crate::auth::check_write(
                 &pool,
                 &auth_ctx,
-                "portal_conversation",
+                PORTAL_RESOURCE_TYPE,
                 &request.session_id,
             )
             .await
@@ -254,7 +265,7 @@ pub(super) async fn portal_send(
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "portal_conversation",
+                    resource_type = PORTAL_RESOURCE_TYPE,
                     resource_id = %request.session_id,
                     "authz check_write failed"
                 );
@@ -264,7 +275,7 @@ pub(super) async fn portal_send(
                 crate::auth::policy::fire_denied_audit(
                     &state.audit,
                     &auth_ctx,
-                    "portal_conversation",
+                    PORTAL_RESOURCE_TYPE,
                     request.session_id.as_str(),
                 );
                 return Err(access.to_status());
@@ -301,7 +312,7 @@ pub(super) async fn portal_send(
     {
         crate::auth::repository::set_ownership(
             &pool,
-            "portal_conversation",
+            PORTAL_RESOURCE_TYPE,
             &request.session_id,
             None,
             &auth_ctx.principal_key(),
@@ -472,7 +483,7 @@ pub(super) async fn portal_history(
         let (access, admin_override) = crate::auth::check_read_with_audit(
             &pool,
             &auth_ctx,
-            "portal_conversation",
+            PORTAL_RESOURCE_TYPE,
             &query.session_id,
         )
         .await
@@ -480,7 +491,7 @@ pub(super) async fn portal_history(
             tracing::warn!(
                 %error,
                 actor = %auth_ctx.principal_key(),
-                resource_type = "portal_conversation",
+                resource_type = PORTAL_RESOURCE_TYPE,
                 resource_id = %query.session_id,
                 "authz check_read_with_audit failed"
             );
@@ -490,7 +501,7 @@ pub(super) async fn portal_history(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "portal_conversation",
+                PORTAL_RESOURCE_TYPE,
                 query.session_id.as_str(),
             );
             return Err(access.to_status());
@@ -499,7 +510,7 @@ pub(super) async fn portal_history(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "portal_conversation",
+                PORTAL_RESOURCE_TYPE,
                 query.session_id.as_str(),
             );
         }
@@ -627,7 +638,7 @@ pub(super) async fn list_portal_conversations(
     // and check_write at the mutate path.
     let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "portal_conversation", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, PORTAL_RESOURCE_TYPE, &ids).await
     } else {
         tracing::warn!(
             handler = "portal",
@@ -727,7 +738,7 @@ pub(super) async fn create_portal_conversation(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "portal_conversation",
+            PORTAL_RESOURCE_TYPE,
             &conversation.id,
             None,
             &auth_ctx.principal_key(),
@@ -782,13 +793,13 @@ pub(super) async fn update_portal_conversation(
     // Phase 4 authz gate: write on the conversation keyed by session_id
     // (A-09 bare UUID). NotYours → 404 per the hide-existence matrix.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "portal_conversation", &session_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PORTAL_RESOURCE_TYPE, &session_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "portal_conversation",
+                    resource_type = PORTAL_RESOURCE_TYPE,
                     resource_id = %session_id,
                     "authz check_write failed"
                 );
@@ -798,7 +809,7 @@ pub(super) async fn update_portal_conversation(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "portal_conversation",
+                PORTAL_RESOURCE_TYPE,
                 session_id.as_str(),
             );
             return Err(access.to_status());
@@ -874,13 +885,13 @@ pub(super) async fn delete_portal_conversation(
     // session_id (A-09 bare UUID). Shares the inline `check_write` shape
     // with `update_portal_conversation`.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "portal_conversation", &session_id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, PORTAL_RESOURCE_TYPE, &session_id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "portal_conversation",
+                    resource_type = PORTAL_RESOURCE_TYPE,
                     resource_id = %session_id,
                     "authz check_write failed"
                 );
@@ -890,7 +901,7 @@ pub(super) async fn delete_portal_conversation(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "portal_conversation",
+                PORTAL_RESOURCE_TYPE,
                 session_id.as_str(),
             );
             return Err(access.to_status());

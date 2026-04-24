@@ -39,6 +39,16 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for memory ownership rows. Used by
+/// `enrich_visibility_tags` at the list handler. Note that the authz
+/// gates in this file key on `"agent"` (not memory) because memory reads
+/// ride the agent's ownership row; the memory-specific resource-type
+/// namespace only surfaces at enrichment time. Extracting the string to
+/// a single constant prevents the BUG-C1 class of regression where a
+/// future caller reaches for `"memories"` (the metric-label namespace,
+/// plural) and silently breaks enrichment.
+const MEMORY_RESOURCE_TYPE: &str = "memory";
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct MemoriesListResponse {
     memories: Vec<MemoryListItem>,
@@ -276,7 +286,7 @@ pub(super) async fn list_memories(
     // state.instance_pool and attach visibility + team_name inline.
     let ids: Vec<String> = page.iter().map(|m| m.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "memory", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, MEMORY_RESOURCE_TYPE, &ids).await
     } else {
         // I4: match the authz-skipped observability pattern above. A
         // persistent pool-None on this path means enrichment is silently

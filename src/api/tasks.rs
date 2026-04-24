@@ -36,6 +36,21 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for task ownership rows. Shared across
+/// `check_read_with_audit` / `check_write` at the authz gates and
+/// `enrich_visibility_tags` at the list handler. Extracting the string
+/// to a single constant prevents the BUG-C1 class of regression where
+/// the enrichment call is keyed on one resource family (e.g. `"tasks"`,
+/// the metric-label namespace, plural) while the ownership row was
+/// written under another (`"task"`, the write-authz namespace, singular);
+/// the SQL WHERE clause matches zero rows and chip fields silently
+/// render as `None` across the entire surface. The unrelated
+/// `related_entity_type: Some("task")` and `dismiss_by_entity("task_approval", "task", ...)`
+/// notification-store literals are intentionally kept as bare strings;
+/// they live in a different namespace and a future rename of the authz
+/// key should not touch the notification schema.
+const TASK_RESOURCE_TYPE: &str = "task";
+
 // ---------------------------------------------------------------------------
 // Request / response types
 // ---------------------------------------------------------------------------
@@ -331,7 +346,7 @@ pub(super) async fn list_tasks(
     // so readers do not context-switch on backing-store choice.
     let ids: Vec<String> = tasks_raw.iter().map(|t| t.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "task", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, TASK_RESOURCE_TYPE, &ids).await
     } else {
         // I4: mirror the authz-skipped pattern. Silent enrichment miss at
         // the startup window would leave every task list unchipped.
@@ -388,13 +403,13 @@ pub(super) async fn get_task(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "task", &task.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &task.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "task",
+                        resource_type = TASK_RESOURCE_TYPE,
                         resource_id = %task.id,
                         "authz check_read_with_audit failed"
                     );
@@ -404,7 +419,7 @@ pub(super) async fn get_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
             return Err(access.to_status());
@@ -413,7 +428,7 @@ pub(super) async fn get_task(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
         }
@@ -484,7 +499,7 @@ pub(super) async fn create_task(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "task",
+            TASK_RESOURCE_TYPE,
             &task.id,
             None,
             &auth_ctx.principal_key(),
@@ -554,13 +569,13 @@ pub(super) async fn update_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -570,7 +585,7 @@ pub(super) async fn update_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -652,13 +667,13 @@ pub(super) async fn delete_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &task.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &task.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %task.id,
                     "authz check_write failed"
                 );
@@ -668,7 +683,7 @@ pub(super) async fn delete_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 task.id.as_str(),
             );
             return Err(access.to_status());
@@ -747,13 +762,13 @@ pub(super) async fn approve_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -763,7 +778,7 @@ pub(super) async fn approve_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -802,7 +817,7 @@ pub(super) async fn approve_task(
     // Auto-dismiss any pending task_approval notification for this task.
     if let Some(store) = state.notification_store.load().as_ref().clone()
         && let Err(error) = store
-            .dismiss_by_entity("task_approval", "task", &number.to_string())
+            .dismiss_by_entity("task_approval", TASK_RESOURCE_TYPE, &number.to_string())
             .await
     {
         tracing::warn!(%error, task_number = number, "failed to auto-dismiss approval notification");
@@ -847,13 +862,13 @@ pub(super) async fn execute_task(
     // Gate on the already-fetched task.id (UUID); URL path carries only
     // task_number. Missing-task 404 and NotOwned 404 collapse.
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &current.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &current.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %current.id,
                     "authz check_write failed"
                 );
@@ -863,7 +878,7 @@ pub(super) async fn execute_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 current.id.as_str(),
             );
             return Err(access.to_status());
@@ -950,13 +965,13 @@ pub(super) async fn assign_task(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "task", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, TASK_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "task",
+                    resource_type = TASK_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -966,7 +981,7 @@ pub(super) async fn assign_task(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "task",
+                TASK_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());

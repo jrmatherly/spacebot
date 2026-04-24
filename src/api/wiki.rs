@@ -47,6 +47,18 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Resource-type key for wiki-page ownership rows. Shared across
+/// `set_ownership` at the create path, `check_read_with_audit` /
+/// `check_write` at read and mutate paths, and `enrich_visibility_tags`
+/// at the list handler. Extracting the string to a single constant
+/// prevents the BUG-C1 class of regression where the enrichment call is
+/// keyed on one resource family (e.g. `"wiki"`, the metric-label
+/// namespace) while the ownership row was written under another
+/// (`"wiki_page"`, the write-authz namespace); the SQL WHERE clause
+/// matches zero rows and chip fields silently render as `None` across
+/// the entire surface.
+const WIKI_RESOURCE_TYPE: &str = "wiki_page";
+
 /// Map a crate-level wiki error to an HTTP status.
 fn wiki_error_status(error: CrateError) -> StatusCode {
     match error {
@@ -219,7 +231,7 @@ async fn enrich_wiki_list(
 ) -> Vec<WikiListItem> {
     let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
     let tags = if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        crate::api::resources::enrich_visibility_tags(&pool, "wiki_page", &ids).await
+        crate::api::resources::enrich_visibility_tags(&pool, WIKI_RESOURCE_TYPE, &ids).await
     } else {
         tracing::warn!(
             handler = "wiki",
@@ -339,7 +351,7 @@ pub(super) async fn create_page(
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         crate::auth::repository::set_ownership(
             &pool,
-            "wiki_page",
+            WIKI_RESOURCE_TYPE,
             &page.id,
             None,
             &auth_ctx.principal_key(),
@@ -403,13 +415,13 @@ pub(super) async fn get_page(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "wiki_page", &page.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &page.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "wiki_page",
+                        resource_type = WIKI_RESOURCE_TYPE,
                         resource_id = %page.id,
                         "authz check_read_with_audit failed"
                     );
@@ -419,7 +431,7 @@ pub(super) async fn get_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 page.id.as_str(),
             );
             return Err(access.to_status());
@@ -428,7 +440,7 @@ pub(super) async fn get_page(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 page.id.as_str(),
             );
         }
@@ -480,13 +492,13 @@ pub(super) async fn edit_page(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -496,7 +508,7 @@ pub(super) async fn edit_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -561,13 +573,13 @@ pub(super) async fn get_history(
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
         let (access, admin_override) =
-            crate::auth::check_read_with_audit(&pool, &auth_ctx, "wiki_page", &existing.id)
+            crate::auth::check_read_with_audit(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
                 .await
                 .map_err(|error| {
                     tracing::warn!(
                         %error,
                         actor = %auth_ctx.principal_key(),
-                        resource_type = "wiki_page",
+                        resource_type = WIKI_RESOURCE_TYPE,
                         resource_id = %existing.id,
                         "authz check_read_with_audit failed"
                     );
@@ -577,7 +589,7 @@ pub(super) async fn get_history(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -586,7 +598,7 @@ pub(super) async fn get_history(
             crate::auth::policy::fire_admin_read_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
         }
@@ -640,13 +652,13 @@ pub(super) async fn restore_version(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -656,7 +668,7 @@ pub(super) async fn restore_version(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
@@ -713,13 +725,13 @@ pub(super) async fn archive_page(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     if let Some(pool) = state.instance_pool.load().as_ref().as_ref().cloned() {
-        let access = crate::auth::check_write(&pool, &auth_ctx, "wiki_page", &existing.id)
+        let access = crate::auth::check_write(&pool, &auth_ctx, WIKI_RESOURCE_TYPE, &existing.id)
             .await
             .map_err(|error| {
                 tracing::warn!(
                     %error,
                     actor = %auth_ctx.principal_key(),
-                    resource_type = "wiki_page",
+                    resource_type = WIKI_RESOURCE_TYPE,
                     resource_id = %existing.id,
                     "authz check_write failed"
                 );
@@ -729,7 +741,7 @@ pub(super) async fn archive_page(
             crate::auth::policy::fire_denied_audit(
                 &state.audit,
                 &auth_ctx,
-                "wiki_page",
+                WIKI_RESOURCE_TYPE,
                 existing.id.as_str(),
             );
             return Err(access.to_status());
