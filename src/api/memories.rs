@@ -637,3 +637,65 @@ pub(super) async fn memory_graph_neighbors(
 
     Ok(Json(MemoryGraphNeighborsResponse { nodes, edges }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::MemoryListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::memory::types::{Memory, MemoryType};
+
+    /// Serialized `MemoryListItem` must expose the union of `Memory` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `Memory` field
+    /// whose name happens to match an existing tag field. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn memory_list_item_flatten_has_no_key_collision() {
+        let memory = Memory::new("test memory", MemoryType::Fact);
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = MemoryListItem {
+            memory: memory.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize MemoryListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let memory_keys: Vec<String> = serde_json::to_value(&memory)
+            .expect("serialize Memory")
+            .as_object()
+            .expect("memory object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &memory_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "Memory field `{key}` was dropped by #[serde(flatten)] collision \
+                 with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !memory_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both Memory and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            memory_keys.len() + 2,
+            "wrapper key count should be Memory fields + 2 VisibilityTag fields; \
+             got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            memory_keys.len() + 2,
+            wrapper_keys
+        );
+    }
+}

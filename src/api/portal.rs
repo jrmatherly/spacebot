@@ -1012,3 +1012,86 @@ pub(super) async fn conversation_defaults(
 
     Ok(Json(response))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PortalConversationListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::conversation::portal::PortalConversationSummary;
+
+    fn sample_summary(id: &str) -> PortalConversationSummary {
+        let now = chrono::Utc::now();
+        PortalConversationSummary {
+            id: id.into(),
+            agent_id: "agent-1".into(),
+            title: "t".into(),
+            title_source: "user".into(),
+            archived: false,
+            created_at: now,
+            updated_at: now,
+            last_message_at: None,
+            last_message_preview: None,
+            last_message_role: None,
+            message_count: 0,
+            settings: None,
+        }
+    }
+
+    /// Serialized `PortalConversationListItem` must expose the union of
+    /// `PortalConversationSummary` and `VisibilityTag` fields with no
+    /// overwrites. `#[serde(flatten)]` on both members silently drops a
+    /// key when names collide, which would mask a future `VisibilityTag`
+    /// field rename or a new `PortalConversationSummary` field whose name
+    /// happens to match an existing tag field. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn portal_conversation_list_item_flatten_has_no_key_collision() {
+        let summary = sample_summary("portal:chat:agent-1:x");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = PortalConversationListItem {
+            summary: summary.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize PortalConversationListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let summary_keys: Vec<String> = serde_json::to_value(&summary)
+            .expect("serialize PortalConversationSummary")
+            .as_object()
+            .expect("summary object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &summary_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "PortalConversationSummary field `{key}` was dropped by \
+                 #[serde(flatten)] collision with VisibilityTag; wrapper keys: \
+                 {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !summary_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both \
+                 PortalConversationSummary and VisibilityTag; #[serde(flatten)] \
+                 would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            "wrapper key count should be PortalConversationSummary fields + 2 \
+             VisibilityTag fields; got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            wrapper_keys
+        );
+    }
+}

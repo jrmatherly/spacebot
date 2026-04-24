@@ -974,4 +974,58 @@ mod tests {
         );
         assert!(json.contains("\"id\":\"c-2\""));
     }
+
+    /// Serialized `CronListItem` must expose the union of `CronJobWithStats`
+    /// and `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new
+    /// `CronJobWithStats` field whose name happens to match an existing tag
+    /// field. Mirrors `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn cron_list_item_flatten_has_no_key_collision() {
+        let job = sample_job("c-3");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = CronListItem {
+            job: sample_job("c-3"),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize CronListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let job_keys: Vec<String> = serde_json::to_value(&job)
+            .expect("serialize CronJobWithStats")
+            .as_object()
+            .expect("job object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &job_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "CronJobWithStats field `{key}` was dropped by #[serde(flatten)] \
+                 collision with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !job_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both CronJobWithStats and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            job_keys.len() + 2,
+            "wrapper key count should be CronJobWithStats fields + 2 VisibilityTag \
+             fields; got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            job_keys.len() + 2,
+            wrapper_keys
+        );
+    }
 }

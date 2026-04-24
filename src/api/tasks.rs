@@ -1003,3 +1003,88 @@ pub(super) async fn assign_task(
     emit_task_event(&state, &task, "updated");
     Ok(Json(TaskResponse { task }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TaskListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::tasks::{Task, TaskPriority, TaskStatus};
+
+    fn sample_task(id: &str) -> Task {
+        Task {
+            id: id.into(),
+            task_number: 1,
+            title: "t".into(),
+            description: None,
+            status: TaskStatus::Ready,
+            priority: TaskPriority::Medium,
+            owner_agent_id: "agent-1".into(),
+            assigned_agent_id: "agent-1".into(),
+            subtasks: vec![],
+            metadata: serde_json::Value::Null,
+            source_memory_id: None,
+            worker_id: None,
+            created_by: "test".into(),
+            approved_at: None,
+            approved_by: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            completed_at: None,
+        }
+    }
+
+    /// Serialized `TaskListItem` must expose the union of `Task` and
+    /// `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new `Task` field
+    /// whose name happens to match an existing tag field. Mirrors
+    /// `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn task_list_item_flatten_has_no_key_collision() {
+        let task = sample_task("t-1");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = TaskListItem {
+            task: task.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize TaskListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let task_keys: Vec<String> = serde_json::to_value(&task)
+            .expect("serialize Task")
+            .as_object()
+            .expect("task object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &task_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "Task field `{key}` was dropped by #[serde(flatten)] collision \
+                 with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !task_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both Task and VisibilityTag; \
+                 #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            task_keys.len() + 2,
+            "wrapper key count should be Task fields + 2 VisibilityTag fields; \
+             got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            task_keys.len() + 2,
+            wrapper_keys
+        );
+    }
+}

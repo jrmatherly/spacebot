@@ -753,3 +753,77 @@ pub(super) async fn archive_page(
         message: format!("Page '{slug}' archived"),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WikiListItem;
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
+    use crate::wiki::WikiPageSummary;
+
+    fn sample_summary(slug: &str) -> WikiPageSummary {
+        WikiPageSummary {
+            id: format!("wiki-{slug}"),
+            slug: slug.into(),
+            title: "t".into(),
+            page_type: "general".into(),
+            version: 1,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            updated_by: "test".into(),
+        }
+    }
+
+    /// Serialized `WikiListItem` must expose the union of `WikiPageSummary`
+    /// and `VisibilityTag` fields with no overwrites. `#[serde(flatten)]` on
+    /// both members silently drops a key when names collide, which would
+    /// mask a future `VisibilityTag` field rename or a new
+    /// `WikiPageSummary` field whose name happens to match an existing tag
+    /// field. Mirrors `project_list_item_flatten_has_no_key_collision` in
+    /// `src/api/projects.rs`.
+    #[test]
+    fn wiki_list_item_flatten_has_no_key_collision() {
+        let summary = sample_summary("intro");
+        let tag = VisibilityTag::new(Some(Visibility::Team), Some("Platform".into()));
+        let item = WikiListItem {
+            summary: summary.clone(),
+            tag,
+        };
+        let wrapper = serde_json::to_value(&item).expect("serialize WikiListItem");
+        let wrapper_keys: Vec<String> = wrapper
+            .as_object()
+            .expect("top-level object")
+            .keys()
+            .cloned()
+            .collect();
+        let summary_keys: Vec<String> = serde_json::to_value(&summary)
+            .expect("serialize WikiPageSummary")
+            .as_object()
+            .expect("summary object")
+            .keys()
+            .cloned()
+            .collect();
+        for key in &summary_keys {
+            assert!(
+                wrapper_keys.contains(key),
+                "WikiPageSummary field `{key}` was dropped by #[serde(flatten)] \
+                 collision with VisibilityTag; wrapper keys: {wrapper_keys:?}"
+            );
+        }
+        for tag_key in ["visibility", "team_name"] {
+            assert!(
+                !summary_keys.iter().any(|k| k == tag_key),
+                "name collision: `{tag_key}` exists on both WikiPageSummary and \
+                 VisibilityTag; #[serde(flatten)] would silently drop one."
+            );
+        }
+        assert_eq!(
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            "wrapper key count should be WikiPageSummary fields + 2 VisibilityTag \
+             fields; got {} expected {}. Keys: {:?}",
+            wrapper_keys.len(),
+            summary_keys.len() + 2,
+            wrapper_keys
+        );
+    }
+}
