@@ -194,6 +194,82 @@ fn apply_overlay_window_chrome(window: &tauri::WebviewWindow) {
     let _ = window.set_always_on_top(true);
 }
 
+/// Drive the Entra SSO flow through the system browser and post the
+/// resulting tokens to the daemon's loopback-gated secret store.
+///
+/// The daemon's `/api/desktop/tokens` endpoint refuses any non-loopback
+/// peer, so the tokens can only be delivered by this process. On
+/// `SERVICE_UNAVAILABLE` the daemon's secret store is locked; surface the
+/// condition back to the SPA so the user can unlock before retrying.
+#[tauri::command]
+async fn sign_in_with_entra(
+    server_url: String,
+    tenant_id: String,
+    client_id: String,
+    scopes: Vec<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let (listener, port) = crate::auth::bind_loopback()?;
+    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let state = crate::auth::generate_state();
+    let (pkce_verifier, pkce_challenge) = crate::auth::generate_pkce();
+
+    let authorize_url = crate::auth::build_authorize_url(&crate::auth::AuthorizeParams {
+        tenant_id: &tenant_id,
+        client_id: &client_id,
+        redirect_uri: &redirect_uri,
+        scopes: &scopes,
+        state: &state,
+        code_challenge: &pkce_challenge,
+    });
+
+    app_handle
+        .opener()
+        .open_url(&authorize_url, None::<String>)
+        .map_err(|e| e.to_string())?;
+
+    let code = crate::auth::accept_callback(listener, &state).await?;
+
+    let tokens = crate::auth::exchange_code(
+        &tenant_id,
+        &client_id,
+        &redirect_uri,
+        &code,
+        &pkce_verifier,
+        &scopes,
+    )
+    .await?;
+
+    let body = serde_json::json!({
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+        "expires_in": tokens.expires_in,
+    });
+    let res = reqwest::Client::new()
+        .post(format!("{server_url}/api/desktop/tokens"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = res.status();
+    if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+        return Err(
+            "Spacebot is locked. Unlock it from the tray or settings and try signing in again."
+                .to_string(),
+        );
+    }
+    if !status.is_success() {
+        return Err(format!("daemon rejected token store: {status}"));
+    }
+
+    Ok(serde_json::json!({
+        "access_token": tokens.access_token,
+        "expires_in": tokens.expires_in,
+    }))
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -208,6 +284,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_shortcut(toggle_shortcut.clone())
@@ -242,6 +319,7 @@ fn main() {
             set_server_url,
             toggle_voice_overlay,
             resize_overlay_window,
+            sign_in_with_entra,
         ])
         .setup(|app| {
             // Apply macOS titlebar style (invisible toolbar for traffic light padding)
