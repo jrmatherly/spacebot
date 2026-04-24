@@ -41,6 +41,16 @@ struct InterfaceAssets;
     ),
     servers(
         (url = "/api")
+    ),
+    components(
+        // Types referenced only from query-param structs (utoipa::IntoParams)
+        // are not auto-discovered by utoipa-axum; they must be listed here so
+        // the resulting `$ref` in the OpenAPI document resolves. Response
+        // body / request body types are still auto-registered via each
+        // handler's `#[utoipa::path(responses(...), body = ...)]`.
+        schemas(
+            crate::auth::principals::ResourceScope,
+        ),
     )
 )]
 struct ApiDoc;

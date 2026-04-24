@@ -5,7 +5,8 @@ use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::{ResourceScope, Visibility};
 use spacebot::auth::repository::{
     RepositoryError, get_ownership, get_teams_by_ids, list_ownerships_by_ids,
-    list_resource_ids_owned_by, set_ownership, upsert_team, upsert_user_from_auth,
+    list_resource_ids_owned_by, list_team_scoped_resource_ids, set_ownership, upsert_team,
+    upsert_user_from_auth,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -610,4 +611,156 @@ async fn list_resource_ids_owned_by_excludes_other_principals() {
         .await
         .unwrap();
     assert_eq!(b_ids, vec!["mem-b".to_string()]);
+}
+
+// Seed a team + membership + shared resource. Returns the `team_id`
+// so the caller can assert against it. `source = 'token_claim'` matches
+// the CHECK constraint.
+async fn seed_team_with_membership(
+    pool: &sqlx::SqlitePool,
+    principal_key: &str,
+    external_id: &str,
+    display_name: &str,
+) -> String {
+    let team = upsert_team(pool, external_id, display_name).await.unwrap();
+    sqlx::query(
+        "INSERT INTO team_memberships (principal_key, team_id, source) \
+         VALUES (?, ?, 'token_claim')",
+    )
+    .bind(principal_key)
+    .bind(&team.id)
+    .execute(pool)
+    .await
+    .unwrap();
+    team.id
+}
+
+#[tokio::test]
+async fn list_team_scoped_resource_ids_empty_when_no_memberships() {
+    // Caller with no team_memberships rows sees an empty team scope.
+    let pool = setup_pool().await;
+    let ctx = make_ctx("tid-lonely", "oid-lonely");
+    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+
+    let ids = list_team_scoped_resource_ids(&pool, &ctx.principal_key(), "project")
+        .await
+        .unwrap();
+    assert!(ids.is_empty());
+}
+
+#[tokio::test]
+async fn list_team_scoped_resource_ids_returns_shared_team_resources() {
+    // Alice is in team-x. Bob shares project-shared with team-x. Alice's
+    // team-scope query returns project-shared. Personal resources owned
+    // by Alice are not in scope here; they land in the Mine query.
+    let pool = setup_pool().await;
+    let alice = make_ctx("tid-a", "oid-alice");
+    let bob = make_ctx("tid-a", "oid-bob");
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+
+    let team_id = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
+
+    // Bob owns project-shared, shared to team-x.
+    set_ownership(
+        &pool,
+        "project",
+        "project-shared",
+        None,
+        &bob.principal_key(),
+        Visibility::Team,
+        Some(&team_id),
+    )
+    .await
+    .unwrap();
+
+    // Alice owns her-own (personal; should NOT appear in team scope).
+    set_ownership(
+        &pool,
+        "project",
+        "her-own",
+        None,
+        &alice.principal_key(),
+        Visibility::Personal,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+        .await
+        .unwrap();
+    assert_eq!(ids, vec!["project-shared".to_string()]);
+}
+
+#[tokio::test]
+async fn list_team_scoped_resource_ids_excludes_own_team_shares() {
+    // Alice shares her own project to team-x. Alice is in team-x. Her
+    // team scope should NOT return it (that would double-count with the
+    // Mine scope). Handlers that want the union fetch both scopes and
+    // merge.
+    let pool = setup_pool().await;
+    let alice = make_ctx("tid-a", "oid-alice");
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    let team_id = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
+
+    set_ownership(
+        &pool,
+        "project",
+        "alice-shared-to-team",
+        None,
+        &alice.principal_key(),
+        Visibility::Team,
+        Some(&team_id),
+    )
+    .await
+    .unwrap();
+
+    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+        .await
+        .unwrap();
+    assert!(
+        ids.is_empty(),
+        "own-shares must not appear in team scope; belongs to Mine"
+    );
+}
+
+#[tokio::test]
+async fn list_team_scoped_resource_ids_deduplicates_across_multiple_teams() {
+    // Alice is in team-x and team-y. Bob shares project-wide to team-x.
+    // Charlie shares the SAME project (invalid in practice, but the
+    // JOIN could theoretically emit duplicates if the resource had
+    // multiple shared_with_team_id pointers, which it cannot today).
+    // This test pins the DISTINCT clause by exercising the
+    // cross-team-membership fan-out path. With SQLite's schema the
+    // duplicate source would require two ownership rows for the same
+    // (resource_type, resource_id), which the PK forbids. What this
+    // test actually guards is: Alice has memberships in two teams,
+    // Bob shares one project to team-x, and the query returns exactly
+    // one row (not duplicated by the team-y membership JOIN path).
+    let pool = setup_pool().await;
+    let alice = make_ctx("tid-a", "oid-alice");
+    let bob = make_ctx("tid-a", "oid-bob");
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&pool, &bob).await.unwrap();
+
+    let team_x = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
+    let _team_y = seed_team_with_membership(&pool, &alice.principal_key(), "grp-y", "Team Y").await;
+
+    set_ownership(
+        &pool,
+        "project",
+        "shared-p",
+        None,
+        &bob.principal_key(),
+        Visibility::Team,
+        Some(&team_x),
+    )
+    .await
+    .unwrap();
+
+    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+        .await
+        .unwrap();
+    assert_eq!(ids, vec!["shared-p".to_string()]);
 }

@@ -394,3 +394,42 @@ pub async fn list_resource_ids_owned_by(
     })?;
     Ok(ids)
 }
+
+/// List `resource_id` values shared with any team the given principal
+/// belongs to. Backs the `ResourceScope::Team` query param on list
+/// handlers. Uses a single JOIN so the caller does not need a separate
+/// round-trip to resolve team memberships.
+///
+/// The JOIN matches `resource_ownership.shared_with_team_id =
+/// team_memberships.team_id`. Rows where `shared_with_team_id` is NULL
+/// (i.e., `visibility IN ('personal', 'org')`) are excluded by the
+/// NULL-safe INNER JOIN semantics. Excludes rows owned directly by the
+/// caller (`owner_principal_key != ?`) so team-scope queries mean
+/// "resources my team shared with me but that I don't own" rather than
+/// doubling up with `Mine`. Handlers that want the union fetch both
+/// scopes and merge.
+pub async fn list_team_scoped_resource_ids(
+    pool: &SqlitePool,
+    principal_key: &str,
+    resource_type: &str,
+) -> anyhow::Result<Vec<String>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT ro.resource_id \
+         FROM resource_ownership ro \
+         INNER JOIN team_memberships tm ON tm.team_id = ro.shared_with_team_id \
+         WHERE tm.principal_key = ? AND ro.resource_type = ? \
+               AND ro.owner_principal_key != ? \
+         ORDER BY ro.resource_id",
+    )
+    .bind(principal_key)
+    .bind(resource_type)
+    .bind(principal_key)
+    .fetch_all(pool)
+    .await
+    .with_context(|| {
+        format!(
+            "list team-scoped resource_ids principal_key={principal_key} resource_type={resource_type}"
+        )
+    })?;
+    Ok(ids)
+}

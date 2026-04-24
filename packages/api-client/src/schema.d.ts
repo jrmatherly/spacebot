@@ -69,7 +69,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List all configured agents with their config summaries. */
+        /**
+         * List all configured agents with their config summaries. Supports the
+         *     `?scope=mine|team|org` query param (absent = unfiltered, admin/script
+         *     behavior). Sidebar and admin list pages use the scope filter;
+         *     existing unfiltered callers keep working unchanged.
+         */
         get: operations["list_agents"];
         /** Update an agent's display_name and role in config.toml. */
         put: operations["update_agent"];
@@ -4069,6 +4074,15 @@ export interface components {
             repo: components["schemas"]["ProjectRepo"];
         };
         /**
+         * @description Query-param scope for list endpoints that support narrowing results to
+         *     "resources the caller owns" / "resources in the caller's teams" / "the
+         *     full org view." Distinct from [`Visibility`], which is the persisted
+         *     property on each resource row. `ResourceScope` is the query-time lens
+         *     over ownership; `Visibility` is the storage-time classification.
+         * @enum {string}
+         */
+        ResourceScope: "mine" | "team" | "org";
+        /**
          * @description Response mode controls how the channel handles incoming messages.
          * @enum {string}
          */
@@ -4959,7 +4973,9 @@ export interface operations {
     };
     list_agents: {
         parameters: {
-            query?: never;
+            query?: {
+                scope?: null | components["schemas"]["ResourceScope"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
