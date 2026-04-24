@@ -501,7 +501,7 @@ async fn cron_enrichment_keys_on_cron_job_resource_type() {
 
     let ids = vec!["cron-team-1".to_string()];
 
-    // Correct key — the string the live handler uses post-fix.
+    // Correct key: the string the live handler uses post-fix.
     let map_correct = list_ownerships_by_ids(&pool, "cron_job", &ids)
         .await
         .expect("list_ownerships_by_ids succeeds");
@@ -511,7 +511,7 @@ async fn cron_enrichment_keys_on_cron_job_resource_type() {
     assert_eq!(row.visibility, "team");
     assert_eq!(row.shared_with_team_id.as_deref(), Some(team.id.as_str()));
 
-    // Old buggy key — the pre-fix string. Must return empty because
+    // Old buggy key: the pre-fix string. Must return empty because
     // the ownership row was keyed on "cron_job", not "cron".
     let map_buggy = list_ownerships_by_ids(&pool, "cron", &ids)
         .await

@@ -90,14 +90,19 @@ impl VisibilityTag {
         }
     }
 
-    /// Accessor for handlers that construct flat DTOs (cron). Returns
-    /// the lowercase serde string the SPA consumes.
-    pub fn visibility(&self) -> Option<&'static str> {
+    /// Lowercase serde string for the visibility variant. Consumed by
+    /// the test module below to inspect the constructor's narrowing
+    /// invariants.
+    #[cfg(test)]
+    pub(super) fn visibility(&self) -> Option<&'static str> {
         self.visibility.map(|v| v.as_str())
     }
 
-    /// Accessor for handlers that construct flat DTOs (cron).
-    pub fn team_name(&self) -> Option<&str> {
+    /// Team display name when visibility is `Team`; `None` otherwise.
+    /// Consumed by the test module below to inspect the constructor's
+    /// narrowing invariants.
+    #[cfg(test)]
+    pub(super) fn team_name(&self) -> Option<&str> {
         self.team_name.as_deref()
     }
 }

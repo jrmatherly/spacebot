@@ -131,17 +131,23 @@ struct CronJobWithStats {
     delivery_failure_count: u64,
     delivery_skipped_count: u64,
     last_executed_at: Option<String>,
-    /// Phase 7 PR 1.5 Task 7.5a. Additive fields for the visibility chip.
-    /// `None` encodes "unowned/legacy" per the no-auto-broadening policy.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    visibility: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    team_name: Option<String>,
+}
+
+/// Cron list row: the bare job shape plus a `VisibilityTag` flattened
+/// into the same JSON object. Additive on the wire (clients that ignore
+/// unknown fields continue to work; chip-aware clients see the tag).
+/// Mirrors `MemoryListItem` / `TaskListItem` / `WikiListItem`.
+#[derive(Serialize, utoipa::ToSchema)]
+struct CronListItem {
+    #[serde(flatten)]
+    job: CronJobWithStats,
+    #[serde(flatten)]
+    tag: crate::api::resources::VisibilityTag,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct CronListResponse {
-    jobs: Vec<CronJobWithStats>,
+    jobs: Vec<CronListItem>,
     timezone: String,
 }
 
@@ -265,14 +271,8 @@ pub(super) async fn list_cron_jobs(
             .get_execution_stats(&config.id)
             .await
             .unwrap_or_default();
-        // VisibilityTag fields are private (S1 narrowing). Use the
-        // accessors; the team_name-only-with-team invariant was
-        // enforced at construction time by VisibilityTag::new.
         let tag = tags.get(&config.id).cloned().unwrap_or_default();
-        let visibility = tag.visibility().map(str::to_string);
-        let team_name = tag.team_name().map(str::to_string);
-
-        jobs.push(CronJobWithStats {
+        let job = CronJobWithStats {
             id: config.id,
             prompt: config.prompt,
             cron_expr: config.cron_expr,
@@ -288,9 +288,8 @@ pub(super) async fn list_cron_jobs(
             delivery_failure_count: stats.delivery_failure_count,
             delivery_skipped_count: stats.delivery_skipped_count,
             last_executed_at: stats.last_executed_at,
-            visibility,
-            team_name,
-        });
+        };
+        jobs.push(CronListItem { job, tag });
     }
 
     Ok(Json(CronListResponse {
@@ -902,18 +901,13 @@ pub(super) async fn toggle_cron(
 
 #[cfg(test)]
 mod tests {
-    use super::CronJobWithStats;
+    use super::{CronJobWithStats, CronListItem};
+    use crate::api::resources::VisibilityTag;
+    use crate::auth::principals::Visibility;
 
-    /// S5 (pr-test-analyzer): pin the CronJobWithStats wire shape for
-    /// the Phase 7 enrichment fields. CronJobWithStats inlines
-    /// `visibility` + `team_name` directly instead of flattening a
-    /// VisibilityTag; a future refactor to the wrapper pattern would
-    /// silently change the wire shape. This test freezes the
-    /// skip_serializing_if contract on both fields.
-    #[test]
-    fn visibility_fields_omitted_when_none() {
-        let job = CronJobWithStats {
-            id: "c-1".into(),
+    fn sample_job(id: &str) -> CronJobWithStats {
+        CronJobWithStats {
+            id: id.into(),
             prompt: "do the thing".into(),
             cron_expr: None,
             interval_secs: 60,
@@ -928,10 +922,22 @@ mod tests {
             delivery_failure_count: 0,
             delivery_skipped_count: 0,
             last_executed_at: None,
-            visibility: None,
-            team_name: None,
+        }
+    }
+
+    /// Pin the wire shape for the flattened chip fields. CronListItem
+    /// uses `#[serde(flatten)]` on both the inner `CronJobWithStats`
+    /// and the `VisibilityTag`; an accidental rewrap (nested
+    /// `visibility: { ... }`, or dropped `flatten`) would break the
+    /// SPA's VisibilityChip consumer. This test freezes the
+    /// skip_serializing_if contract for the `None` case.
+    #[test]
+    fn visibility_fields_omitted_when_none() {
+        let item = CronListItem {
+            job: sample_job("c-1"),
+            tag: VisibilityTag::default(),
         };
-        let json = serde_json::to_string(&job).unwrap();
+        let json = serde_json::to_string(&item).unwrap();
         assert!(
             !json.contains("\"visibility\""),
             "visibility: None must be omitted from wire: {json}"
@@ -944,27 +950,19 @@ mod tests {
 
     #[test]
     fn visibility_fields_present_when_some() {
-        let job = CronJobWithStats {
-            id: "c-2".into(),
-            prompt: "do the thing".into(),
-            cron_expr: None,
-            interval_secs: 60,
-            delivery_target: "bulletin".into(),
-            enabled: true,
-            run_once: false,
-            active_hours: None,
-            timeout_secs: None,
-            execution_success_count: 0,
-            execution_failure_count: 0,
-            delivery_success_count: 0,
-            delivery_failure_count: 0,
-            delivery_skipped_count: 0,
-            last_executed_at: None,
-            visibility: Some("team".into()),
-            team_name: Some("Platform".into()),
+        let item = CronListItem {
+            job: sample_job("c-2"),
+            tag: VisibilityTag::new(Some(Visibility::Team), Some("Platform".into())),
         };
-        let json = serde_json::to_string(&job).unwrap();
+        let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"visibility\":\"team\""));
         assert!(json.contains("\"team_name\":\"Platform\""));
+        // Flat shape guard: the inner job's fields must appear at the
+        // top level of the JSON object, not nested under `job`.
+        assert!(
+            !json.contains("\"job\":"),
+            "job must be flattened, not nested: {json}"
+        );
+        assert!(json.contains("\"id\":\"c-2\""));
     }
 }
