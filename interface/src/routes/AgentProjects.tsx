@@ -22,6 +22,7 @@ import {CSS} from "@dnd-kit/utilities";
 import {
 	api,
 	type Project,
+	type ProjectListItem,
 	type ProjectWorktreeWithRepo,
 	type ProjectRepo,
 	type CreateProjectRequest,
@@ -68,7 +69,7 @@ function SortableProjectCard({
 	project,
 	onClick,
 }: {
-	project: Project;
+	project: ProjectListItem;
 	onClick: () => void;
 }) {
 	const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({
@@ -1026,7 +1027,7 @@ export function AgentProjects({ projectId }: { projectId?: string }) {
 	);
 
 	const [showCreate, setShowCreate] = useState(false);
-	const [localProjects, setLocalProjects] = useState<Project[]>([]);
+	const [localProjects, setLocalProjects] = useState<ProjectListItem[]>([]);
 
 	const {data, isLoading} = useQuery({
 		queryKey: ["projects"],

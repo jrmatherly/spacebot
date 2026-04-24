@@ -185,6 +185,7 @@ import type {
 	TaskActionResponse,
 } from "./types";
 import type { WikiListResponse } from "./types";
+import type { ProjectListResponse } from "./types";
 import type {
 	CronListResponse,
 	CronExecutionsResponse,
@@ -1290,10 +1291,12 @@ export interface ProjectWorktreeWithRepo extends ProjectWorktree {
 	repo_name: string;
 }
 
-/** GET /agents/projects response */
-export interface ProjectListResponse {
-	projects: Project[];
-}
+// ProjectListResponse + ProjectListItem are exported from ./types as aliases
+// for the generated schema entries. `ProjectListItem = Project & VisibilityTag`
+// carries `visibility` + `team_name` chip fields so the SPA can render a
+// chip per row without casts. Mirrors the `WikiListItem`, `CronListItem`,
+// `PortalConversationListItem`, `TaskItem`, and `MemoryItem` precedents.
+export type { ProjectListItem, ProjectListResponse } from "./types";
 
 /** GET /agents/projects/:id response. Project fields are flattened. */
 export interface ProjectWithRelations extends Project {
