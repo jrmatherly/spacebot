@@ -235,7 +235,9 @@ function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
 	// A-17: "Stay signed in on this device" opt-in. Default off; reading
 	// the localStorage key here (not from msalConfig) because the checkbox
 	// state must reflect the value BEFORE the next MSAL init reads it on
-	// reload.
+	// reload. The opt-in is browser-only; in Tauri the daemon's secret
+	// store handles persistence (Phase 8 PR A) and localStorage is not
+	// the cache MSAL would use anyway.
 	const [trust, setTrust] = useState(
 		window.localStorage.getItem(TRUST_DEVICE_KEY) === "true",
 	);
@@ -254,23 +256,41 @@ function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
 		await msal.loginRedirect({ scopes });
 	};
 
+	const buttonLabel = IS_DESKTOP
+		? "Sign in with Microsoft (opens system browser)"
+		: "Sign in with Microsoft";
+	const ariaLabel = IS_DESKTOP
+		? "Sign in with Microsoft Entra ID; opens the system browser to complete sign-in"
+		: "Sign in with Microsoft Entra ID";
+
 	return (
 		<div data-testid="auth-gate-signin" role="status">
-			<button
-				type="button"
-				onClick={onSignIn}
-				aria-label="Sign in with Microsoft Entra ID"
-			>
-				Sign in with Microsoft
+			<button type="button" onClick={onSignIn} aria-label={ariaLabel}>
+				{buttonLabel}
 			</button>
-			<label style={{ display: "block", marginTop: "0.75rem" }}>
-				<input
-					type="checkbox"
-					checked={trust}
-					onChange={(e) => onTrustToggle(e.target.checked)}
-				/>
-				Stay signed in on this device (uses encrypted local storage)
-			</label>
+			{!IS_DESKTOP && (
+				<label style={{ display: "block", marginTop: "0.75rem" }}>
+					<input
+						type="checkbox"
+						checked={trust}
+						onChange={(e) => onTrustToggle(e.target.checked)}
+					/>
+					Stay signed in on this device (uses encrypted local storage)
+				</label>
+			)}
+			{IS_DESKTOP && (
+				<p
+					style={{
+						display: "block",
+						marginTop: "0.75rem",
+						fontSize: "0.875rem",
+						color: "var(--color-text-muted, #6b7280)",
+					}}
+				>
+					Sign-in completes in your default browser. Tokens are stored
+					in the daemon's encrypted secret store, not in this window.
+				</p>
+			)}
 		</div>
 	);
 }
