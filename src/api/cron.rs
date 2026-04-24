@@ -265,6 +265,7 @@ pub(super) async fn list_cron_jobs(
         // I4: mirror the authz-skipped pattern.
         tracing::warn!(
             handler = "cron",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );

@@ -295,6 +295,7 @@ pub(super) async fn list_memories(
         // "boot window" vs "startup-ordering bug" is distinguishable.
         tracing::warn!(
             handler = "memories",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );

@@ -227,6 +227,7 @@ fn parse_page_type(s: Option<&str>) -> Result<Option<WikiPageType>, StatusCode> 
 /// pick up a startup-ordering bug.
 async fn enrich_wiki_list(
     state: &ApiState,
+    auth_ctx: &crate::auth::context::AuthContext,
     summaries: Vec<crate::wiki::WikiPageSummary>,
 ) -> Vec<WikiListItem> {
     let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
@@ -235,6 +236,7 @@ async fn enrich_wiki_list(
     } else {
         tracing::warn!(
             handler = "wiki",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );
@@ -266,7 +268,7 @@ async fn enrich_wiki_list(
 )]
 pub(super) async fn list_pages(
     State(state): State<Arc<ApiState>>,
-    _auth_ctx: crate::auth::context::AuthContext,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<WikiListQuery>,
 ) -> Result<Json<WikiListResponse>, StatusCode> {
     // TODO(phase-5): gate this unfiltered listing path (currently returns
@@ -274,11 +276,13 @@ pub(super) async fn list_pages(
     // caller). Wiki content is generally team-shared by convention, so
     // the exposure is milder than `list_tasks`, but the correct fix is
     // per-row `check_read` once the audit log lands and can absorb the
-    // N+1 emission cost.
+    // N+1 emission cost. `auth_ctx` is consumed by the enrichment
+    // `actor` log field; keep it non-prefixed so the Phase-5 gate has
+    // no signature churn when it lands.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
     let summaries = store.list(page_type).await.map_err(wiki_error_status)?;
-    let pages = enrich_wiki_list(&state, summaries).await;
+    let pages = enrich_wiki_list(&state, &auth_ctx, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }
@@ -296,19 +300,20 @@ pub(super) async fn list_pages(
 )]
 pub(super) async fn search_pages(
     State(state): State<Arc<ApiState>>,
-    _auth_ctx: crate::auth::context::AuthContext,
+    auth_ctx: crate::auth::context::AuthContext,
     Query(query): Query<WikiSearchQuery>,
 ) -> Result<Json<WikiListResponse>, StatusCode> {
     // TODO(phase-5): same Phase-5 TODO as `list_pages` — unfiltered
     // search results are returned to any authenticated caller today;
-    // per-row `check_read` post-filter is the planned fix.
+    // per-row `check_read` post-filter is the planned fix. `auth_ctx`
+    // is consumed by the enrichment `actor` log field.
     let store = get_wiki_store(&state)?;
     let page_type = parse_page_type(query.page_type.as_deref())?;
     let summaries = store
         .search(&query.query, page_type)
         .await
         .map_err(wiki_error_status)?;
-    let pages = enrich_wiki_list(&state, summaries).await;
+    let pages = enrich_wiki_list(&state, &auth_ctx, summaries).await;
     let total = pages.len();
     Ok(Json(WikiListResponse { pages, total }))
 }

@@ -642,6 +642,7 @@ pub(super) async fn list_portal_conversations(
     } else {
         tracing::warn!(
             handler = "portal",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );

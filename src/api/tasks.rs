@@ -352,6 +352,7 @@ pub(super) async fn list_tasks(
         // the startup window would leave every task list unchipped.
         tracing::warn!(
             handler = "tasks",
+            actor = %auth_ctx.principal_key(),
             count = ids.len(),
             "enrichment skipped: instance_pool not attached (boot window or startup-ordering bug)"
         );
