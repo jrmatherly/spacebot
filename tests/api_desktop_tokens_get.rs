@@ -124,9 +124,7 @@ async fn returns_null_when_no_token_persisted() {
         "absent token must serialize as access_token: null, got {parsed}"
     );
     assert!(
-        parsed
-            .get("expires_in_epoch")
-            .is_some_and(|v| v.is_null()),
+        parsed.get("expires_in_epoch").is_some_and(|v| v.is_null()),
         "expires_in_epoch must be null today (no persistence yet)"
     );
 }
