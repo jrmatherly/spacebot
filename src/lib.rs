@@ -23,6 +23,7 @@ pub mod conversation;
 pub mod cron;
 pub mod daemon;
 pub mod db;
+pub mod dialect;
 pub mod error;
 pub mod factory;
 pub mod github_copilot_auth;
