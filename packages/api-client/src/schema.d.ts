@@ -1189,7 +1189,8 @@ export interface paths {
          *     `store_desktop_tokens` call, or `null` if none exists.
          * @description Same loopback + Host defenses as the POST sibling. The Tauri shim
          *     uses this on cold start to seed an `AccountInfo` into MSAL without
-         *     re-running the system-browser sign-in flow.
+         *     re-running the system-browser sign-in flow. Response carries
+         *     `Cache-Control: no-store` so the JWT is never cached.
          */
         get: operations["get_desktop_tokens"];
         put?: never;
@@ -3370,12 +3371,6 @@ export interface components {
         Deployment: "docker" | "hosted" | "native";
         DesktopTokenStatus: {
             access_token?: string | null;
-            /**
-             * Format: int64
-             * @description Reserved for a future PR that persists the access-token expiry
-             *     alongside the token itself. Always `None` today.
-             */
-            expires_in_epoch?: number | null;
         };
         DesktopTokens: {
             access_token: string;

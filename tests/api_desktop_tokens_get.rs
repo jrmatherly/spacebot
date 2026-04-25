@@ -123,10 +123,38 @@ async fn returns_null_when_no_token_persisted() {
         parsed.get("access_token").is_some_and(|v| v.is_null()),
         "absent token must serialize as access_token: null, got {parsed}"
     );
-    assert!(
-        parsed.get("expires_in_epoch").is_some_and(|v| v.is_null()),
-        "expires_in_epoch must be null today (no persistence yet)"
-    );
+}
+
+// ----------------------------------------------------------------------------
+// Cache-Control header — JWTs must never be cacheable
+// ----------------------------------------------------------------------------
+
+#[tokio::test]
+async fn returns_cache_control_no_store() {
+    // Both the absent-token path and the happy path return 200, so a
+    // missing header would let an intermediate cache hold the token
+    // body. Verify the header is set on both branches.
+    for seed_token in [false, true] {
+        let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+        let (store, _dir) = fresh_unlocked_store();
+        if seed_token {
+            store
+                .set("entra_access_token", "cached-jwt", SecretCategory::System)
+                .expect("seed access token");
+        }
+        let (app, _state) = router_with_peer(peer, Some(store));
+        let res = app.oneshot(get_tokens("127.0.0.1")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let cache = res
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            cache.contains("no-store"),
+            "GET response must include Cache-Control: no-store (seed_token={seed_token}), got {cache:?}"
+        );
+    }
 }
 
 // ----------------------------------------------------------------------------

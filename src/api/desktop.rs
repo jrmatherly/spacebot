@@ -41,8 +41,9 @@ use crate::secrets::store::{SecretCategory, SecretsStore, StoreState};
 pub(super) struct DesktopTokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
-    // TODO: persist for refresh-deadline tracking; removes the need for
-    // #[allow(dead_code)] when the refresh-scheduler lands in Phase 8 PR B.
+    // TODO: persist for refresh-deadline tracking once a refresh
+    // scheduler exists. Until then, the value is accepted off the wire
+    // but not stored.
     #[allow(dead_code)]
     pub expires_in: u64,
 }
@@ -115,9 +116,22 @@ pub(super) async fn store_desktop_tokens(
 #[derive(Serialize, utoipa::ToSchema)]
 pub(super) struct DesktopTokenStatus {
     pub access_token: Option<String>,
-    /// Reserved for a future PR that persists the access-token expiry
-    /// alongside the token itself. Always `None` today.
-    pub expires_in_epoch: Option<i64>,
+}
+
+/// Headers attached to every `DesktopTokenStatus` response.
+///
+/// `no-store, no-cache` blocks any HTTP cache (Tauri WebView's, a
+/// transparent local proxy, a future browser-served deployment) from
+/// holding the JWT response body. The endpoint is called on every
+/// cold start, so a single misconfigured cache could persist a token
+/// far longer than the daemon intends.
+fn no_store_headers() -> axum::http::HeaderMap {
+    let mut h = axum::http::HeaderMap::new();
+    h.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store, no-cache"),
+    );
+    h
 }
 
 /// Return the cached access token persisted by an earlier
@@ -125,7 +139,8 @@ pub(super) struct DesktopTokenStatus {
 ///
 /// Same loopback + Host defenses as the POST sibling. The Tauri shim
 /// uses this on cold start to seed an `AccountInfo` into MSAL without
-/// re-running the system-browser sign-in flow.
+/// re-running the system-browser sign-in flow. Response carries
+/// `Cache-Control: no-store` so the JWT is never cached.
 #[utoipa::path(
     get,
     path = "/desktop/tokens",
@@ -141,7 +156,7 @@ pub(super) async fn get_desktop_tokens(
     State(state): State<Arc<ApiState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: axum::http::HeaderMap,
-) -> Result<Json<DesktopTokenStatus>, StatusCode> {
+) -> Result<(axum::http::HeaderMap, Json<DesktopTokenStatus>), StatusCode> {
     enforce_loopback_preconditions(&peer, &headers)?;
 
     let secrets = state
@@ -153,18 +168,22 @@ pub(super) async fn get_desktop_tokens(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match secrets.get("entra_access_token") {
-        Ok(decrypted) => Ok(Json(DesktopTokenStatus {
-            access_token: Some(decrypted.expose().to_string()),
-            expires_in_epoch: None,
-        })),
+        Ok(decrypted) => Ok((
+            no_store_headers(),
+            Json(DesktopTokenStatus {
+                access_token: Some(decrypted.expose().to_string()),
+            }),
+        )),
         Err(SecretsError::StoreLocked) => {
             tracing::warn!("desktop token read rejected: daemon is locked");
             Err(StatusCode::SERVICE_UNAVAILABLE)
         }
-        Err(SecretsError::NotFound { .. }) => Ok(Json(DesktopTokenStatus {
-            access_token: None,
-            expires_in_epoch: None,
-        })),
+        Err(SecretsError::NotFound { .. }) => Ok((
+            no_store_headers(),
+            Json(DesktopTokenStatus {
+                access_token: None,
+            }),
+        )),
         Err(e) => {
             tracing::error!(error = %e, "secrets.get failed for entra_access_token");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
