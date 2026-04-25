@@ -1719,9 +1719,16 @@ async fn run(
 
     // Instance-level global task database. Shared across all agents with globally
     // unique task numbers. Lives alongside secrets.redb in the instance data dir.
-    let instance_pool = spacebot::db::connect_instance_db(&config.instance_dir.join("data"))
-        .await
-        .context("failed to initialize instance database")?;
+    let instance_db = spacebot::db::connect_instance_db(
+        &config.instance_dir.join("data"),
+        config.database.url.as_deref(),
+    )
+    .await
+    .context("failed to initialize instance database")?;
+    let instance_pool = instance_db
+        .as_sqlite()
+        .context("PR 11.1 instance pool requires SQLite backend; Postgres support lands in PR 11.2")?
+        .clone();
 
     // Migrate legacy per-agent tasks to the global database on first run.
     spacebot::tasks::migration::migrate_legacy_tasks(&config.instance_dir, &instance_pool)
@@ -3107,12 +3114,15 @@ async fn initialize_agents(
         })?;
 
         // Per-agent database connections
-        let db = spacebot::db::Db::connect(&agent_config.data_dir)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to connect databases for agent '{}'",
-                    agent_config.id
+        let db = spacebot::db::Db::connect(
+            &agent_config.data_dir,
+            config.database.url.as_deref(),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "failed to connect databases for agent '{}'",
+                agent_config.id
                 )
             })?;
 

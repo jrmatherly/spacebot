@@ -52,7 +52,7 @@ async fn bootstrap_deps() -> anyhow::Result<spacebot::AgentDeps> {
     let resolved_agents = config.resolve_agents();
     let agent_config = resolved_agents.first().context("no agents configured")?;
 
-    let db = spacebot::db::Db::connect(&agent_config.data_dir)
+    let db = spacebot::db::Db::connect(&agent_config.data_dir, None)
         .await
         .context("failed to connect databases")?;
 

@@ -1193,7 +1193,9 @@ pub async fn create_agent_internal(
         })?;
     }
 
-    let db = crate::db::Db::connect(&agent_config.data_dir)
+    let db_url_guard = state.database_url.load();
+    let db_url: Option<&str> = (**db_url_guard).as_deref();
+    let db = crate::db::Db::connect(&agent_config.data_dir, db_url)
         .await
         .map_err(|error| {
             tracing::error!(%error, agent_id = %agent_id, "failed to connect agent databases");
