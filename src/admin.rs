@@ -26,9 +26,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Serialized snake_case to match the wire convention established by
 /// `Visibility` (`src/auth/principals.rs`).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum OrphanKind {
@@ -331,10 +329,7 @@ pub fn discover_agent_db_paths() -> Vec<PathBuf> {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
         .filter(|e| {
-            let safe = e
-                .file_name()
-                .to_str()
-                .is_some_and(is_safe_agent_id);
+            let safe = e.file_name().to_str().is_some_and(is_safe_agent_id);
             if !safe {
                 tracing::warn!(
                     name = ?e.file_name(),
