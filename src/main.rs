@@ -52,6 +52,66 @@ enum Command {
     /// Manage secrets stored in the running instance
     #[command(subcommand)]
     Secrets(SecretsCommand),
+    /// Entra ID sign-in (device code or client credentials)
+    Entra {
+        #[command(subcommand)]
+        cmd: EntraCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum EntraCommand {
+    /// Sign in via Entra device code (humans) or client credentials (automation via env)
+    Login,
+    /// Clear cached Entra tokens
+    Logout,
+}
+
+struct CliClientConfig {
+    tenant_id: String,
+    cli_client_id: String,
+    cli_scopes: Vec<String>,
+}
+
+fn load_client_config() -> anyhow::Result<CliClientConfig> {
+    Ok(CliClientConfig {
+        tenant_id: std::env::var("SPACEBOT_TENANT_ID")
+            .map_err(|_| anyhow::anyhow!("set SPACEBOT_TENANT_ID"))?,
+        cli_client_id: std::env::var("SPACEBOT_CLI_CLIENT_ID")
+            .map_err(|_| anyhow::anyhow!("set SPACEBOT_CLI_CLIENT_ID"))?,
+        cli_scopes: std::env::var("SPACEBOT_CLI_SCOPE")
+            .map(|s| vec![s])
+            .unwrap_or_default(),
+    })
+}
+
+#[tokio::main]
+async fn cmd_entra(entra_cmd: EntraCommand) -> anyhow::Result<()> {
+    match entra_cmd {
+        EntraCommand::Login => {
+            let cfg = load_client_config()?;
+            let tokens = spacebot::cli::login::execute_login(spacebot::cli::login::LoginArgs {
+                tenant_id: cfg.tenant_id,
+                client_id: cfg.cli_client_id,
+                scopes: cfg.cli_scopes,
+            })
+            .await?;
+            // STORE-D: load (or create empty) the operator-local token
+            // file, mutate in place, save. persist_tokens is sync.
+            let mut store = spacebot::cli::store::CliTokenStore::load()?;
+            spacebot::cli::login::persist_tokens(&mut store, &tokens)?;
+            println!(
+                "Signed in. Access token cached; expires in {}s.",
+                tokens.expires_in
+            );
+            Ok(())
+        }
+        EntraCommand::Logout => {
+            spacebot::cli::logout::clear_tokens()?;
+            println!("Signed out.");
+            Ok(())
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -380,6 +440,7 @@ fn main() -> anyhow::Result<()> {
         Command::Skill(skill_cmd) => cmd_skill(cli.config, skill_cmd),
         Command::Auth(auth_cmd) => cmd_auth(cli.config, auth_cmd),
         Command::Secrets(secrets_cmd) => cmd_secrets(cli.config, secrets_cmd),
+        Command::Entra { cmd } => cmd_entra(cmd),
     }
 }
 
