@@ -1,4 +1,4 @@
 {
   "title": "Configuration",
-  "pages": ["config", "config-reference", "secrets", "sandbox", "permissions", "litellm", "entra-auth"]
+  "pages": ["config", "config-reference", "secrets", "sandbox", "permissions", "litellm", "entra-auth", "cli-auth"]
 }
