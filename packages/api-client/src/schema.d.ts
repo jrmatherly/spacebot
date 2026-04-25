@@ -62,6 +62,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/claim-resource": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["claim_resource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/teams": {
         parameters: {
             query?: never;
@@ -2933,6 +2949,13 @@ export interface components {
         ChannelsResponse: {
             channels: components["schemas"]["ChannelResponse"][];
         };
+        ClaimRequest: {
+            owner_principal_key: string;
+            resource_id: string;
+            resource_type: string;
+            shared_with_team_id?: string | null;
+            visibility?: string;
+        };
         /**
          * @description What happens when a worker explicitly calls "close" on the browser.
          * @enum {string}
@@ -5101,6 +5124,49 @@ export interface operations {
             };
             /** @description Audit appender not yet attached */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claim_resource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Ownership row written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid visibility value */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not a SpacebotAdmin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Pool unavailable or write failed */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

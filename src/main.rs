@@ -65,6 +65,28 @@ enum EntraCommand {
     Login,
     /// Clear cached Entra tokens
     Logout,
+    /// Admin subcommands
+    Admin {
+        #[command(subcommand)]
+        cmd: AdminCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdminCommands {
+    /// Claim a resource that has no ownership row
+    ClaimResource {
+        #[arg(long)]
+        r#type: String,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        owner: String,
+        #[arg(long, default_value = "personal")]
+        visibility: String,
+        #[arg(long)]
+        team: Option<String>,
+    },
 }
 
 struct CliClientConfig {
@@ -111,6 +133,26 @@ async fn cmd_entra(entra_cmd: EntraCommand) -> anyhow::Result<()> {
             println!("Signed out.");
             Ok(())
         }
+        EntraCommand::Admin { cmd } => match cmd {
+            AdminCommands::ClaimResource {
+                r#type,
+                id,
+                owner,
+                visibility,
+                team,
+            } => {
+                spacebot::cli::admin::claim_resource(
+                    &r#type,
+                    &id,
+                    &owner,
+                    &visibility,
+                    team.as_deref(),
+                )
+                .await?;
+                println!("Claimed {type}/{id} for {owner}.", type = r#type);
+                Ok(())
+            }
+        },
     }
 }
 
