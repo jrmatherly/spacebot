@@ -65,7 +65,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	//
 	// TODO: replace console.warn with a toast banner + "Re-sign in"
 	// CTA wired to acquireTokenRedirect. Trigger: when the
-	// notifications surface lands (tracked as a Phase 7 scope item).
+	// notifications surface lands.
 	useEffect(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent<AuthExhaustedDetail>).detail;
@@ -268,12 +268,12 @@ function makeTokenProvider(
 }
 
 function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
-	// A-17: "Stay signed in on this device" opt-in. Default off; reading
-	// the localStorage key here (not from msalConfig) because the checkbox
-	// state must reflect the value BEFORE the next MSAL init reads it on
-	// reload. The opt-in is browser-only; in Tauri the daemon's secret
-	// store handles persistence (Phase 8 PR A) and localStorage is not
-	// the cache MSAL would use anyway.
+	// "Stay signed in on this device" opt-in. Default off; reading the
+	// localStorage key here (not from msalConfig) because the checkbox
+	// state must reflect the value BEFORE the next MSAL init reads it
+	// on reload. The opt-in is browser-only; in Tauri the daemon's
+	// secret store handles persistence and localStorage is not the
+	// cache MSAL would use anyway.
 	const [trust, setTrust] = useState(
 		window.localStorage.getItem(TRUST_DEVICE_KEY) === "true",
 	);

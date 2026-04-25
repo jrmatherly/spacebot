@@ -23,9 +23,19 @@ vi.mock("@/platform", () => ({
 
 // Default useServer mock: empty serverUrl so the gate starts in
 // `waiting_for_server`. Individual tests override per-call.
-const useServerMock = vi.fn(() => ({
+type ServerCtx = {
+	serverUrl: string;
+	state: "checking" | "connected" | "disconnected";
+	setServerUrl: (url: string) => void;
+	hasConnected: boolean;
+	hasBootstrapped: boolean;
+	onBootstrapped: () => void;
+	isDesktopHost: boolean;
+	hasBundledServer: boolean;
+};
+const useServerMock = vi.fn<() => ServerCtx>(() => ({
 	serverUrl: "",
-	state: "checking" as const,
+	state: "checking",
 	setServerUrl: () => {},
 	hasConnected: false,
 	hasBootstrapped: false,
@@ -64,7 +74,7 @@ describe("AuthGate (desktop / Tauri mode)", () => {
 		vi.clearAllMocks();
 		useServerMock.mockReturnValue({
 			serverUrl: "",
-			state: "checking" as const,
+			state: "checking",
 			setServerUrl: () => {},
 			hasConnected: false,
 			hasBootstrapped: false,
@@ -101,7 +111,7 @@ describe("AuthGate (desktop / Tauri mode)", () => {
 		// Daemon URL resolves: simulate the next useServer() return.
 		useServerMock.mockReturnValue({
 			serverUrl: "http://localhost:19898",
-			state: "connected" as const,
+			state: "connected",
 			setServerUrl: () => {},
 			hasConnected: true,
 			hasBootstrapped: true,
