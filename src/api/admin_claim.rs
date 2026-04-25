@@ -17,6 +17,7 @@ use crate::auth::repository::set_ownership;
 use crate::auth::roles::{ROLE_ADMIN, require_role};
 
 #[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ClaimRequest {
     pub resource_type: String,
     pub resource_id: String,
@@ -48,7 +49,15 @@ pub(super) async fn claim_resource(
     axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<ClaimRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    require_role(&ctx, ROLE_ADMIN).map_err(|_| StatusCode::FORBIDDEN)?;
+    if let Err(error) = require_role(&ctx, ROLE_ADMIN) {
+        tracing::warn!(
+            principal_key = %ctx.principal_key(),
+            required_role = ROLE_ADMIN,
+            %error,
+            "admin_claim denied: missing role",
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
     let pool = state
         .instance_pool
         .load()
@@ -57,7 +66,7 @@ pub(super) async fn claim_resource(
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     let vis = Visibility::parse(&req.visibility).ok_or(StatusCode::BAD_REQUEST)?;
-    set_ownership(
+    if let Err(error) = set_ownership(
         &pool,
         &req.resource_type,
         &req.resource_id,
@@ -67,7 +76,16 @@ pub(super) async fn claim_resource(
         req.shared_with_team_id.as_deref(),
     )
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    {
+        tracing::error!(
+            principal_key = %ctx.principal_key(),
+            resource_type = %req.resource_type,
+            resource_id = %req.resource_id,
+            %error,
+            "admin_claim: set_ownership failed",
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     if let Some(audit) = state.audit.load().as_ref().as_ref().cloned() {
         let actor = ctx.principal_key();
@@ -75,7 +93,7 @@ pub(super) async fn claim_resource(
         let rid = req.resource_id.clone();
         let owner = req.owner_principal_key.clone();
         tokio::spawn(async move {
-            let _ = audit
+            if let Err(error) = audit
                 .append(crate::audit::AuditEvent {
                     principal_key: actor,
                     principal_type: "user".into(),
@@ -87,7 +105,10 @@ pub(super) async fn claim_resource(
                     request_id: None,
                     metadata: serde_json::json!({ "claimed_for": owner }),
                 })
-                .await;
+                .await
+            {
+                tracing::warn!(%error, "audit append failed: admin_claim_resource event dropped");
+            }
         });
     }
 

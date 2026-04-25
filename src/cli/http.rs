@@ -99,7 +99,7 @@ impl AuthedClient {
         // - Never echo the access token into error messages.
         let token = match self.cached_access_token().await {
             Some(t) => t,
-            None => self.refresh_access_token_guarded().await?,
+            None => self.refresh_access_token_guarded(None).await?,
         };
         let first_attempt = builder
             .try_clone()
@@ -110,8 +110,11 @@ impl AuthedClient {
         if first_attempt.status() != reqwest::StatusCode::UNAUTHORIZED {
             return Ok(first_attempt);
         }
-        // First attempt got 401. Refresh and retry once.
-        let fresh = self.refresh_access_token_guarded().await?;
+        // First attempt got 401. Refresh and retry once. Pass the rejected
+        // token so the guarded refresh's double-check distinguishes "another
+        // caller already refreshed" (cache != rejected) from "we still hold
+        // the same token that just 401'd" (cache == rejected, must refresh).
+        let fresh = self.refresh_access_token_guarded(Some(token)).await?;
         let second_attempt = builder.bearer_auth(&fresh).send().await?;
         if second_attempt.status() == reqwest::StatusCode::UNAUTHORIZED {
             anyhow::bail!("401 persists after token refresh; run `spacebot entra login`");
@@ -121,12 +124,21 @@ impl AuthedClient {
 
     /// Single-flight token refresh. Holds a `tokio::sync::Mutex` so
     /// concurrent send() calls serialize on the refresh and share the
-    /// fresh token.
-    async fn refresh_access_token_guarded(&self) -> anyhow::Result<String> {
+    /// fresh token. `failed_token`, when set, is the token that was just
+    /// rejected by the server; the cache double-check skips returning it
+    /// even if it's still in the store, preventing the stale-cache loop
+    /// where a caller acquires the lock, sees its own already-rejected
+    /// token in cache, retries, and trips the second-401 bail.
+    async fn refresh_access_token_guarded(
+        &self,
+        failed_token: Option<String>,
+    ) -> anyhow::Result<String> {
         let _guard = self.refresh_lock.lock().await;
         // Double-check the cache; another caller may have refreshed.
         if let Some(t) = self.cached_access_token().await {
-            return Ok(t);
+            if Some(&t) != failed_token.as_ref() {
+                return Ok(t);
+            }
         }
         self.refresh_access_token().await
     }

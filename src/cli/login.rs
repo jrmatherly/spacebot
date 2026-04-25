@@ -2,7 +2,11 @@
 //! and parsers live here and are independently tested. Side effects
 //! (HTTP, token-store writes, terminal IO) live in `execute_login`.
 
+use crate::cli::store::CliTokenStore;
+
 use serde::Deserialize;
+
+use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceCodeResponse {
@@ -75,10 +79,6 @@ pub fn parse_token_response(status: u16, body: &str) -> TokenPollOutcome {
         None => TokenPollOutcome::Fatal(format!("response with neither tokens nor error: {body}")),
     }
 }
-
-use std::time::Duration;
-
-use crate::cli::store::CliTokenStore;
 
 pub struct LoginArgs {
     pub tenant_id: String,
