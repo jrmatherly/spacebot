@@ -80,8 +80,10 @@ pub(super) fn default_audit_export_interval_secs() -> u64 {
 /// `[database.*]` table.
 #[derive(Deserialize, Default)]
 pub(super) struct TomlDatabaseConfig {
-    /// `sqlite:` or `postgres:` URL. Unset means per-agent SQLite under data dir.
-    pub(super) url: Option<String>,
+    /// Typed connection URL. The custom `Deserialize` impl on `DatabaseUrl`
+    /// classifies the scheme prefix at config-load time, so operator typos
+    /// surface here rather than at startup connect time.
+    pub(super) url: Option<crate::db::DatabaseUrl>,
 }
 
 #[derive(Deserialize)]

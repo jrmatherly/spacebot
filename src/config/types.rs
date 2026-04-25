@@ -95,15 +95,16 @@ pub struct AuditExportScheduledConfig {
     pub interval: std::time::Duration,
 }
 
-/// Phase 11 database backend configuration. The `url` field selects the
-/// backend at runtime: `sqlite:` URLs (or absent) route through the SQLite
-/// path in `db::Db::connect`; `postgres:`/`postgresql:` URLs route through
-/// the Postgres path. See `docs/design-docs/postgres-migration.md`.
+/// Phase 11 database backend configuration. The `url` field is a typed
+/// `DatabaseUrl` whose variant encodes the backend dialect, validated at
+/// config load time. `Sqlite` URLs route through the SQLite path in
+/// `db::Db::connect`; `Postgres` URLs route through the Postgres path.
+/// See `docs/design-docs/postgres-migration.md`.
 #[derive(Debug, Clone, Default)]
 pub struct DatabaseConfig {
-    /// `sqlite:` or `postgres:` connection URL. None falls back to per-agent
-    /// SQLite under the agent data dir (today's behavior).
-    pub url: Option<String>,
+    /// Typed connection URL. None falls back to per-agent SQLite under the
+    /// agent data dir (today's behavior).
+    pub url: Option<crate::db::DatabaseUrl>,
 }
 
 impl Config {

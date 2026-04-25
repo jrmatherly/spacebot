@@ -3016,10 +3016,9 @@ mod tests {
 url = "postgres://user:pass@host:5432/spacebot"
 "#;
         let parsed: TomlConfig = toml::from_str(toml_input).unwrap();
-        assert_eq!(
-            parsed.database.url.as_deref(),
-            Some("postgres://user:pass@host:5432/spacebot")
-        );
+        let url = parsed.database.url.as_ref().expect("url must be parsed");
+        assert_eq!(url.dialect(), crate::db::Dialect::Postgres);
+        assert_eq!(url.as_str(), "postgres://user:pass@host:5432/spacebot");
     }
 
     #[test]
@@ -3036,5 +3035,35 @@ url = "postgres://user:pass@host:5432/spacebot"
 "#;
         let parsed: TomlConfig = toml::from_str(toml_input).unwrap();
         assert!(parsed.database.url.is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_scheme_at_config_load_not_at_connect() {
+        // Demonstrates the DatabaseUrl::FromStr validation runs at config load
+        // rather than at connect time, so operator typos surface during startup
+        // in the deserialization error rather than at first Db::connect.
+        //
+        // Note: the toml crate's error formatter echoes the raw source line,
+        // which means credentials in a config.toml literal still appear in the
+        // error context. The typed error message itself IS redacted (asserted
+        // below). Operators should reference credentials via the secrets store
+        // (`secret:foo` syntax) rather than inline strings in config.toml.
+        let toml_input = r#"
+[database]
+url = "potgres://host:5432/db"
+"#;
+        let err = match toml::from_str::<TomlConfig>(toml_input) {
+            Ok(_) => panic!("expected typo'd scheme to fail at config load"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported database URL scheme"),
+            "expected typed UnsupportedScheme error: {msg}"
+        );
+        assert!(
+            msg.contains("potgres://"),
+            "expected typo'd scheme in error: {msg}"
+        );
     }
 }

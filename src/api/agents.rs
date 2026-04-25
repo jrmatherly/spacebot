@@ -1194,7 +1194,7 @@ pub async fn create_agent_internal(
     }
 
     let db_url_guard = state.database_url.load();
-    let db_url: Option<&str> = (**db_url_guard).as_deref();
+    let db_url: Option<&crate::db::DatabaseUrl> = (**db_url_guard).as_ref();
     let db = crate::db::Db::connect(&agent_config.data_dir, db_url)
         .await
         .map_err(|error| {

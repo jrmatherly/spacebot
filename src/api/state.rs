@@ -160,12 +160,13 @@ pub struct ApiState {
     /// Instance directory path for accessing instance-level skills.
     pub instance_dir: ArcSwap<PathBuf>,
     /// Phase 11 backend selection. None falls back to per-agent SQLite.
-    /// `Some("sqlite:...")` or `Some("postgres://...")` routes through the
-    /// dialect-aware path in `db::Db::connect` and `db::connect_instance_db`.
-    /// Populated from `Config.database.url` at daemon startup. Handlers
-    /// must read via `(**state.database_url.load()).as_deref()` and must
-    /// not call `set_database_url`; mutation is reserved for startup paths.
-    pub database_url: ArcSwap<Option<String>>,
+    /// `Some(DatabaseUrl::Sqlite(...))` or `Some(DatabaseUrl::Postgres(...))`
+    /// routes through the dialect-aware path in `db::Db::connect` and
+    /// `db::connect_instance_db`. Populated from `Config.database.url` at
+    /// daemon startup. Handlers read via `(**state.database_url.load())
+    /// .as_ref()` and must not call `set_database_url`; mutation is
+    /// reserved for startup paths.
+    pub database_url: ArcSwap<Option<crate::db::DatabaseUrl>>,
     /// Shared LLM manager for agent creation.
     pub llm_manager: RwLock<Option<Arc<LlmManager>>>,
     /// Shared embedding model for agent creation.
@@ -1195,7 +1196,7 @@ impl ApiState {
     /// invariant ("pool is SQLite; Postgres URLs hard-error at connect")
     /// rests on this URL being set once at startup, before any agent's
     /// `Db::connect` is reached. Hot-swap is not supported in PR 11.1.
-    pub fn set_database_url(&self, url: Option<String>) {
+    pub fn set_database_url(&self, url: Option<crate::db::DatabaseUrl>) {
         self.database_url.store(Arc::new(url));
     }
 

@@ -1721,7 +1721,7 @@ async fn run(
     // unique task numbers. Lives alongside secrets.redb in the instance data dir.
     let instance_db = spacebot::db::connect_instance_db(
         &config.instance_dir.join("data"),
-        config.database.url.as_deref(),
+        config.database.url.as_ref(),
     )
     .await
     .context("failed to initialize instance database")?;
@@ -3122,7 +3122,7 @@ async fn initialize_agents(
         })?;
 
         // Per-agent database connections
-        let db = spacebot::db::Db::connect(&agent_config.data_dir, config.database.url.as_deref())
+        let db = spacebot::db::Db::connect(&agent_config.data_dir, config.database.url.as_ref())
             .await
             .with_context(|| {
                 format!(
