@@ -123,6 +123,9 @@ pub enum DbError {
     #[error("query failed: {0}")]
     Query(String),
 
+    #[error("unsupported database URL scheme: {0} (expected sqlite: or postgres:)")]
+    UnsupportedScheme(String),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
