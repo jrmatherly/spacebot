@@ -372,7 +372,16 @@ impl SecretsStore {
     }
 
     /// Delete a secret.
+    ///
+    /// Returns `Err(StoreLocked)` when the store is encrypted but
+    /// locked, matching the contract `set` and `get` honor. Without
+    /// this guard, callers like `rollback_access_token` and any
+    /// admin-side cleanup would silently no-op on a locked store and
+    /// leave stranded keys behind.
     pub fn delete(&self, name: &str) -> Result<(), SecretsError> {
+        if self.state() == StoreState::Locked {
+            return Err(SecretsError::StoreLocked);
+        }
         let write_txn = self.db.begin_write().map_err(|error| {
             SecretsError::Other(anyhow::anyhow!(
                 "failed to begin write transaction: {error}"

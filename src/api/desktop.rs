@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use super::state::ApiState;
 use crate::error::SecretsError;
-use crate::secrets::store::{SecretCategory, SecretsStore, StoreState};
+use crate::secrets::store::{SecretCategory, SecretsStore};
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub(super) struct DesktopTokens {
@@ -220,16 +220,10 @@ pub(super) async fn delete_desktop_tokens(
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // `SecretsStore::delete` does not gate on store state today — a
-    // locked store would silently no-op. POST and GET both surface 503
-    // on locked stores, so DELETE matches that contract by checking
-    // explicitly here. The user's sign-out gesture deserves the same
-    // "unlock and retry" affordance as the read/write paths.
-    if secrets.state() == StoreState::Locked {
-        tracing::warn!("desktop token delete rejected: daemon is locked");
-        return Err(StatusCode::SERVICE_UNAVAILABLE);
-    }
-
+    // `SecretsStore::delete` itself returns `Err(StoreLocked)` on a
+    // locked store, so the same `classify_secret_delete` mapper that
+    // handles per-key NotFound / Other cases also surfaces 503 to the
+    // caller. No pre-check needed.
     classify_secret_delete(secrets.delete("entra_access_token"), "entra_access_token")?;
     classify_secret_delete(secrets.delete("entra_refresh_token"), "entra_refresh_token")?;
 
