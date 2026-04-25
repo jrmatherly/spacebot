@@ -109,7 +109,10 @@ async fn sweep_tolerates_partially_initialized_agent_directory() {
     let stub_dir = tmp.path().join("agents").join("agent-half").join("data");
     std::fs::create_dir_all(&stub_dir).unwrap();
     let nonexistent_db = stub_dir.join("spacebot.db");
-    assert!(!nonexistent_db.exists(), "test invariant: db must be missing");
+    assert!(
+        !nonexistent_db.exists(),
+        "test invariant: db must be missing"
+    );
 
     // A second, valid agent DB so we can confirm the sweep continues
     // past the broken one and still produces output.

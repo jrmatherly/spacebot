@@ -302,13 +302,12 @@ impl MockTenant {
         let pkcs8 = private_key
             .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
             .expect("pkcs8 pem serialize");
-        self.signing_key =
-            EncodingKey::from_rsa_pem(pkcs8.as_bytes()).expect("rsa encoding key");
+        self.signing_key = EncodingKey::from_rsa_pem(pkcs8.as_bytes()).expect("rsa encoding key");
 
-        let n = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(public_key.n().to_bytes_be());
-        let e = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(public_key.e().to_bytes_be());
+        let n =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be());
+        let e =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be());
         self.kid = format!("test-kid-{}", chrono::Utc::now().timestamp_millis());
         self.jwks = json!({
             "keys": [{

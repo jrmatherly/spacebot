@@ -139,11 +139,10 @@ pub async fn sweep_orphans(
     // Direction 2: each `resource_ownership` row should reference a real
     // resource. Anything pointing at a missing resource (or a vanished
     // agent directory) is StaleOwnership.
-    let ownership_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
-    )
-    .fetch_all(instance_pool)
-    .await?;
+    let ownership_rows: Vec<(String, String, Option<String>)> =
+        sqlx::query_as("SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership")
+            .fetch_all(instance_pool)
+            .await?;
 
     let root = std::env::var("SPACEBOT_DIR").ok().map(PathBuf::from);
     for (rt, rid, owning_agent_id) in ownership_rows {
@@ -178,23 +177,20 @@ pub async fn sweep_orphans(
             continue;
         }
 
-        let agent_pool = match sqlx::SqlitePool::connect(&format!(
-            "sqlite://{}",
-            agent_db_path.display()
-        ))
-        .await
-        {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(
-                    agent_id = %agent_id,
-                    path = %agent_db_path.display(),
-                    %e,
-                    "orphan_sweep: skipping reverse-check on agent DB that won't open"
-                );
-                continue;
-            }
-        };
+        let agent_pool =
+            match sqlx::SqlitePool::connect(&format!("sqlite://{}", agent_db_path.display())).await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        agent_id = %agent_id,
+                        path = %agent_db_path.display(),
+                        %e,
+                        "orphan_sweep: skipping reverse-check on agent DB that won't open"
+                    );
+                    continue;
+                }
+            };
 
         let query = format!("SELECT 1 FROM {table} WHERE id = ?");
         let exists: Option<i64> = sqlx::query_scalar(&query)

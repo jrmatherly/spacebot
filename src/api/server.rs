@@ -3,10 +3,10 @@
 use super::state::ApiState;
 use super::{
     activity, admin_access_review, admin_claim, admin_orphans, admin_teams, agents, attachments,
-    audit, auth_config, bindings,
-    channels, config, cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging,
-    models, notifications, opencode_proxy, portal, projects, providers, resources, secrets,
-    settings, skills, ssh, system, tasks, tools, usage, wiki, workers,
+    audit, auth_config, bindings, channels, config, cortex, cron, desktop, factory, ingest, links,
+    mcp, me, memories, messaging, models, notifications, opencode_proxy, portal, projects,
+    providers, resources, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki,
+    workers,
 };
 
 use axum::Json;
