@@ -2068,6 +2068,7 @@ async fn run(
     let config_path = config.instance_dir.join("config.toml");
     api_state.set_config_path(config_path.clone()).await;
     api_state.set_instance_dir(config.instance_dir.clone());
+    api_state.set_database_url(config.database.url.clone());
     api_state.set_llm_manager(llm_manager.clone()).await;
     api_state.set_embedding_model(embedding_model.clone()).await;
     api_state.set_prompt_engine(prompt_engine.clone()).await;
@@ -3402,6 +3403,7 @@ async fn initialize_agents(
             api_state.set_secrets_store(store.clone());
         }
         api_state.set_instance_dir(config.instance_dir.clone());
+        api_state.set_database_url(config.database.url.clone());
     }
 
     // Run a startup warmup pass for every agent before adapters begin receiving

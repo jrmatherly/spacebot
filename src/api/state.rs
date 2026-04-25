@@ -159,6 +159,11 @@ pub struct ApiState {
     pub update_status: SharedUpdateStatus,
     /// Instance directory path for accessing instance-level skills.
     pub instance_dir: ArcSwap<PathBuf>,
+    /// Phase 11 backend selection. None falls back to per-agent SQLite.
+    /// `Some("sqlite:...")` or `Some("postgres://...")` routes through the
+    /// dialect-aware path in `db::Db::connect` and `db::connect_instance_db`.
+    /// Populated from `Config.database.url` at daemon startup.
+    pub database_url: ArcSwap<Option<String>>,
     /// Shared LLM manager for agent creation.
     pub llm_manager: RwLock<Option<Arc<LlmManager>>>,
     /// Shared embedding model for agent creation.
@@ -402,6 +407,7 @@ impl ApiState {
             provider_setup_tx,
             update_status: crate::update::new_shared_status(),
             instance_dir: ArcSwap::from_pointee(PathBuf::new()),
+            database_url: ArcSwap::from_pointee(None),
             llm_manager: RwLock::new(None),
             embedding_model: RwLock::new(None),
             prompt_engine: RwLock::new(None),
@@ -1177,6 +1183,12 @@ impl ApiState {
     /// Set the instance directory path.
     pub fn set_instance_dir(&self, dir: PathBuf) {
         self.instance_dir.store(Arc::new(dir));
+    }
+
+    /// Set the runtime database URL for new agent creation. None falls back
+    /// to per-agent SQLite under each agent's data dir.
+    pub fn set_database_url(&self, url: Option<String>) {
+        self.database_url.store(Arc::new(url));
     }
 
     /// Set the shared LLM manager for runtime agent creation.
