@@ -2,7 +2,8 @@
 
 use super::state::ApiState;
 use super::{
-    activity, admin_claim, admin_teams, agents, attachments, audit, auth_config, bindings,
+    activity, admin_access_review, admin_claim, admin_teams, agents, attachments, audit,
+    auth_config, bindings,
     channels, config, cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging,
     models, notifications, opencode_proxy, portal, projects, providers, resources, secrets,
     settings, skills, ssh, system, tasks, tools, usage, wiki, workers,
@@ -315,6 +316,9 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Admin claim-resource (admin-only, Phase 9): backfill ownership
         // for resources that predate the Entra rollout.
         .routes(routes!(admin_claim::claim_resource))
+        // Admin access-review (admin-only): SOC 2 CC6.7 quarterly evidence
+        // export covering identity, status, and team membership per principal.
+        .routes(routes!(admin_access_review::access_review))
 }
 
 /// Start the HTTP server on the given address.
