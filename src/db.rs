@@ -1,9 +1,10 @@
 //! Database connection management and migrations.
 //!
 //! Phase 11 introduces a Postgres backend alongside SQLite via the
-//! `DbPool` enum. Each variant holds a native typed sqlx pool — chrono
-//! types, `query_as!` macros, and `FromRow` derives all work naturally
-//! per variant because there's no `Any` driver in the dispatch path.
+//! `DbPool` enum. Each variant holds a native typed sqlx pool, so
+//! chrono types, `query_as!` macros, and `FromRow` derives all work
+//! naturally per variant because there's no `Any` driver in the
+//! dispatch path.
 //! Backend selection happens at runtime from the `DATABASE_URL` scheme:
 //! `sqlite:` (or unset) routes to SQLite; `postgres:`/`postgresql:`
 //! routes to Postgres. See `docs/design-docs/postgres-migration.md`.

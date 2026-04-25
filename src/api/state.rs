@@ -162,7 +162,9 @@ pub struct ApiState {
     /// Phase 11 backend selection. None falls back to per-agent SQLite.
     /// `Some("sqlite:...")` or `Some("postgres://...")` routes through the
     /// dialect-aware path in `db::Db::connect` and `db::connect_instance_db`.
-    /// Populated from `Config.database.url` at daemon startup.
+    /// Populated from `Config.database.url` at daemon startup. Handlers
+    /// must read via `(**state.database_url.load()).as_deref()` and must
+    /// not call `set_database_url`; mutation is reserved for startup paths.
     pub database_url: ArcSwap<Option<String>>,
     /// Shared LLM manager for agent creation.
     pub llm_manager: RwLock<Option<Arc<LlmManager>>>,
@@ -1187,6 +1189,12 @@ impl ApiState {
 
     /// Set the runtime database URL for new agent creation. None falls back
     /// to per-agent SQLite under each agent's data dir.
+    ///
+    /// STARTUP ONLY: invoked from `main.rs` after `set_instance_dir`. Do not
+    /// call from HTTP handlers or background tasks. The PR 11.1 sweep's
+    /// invariant ("pool is SQLite; Postgres URLs hard-error at connect")
+    /// rests on this URL being set once at startup, before any agent's
+    /// `Db::connect` is reached. Hot-swap is not supported in PR 11.1.
     pub fn set_database_url(&self, url: Option<String>) {
         self.database_url.store(Arc::new(url));
     }
