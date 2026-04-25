@@ -39,6 +39,10 @@ pub(super) struct TomlConfig {
     /// sub-block; more audit knobs (retention, rate-limits) may land later.
     #[serde(default)]
     pub(super) audit: TomlAuditConfig,
+    /// Phase 11 backend selection. When `[database]` is absent or `url` is
+    /// unset, the daemon falls back to per-agent SQLite under the data dir.
+    #[serde(default)]
+    pub(super) database: TomlDatabaseConfig,
 }
 
 /// Phase 5: audit-log config root. Only `[audit.export]` is populated today;
@@ -69,6 +73,15 @@ pub(super) struct TomlAuditExportConfig {
 
 pub(super) fn default_audit_export_interval_secs() -> u64 {
     86400
+}
+
+/// `[database]` block. Single field today; the parent struct exists so
+/// future knobs (max_connections override) can slot in without another
+/// `[database.*]` table.
+#[derive(Deserialize, Default)]
+pub(super) struct TomlDatabaseConfig {
+    /// `sqlite:` or `postgres:` URL. Unset means per-agent SQLite under data dir.
+    pub(super) url: Option<String>,
 }
 
 #[derive(Deserialize)]

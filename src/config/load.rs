@@ -1067,6 +1067,8 @@ impl Config {
             // Phase 5: no-export fallback when the minimal env-driven
             // loader is used (fresh install / no config.toml yet).
             audit: crate::config::types::AuditConfig::default(),
+            // Phase 11: minimal env-driven loader gets per-agent SQLite default.
+            database: crate::config::types::DatabaseConfig::default(),
         })
     }
 
@@ -2769,6 +2771,10 @@ impl Config {
             crate::config::types::AuditConfig { export }
         };
 
+        let database = crate::config::types::DatabaseConfig {
+            url: toml.database.url.clone(),
+        };
+
         let mut links: Vec<LinkDef> = toml
             .links
             .into_iter()
@@ -2862,6 +2868,7 @@ impl Config {
             spacedrive,
             telemetry,
             audit,
+            database,
         })
     }
 }
@@ -3000,5 +3007,34 @@ mod tests {
         let cfg = Config::from_toml(toml_config, instance_dir).unwrap();
         assert!(!cfg.spacedrive.enabled);
         assert_eq!(cfg.spacedrive.base_url, "http://127.0.0.1:8080");
+    }
+
+    #[test]
+    fn parses_database_url_when_block_present() {
+        let toml_input = r#"
+[database]
+url = "postgres://user:pass@host:5432/spacebot"
+"#;
+        let parsed: TomlConfig = toml::from_str(toml_input).unwrap();
+        assert_eq!(
+            parsed.database.url.as_deref(),
+            Some("postgres://user:pass@host:5432/spacebot")
+        );
+    }
+
+    #[test]
+    fn defaults_to_none_when_database_block_absent() {
+        let toml_input = "";
+        let parsed: TomlConfig = toml::from_str(toml_input).unwrap();
+        assert!(parsed.database.url.is_none());
+    }
+
+    #[test]
+    fn defaults_to_none_when_url_field_absent() {
+        let toml_input = r#"
+[database]
+"#;
+        let parsed: TomlConfig = toml::from_str(toml_input).unwrap();
+        assert!(parsed.database.url.is_none());
     }
 }
