@@ -101,13 +101,14 @@ async fn admin_can_claim() {
     // append-task path, not test slack.
     let mut audit_row: Option<(String, String, Option<String>, Option<String>, String)> = None;
     for _ in 0..5 {
-        if let Ok(row) = sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String)>(
-            "SELECT principal_key, action, resource_type, resource_id, metadata_json \
+        if let Ok(row) =
+            sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String)>(
+                "SELECT principal_key, action, resource_type, resource_id, metadata_json \
              FROM audit_events WHERE action = ? ORDER BY seq DESC LIMIT 1",
-        )
-        .bind("admin_claim_resource")
-        .fetch_one(&pool)
-        .await
+            )
+            .bind("admin_claim_resource")
+            .fetch_one(&pool)
+            .await
         {
             audit_row = Some(row);
             break;
@@ -122,7 +123,10 @@ async fn admin_can_claim() {
     assert_eq!(audited_rid.as_deref(), Some("m-orphan"));
     let metadata: serde_json::Value =
         serde_json::from_str(&audited_metadata).expect("metadata_json is valid JSON");
-    assert_eq!(metadata["claimed_for"], serde_json::json!(alice.principal_key()));
+    assert_eq!(
+        metadata["claimed_for"],
+        serde_json::json!(alice.principal_key())
+    );
 }
 
 #[tokio::test]
