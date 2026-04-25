@@ -51,9 +51,7 @@ async fn send_returns_error_when_401_persists_after_refresh() {
     let store = seeded_store(tmp.path().join("cli-tokens.json"));
     let client = make_authed_client_for_tests(&server.uri(), store);
 
-    let req = client
-        .http()
-        .get(format!("{}/api/something", server.uri()));
+    let req = client.http().get(format!("{}/api/something", server.uri()));
     let err = client
         .send(req)
         .await
@@ -98,9 +96,7 @@ async fn send_succeeds_after_one_refresh() {
     let store = seeded_store(tmp.path().join("cli-tokens.json"));
     let client = make_authed_client_for_tests(&server.uri(), store);
 
-    let req = client
-        .http()
-        .get(format!("{}/api/something", server.uri()));
+    let req = client.http().get(format!("{}/api/something", server.uri()));
     let resp = client.send(req).await.expect("expected 200 after refresh");
     assert_eq!(resp.status(), 200);
 }

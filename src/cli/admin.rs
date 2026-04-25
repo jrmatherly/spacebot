@@ -14,8 +14,8 @@ pub async fn claim_resource(
     // Default to the local daemon. Override with SPACEBOT_DAEMON_URL to
     // point at a remote daemon (e.g. when the operator is claiming on a
     // deployed instance).
-    let base = std::env::var("SPACEBOT_DAEMON_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:19898".into());
+    let base =
+        std::env::var("SPACEBOT_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:19898".into());
     let tenant_id = std::env::var("SPACEBOT_TENANT_ID")
         .map_err(|_| anyhow::anyhow!("set SPACEBOT_TENANT_ID"))?;
     let client_id = std::env::var("SPACEBOT_CLI_CLIENT_ID")

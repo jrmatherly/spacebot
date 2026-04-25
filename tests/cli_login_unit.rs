@@ -3,7 +3,7 @@
 //! `TokenPollOutcome` mapping for `authorization_pending`, `slow_down`,
 //! `expired_token`, and the success path.
 
-use spacebot::cli::login::{parse_device_code_response, parse_token_response, TokenPollOutcome};
+use spacebot::cli::login::{TokenPollOutcome, parse_device_code_response, parse_token_response};
 
 #[test]
 fn parses_device_code_initiation() {

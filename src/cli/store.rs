@@ -41,8 +41,8 @@ impl CliTokenStore {
             });
         }
         let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-        let mut store: Self = serde_json::from_slice(&bytes)
-            .with_context(|| format!("parse {}", path.display()))?;
+        let mut store: Self =
+            serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.display()))?;
         store.path = path.to_path_buf();
         Ok(store)
     }
@@ -60,8 +60,7 @@ impl CliTokenStore {
     /// POSIX, writes atomically with mode 0600 via tempfile-and-rename.
     pub fn save(&self) -> anyhow::Result<()> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("mkdir -p {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("mkdir -p {}", parent.display()))?;
         }
         let json = serde_json::to_vec_pretty(self)?;
         write_atomic_0600(&self.path, &json)

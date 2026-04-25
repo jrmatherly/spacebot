@@ -6,7 +6,7 @@ use anyhow::Context as _;
 use reqwest::{Client, RequestBuilder};
 use tokio::sync::Mutex;
 
-use crate::cli::login::{persist_tokens, TokenPollOutcome};
+use crate::cli::login::{TokenPollOutcome, persist_tokens};
 use crate::cli::store::CliTokenStore;
 
 pub struct AuthedClient {
@@ -25,8 +25,7 @@ impl AuthedClient {
         tenant_id: String,
         client_id: String,
     ) -> Self {
-        let token_url =
-            format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token");
+        let token_url = format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token");
         Self::with_token_url(store, base_url, client_id, token_url)
     }
 

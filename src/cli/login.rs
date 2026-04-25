@@ -59,7 +59,7 @@ pub fn parse_token_response(status: u16, body: &str) -> TokenPollOutcome {
         Err(_) => {
             return TokenPollOutcome::Fatal(format!(
                 "unparseable response (status {status}): {body}"
-            ))
+            ));
         }
     };
     match err.error.as_deref() {
@@ -137,12 +137,8 @@ pub async fn execute_login(args: LoginArgs) -> anyhow::Result<TokenResponseBody>
     println!("  To sign in, open {}", dc.verification_uri);
     println!("  and enter this code: {}", dc.user_code);
     println!();
-    println!(
-        "  ⚠  Only enter this code if YOU initiated `spacebot entra login` just now."
-    );
-    println!(
-        "  ⚠  Never enter a device code someone else sent you. That is a phishing attack."
-    );
+    println!("  ⚠  Only enter this code if YOU initiated `spacebot entra login` just now.");
+    println!("  ⚠  Never enter a device code someone else sent you. That is a phishing attack.");
     println!();
     println!();
     println!("This prompt expires in {} seconds.", dc.expires_in);
@@ -186,9 +182,7 @@ async fn execute_client_credentials(
     client_secret: &str,
     scopes: &[String],
 ) -> anyhow::Result<TokenResponseBody> {
-    let url = format!(
-        "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-    );
+    let url = format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token");
     let scope = scopes.first().cloned().unwrap_or_default();
     let scope_default = format!("{scope}/.default");
     let params = [
@@ -210,10 +204,7 @@ async fn execute_client_credentials(
 
 /// Mutate the in-memory store with the freshly-minted tokens, then flush
 /// to disk. Synchronous: callers MUST NOT `.await` this.
-pub fn persist_tokens(
-    store: &mut CliTokenStore,
-    tokens: &TokenResponseBody,
-) -> anyhow::Result<()> {
+pub fn persist_tokens(store: &mut CliTokenStore, tokens: &TokenResponseBody) -> anyhow::Result<()> {
     store.access_token = Some(tokens.access_token.clone());
     if let Some(rt) = &tokens.refresh_token {
         store.refresh_token = Some(rt.clone());
