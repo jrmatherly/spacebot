@@ -180,9 +180,7 @@ pub(super) async fn get_desktop_tokens(
         }
         Err(SecretsError::NotFound { .. }) => Ok((
             no_store_headers(),
-            Json(DesktopTokenStatus {
-                access_token: None,
-            }),
+            Json(DesktopTokenStatus { access_token: None }),
         )),
         Err(e) => {
             tracing::error!(error = %e, "secrets.get failed for entra_access_token");
