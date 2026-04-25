@@ -1,4 +1,12 @@
-# Postgres Backend — Phase 11 Design
+# Postgres Backend — Phase 11 Design (ARCHIVED)
+
+> **ARCHIVED 2026-04-25.** This document captured a Phase 11 architecture that was abandoned after first implementation attempt. The "AnyPool with runtime backend detection" approach hit a foundational incompatibility with the codebase: `sqlx::Any` does not implement `Type`/`Decode`/`Encode` for `chrono::DateTime<Utc>` or `NaiveDateTime` ([sqlx issue #1167](https://github.com/launchbadge/sqlx/issues/1167), open since April 2021). The codebase uses chrono pervasively (~145 cargo errors at first compile after the AnyPool sweep). SQLx 0.9-alpha does not restore chrono-Any support, and there is no PR in flight to do so.
+>
+> Replaced by the **enum-dispatch architecture** documented in `docs/design-docs/postgres-migration.md` (the active version). The replacement uses `enum DbPool { Sqlite(SqlitePool), Postgres(PgPool) }` with native typed pools per variant, mirroring the production pattern in [atuin](https://github.com/atuinsh/atuin)'s server-database trait.
+>
+> Preserved here as a historical record of the design exploration. Do NOT use this document to plan new work.
+
+---
 
 Status: **DESIGN.** Not yet implemented. Phase 11 is the next initiative after the 10-phase Entra ID rollout closed (PR #120, squash `5365c90`).
 
