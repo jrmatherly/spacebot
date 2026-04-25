@@ -257,10 +257,34 @@ fn enforce_loopback_preconditions(
     // attacker's chosen name. Entra's loopback docs require the redirect
     // URI be pinned to `127.0.0.1` specifically, so we pin the inbound
     // `Host` to the same set.
-    let host = headers
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    //
+    // Three rejection signals are distinguished in the log so an
+    // operator can tell "attacker omitted Host" from "proxy stripped
+    // it" from "non-UTF8 binary garbage":
+    //   * host_present=false       — header absent
+    //   * host_invalid_utf8=true   — header bytes were not valid UTF-8
+    //   * host=<value>             — header was present and a string,
+    //                                but did not match a loopback name
+    let host_header = headers.get(axum::http::header::HOST);
+    let host = match host_header {
+        None => {
+            tracing::warn!(
+                host_present = false,
+                "/api/desktop/tokens rejected: Host header absent"
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Some(v) => match v.to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                tracing::warn!(
+                    host_invalid_utf8 = true,
+                    "/api/desktop/tokens rejected: Host header bytes not valid UTF-8"
+                );
+                return Err(StatusCode::FORBIDDEN);
+            }
+        },
+    };
     if !is_loopback_host(host) {
         tracing::warn!(host = %host, "/api/desktop/tokens rejected non-loopback Host");
         return Err(StatusCode::FORBIDDEN);
