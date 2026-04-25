@@ -2954,7 +2954,7 @@ export interface components {
             resource_id: string;
             resource_type: string;
             shared_with_team_id?: string | null;
-            visibility?: string;
+            visibility?: components["schemas"]["Visibility"];
         };
         /**
          * @description What happens when a worker explicitly calls "close" on the browser.
@@ -5151,15 +5151,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid visibility value */
-            400: {
+            /** @description Caller is not a SpacebotAdmin */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Caller is not a SpacebotAdmin */
-            403: {
+            /** @description Request body failed validation */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

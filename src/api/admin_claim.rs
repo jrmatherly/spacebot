@@ -22,14 +22,10 @@ pub(super) struct ClaimRequest {
     pub resource_type: String,
     pub resource_id: String,
     pub owner_principal_key: String,
-    #[serde(default = "default_vis")]
-    pub visibility: String,
+    #[serde(default)]
+    pub visibility: Visibility,
     #[serde(default)]
     pub shared_with_team_id: Option<String>,
-}
-
-fn default_vis() -> String {
-    "personal".into()
 }
 
 #[utoipa::path(
@@ -38,8 +34,8 @@ fn default_vis() -> String {
     request_body = ClaimRequest,
     responses(
         (status = 200, description = "Ownership row written"),
-        (status = 400, description = "Invalid visibility value"),
         (status = 403, description = "Caller is not a SpacebotAdmin"),
+        (status = 422, description = "Request body failed validation"),
         (status = 500, description = "Pool unavailable or write failed"),
     ),
     tag = "admin",
@@ -65,14 +61,13 @@ pub(super) async fn claim_resource(
         .as_ref()
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let vis = Visibility::parse(&req.visibility).ok_or(StatusCode::BAD_REQUEST)?;
     if let Err(error) = set_ownership(
         &pool,
         &req.resource_type,
         &req.resource_id,
         None,
         &req.owner_principal_key,
-        vis,
+        req.visibility,
         req.shared_with_team_id.as_deref(),
     )
     .await
