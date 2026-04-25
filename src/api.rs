@@ -5,6 +5,7 @@
 //! Includes an SSE endpoint for realtime event streaming.
 
 mod activity;
+mod admin_claim;
 mod admin_teams;
 pub mod agents;
 mod attachments;

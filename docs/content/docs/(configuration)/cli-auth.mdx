@@ -1,0 +1,106 @@
+---
+title: CLI Authentication
+description: Sign the Spacebot CLI into Entra ID. Device-code flow for humans, client credentials for automation, and the admin claim-resource backfill for orphaned ownership rows.
+---
+
+# CLI Authentication
+
+The `spacebot` CLI authenticates to the daemon's REST API using the same Entra ID tokens the web UI uses. The daemon's JWT middleware validates every CLI request the same way it validates every SPA request. The CLI is not a privileged client. Two sign-in flows are supported: device code for humans and client credentials for automation.
+
+## Humans (device code)
+
+```bash
+spacebot entra login
+```
+
+The CLI prints a short code (e.g. `ABCD-1234`) and a URL. Open the URL in any browser on any device, enter the code, and complete Entra sign-in (including MFA if your Conditional Access policy requires it). The CLI polls Entra's token endpoint and exits once the tokens arrive.
+
+Tokens are cached at the platform-appropriate path under `directories::ProjectDirs::data_dir()`:
+
+| Platform | Path | File mode |
+|---|---|---|
+| Linux | `~/.local/share/spacebot/cli-tokens.json` | 0600 |
+| macOS | `~/Library/Application Support/spacebot/cli-tokens.json` | 0600 |
+| Windows | `%APPDATA%\spacebot\cli-tokens.json` | Per-user NTFS ACL |
+
+The file holds `access_token`, `refresh_token`, and `expires_at` as plain JSON. On POSIX the CLI writes atomically via tempfile-and-rename with mode 0600. On Windows the per-user `%APPDATA%` ACL provides confidentiality.
+
+The CLI never opens the daemon's `secrets.redb`. That file is daemon-owned (single-writer redb lock per Phase 8). A future enhancement can swap this storage for the OS keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service via the `keyring` crate) without changing the daemon contract.
+
+### Required Conditional Access
+
+Per research §12 S-C3, device code flow is a known phishing vector. The production tenant policy MUST include:
+
+1. **MFA required** for the CLI app registration.
+2. **Compliant device required** for device-code completion.
+3. **Access token lifetime** capped at 30 minutes (Token Lifetime Policy).
+
+With these in place, a phished device code does not grant full access.
+
+## Automation (client credentials)
+
+Set env vars before invoking `spacebot`:
+
+```bash
+export SPACEBOT_CLIENT_ID="<service-principal-client-id>"
+export SPACEBOT_CLIENT_SECRET="<service-principal-client-secret>"
+export SPACEBOT_TENANT_ID="<tenant-id>"
+export SPACEBOT_CLI_CLIENT_ID="<cli-client-id>"
+spacebot entra login
+spacebot entra admin claim-resource --type memory --id m-orphan --owner "tid:oid-of-alice"
+```
+
+`spacebot entra login` detects the env vars and uses `client_credentials` instead of device code. Tokens are not cached long-term; the CLI fetches a fresh token on every automation run.
+
+## Admin claim-resource
+
+```bash
+spacebot entra admin claim-resource \
+  --type memory \
+  --id m-orphan \
+  --owner "tid:oid-of-alice" \
+  --visibility personal
+```
+
+Writes a `resource_ownership` row for a resource that was created before Entra rollout and lacks an owner. Gated by the `SpacebotAdmin` role; success emits an `AdminClaimResource` audit event with `claimed_for` metadata for SOC 2 traceability. Non-admin callers receive 403.
+
+Available flags:
+
+- `--type <resource_type>`: e.g. `memory`, `task`, `cron_job`, `agent`.
+- `--id <resource_id>`: the resource's stable identifier.
+- `--owner <principal_key>`: the `{tid}:{oid}` of the new owner.
+- `--visibility <personal|team>`: defaults to `personal`.
+- `--team <team_id>`: required when visibility is `team`.
+
+## Logout
+
+```bash
+spacebot entra logout
+```
+
+Removes the cached token file. The next authenticated command will require a fresh `spacebot entra login`. Running `logout` when already signed out is idempotent.
+
+## Pointing at a remote daemon
+
+By default the CLI talks to `http://127.0.0.1:19898` (the local daemon's listening address). Override with `SPACEBOT_DAEMON_URL` to target a deployed daemon:
+
+```bash
+export SPACEBOT_DAEMON_URL="https://spacebot.internal.example.com"
+spacebot entra admin claim-resource --type memory --id m-orphan --owner "tid:oid-of-alice"
+```
+
+The Bearer token in the request is valid against any daemon whose Entra app registration trusts the same tenant. Phase 8's loopback-only endpoints (`POST`/`GET`/`DELETE /api/desktop/tokens`) are not used by the CLI. Only the regular JWT-authenticated routes apply.
+
+## Troubleshooting
+
+**`401 persists after token refresh; run spacebot entra login`**
+The refresh token is invalid (revoked, expired, or for a different tenant). Run `spacebot entra login` to obtain a fresh token pair.
+
+**`no refresh token; run spacebot entra login`**
+The cached token file has no `refresh_token`. This happens when the CLI was signed in with `client_credentials` (no refresh token is ever issued) and the access token later expired. Re-run the automation workflow; it will fetch a fresh token.
+
+**`set SPACEBOT_TENANT_ID` / `set SPACEBOT_CLI_CLIENT_ID`**
+Required env vars for `entra login` and `entra admin`. `SPACEBOT_TENANT_ID` is the Entra tenant GUID; `SPACEBOT_CLI_CLIENT_ID` is the CLI app registration's client_id.
+
+**File mode on POSIX is not 0600**
+The CLI writes atomically with mode 0600 on every save. If your umask strips the mode after external tooling touches the file, check the mode with `stat -c %a <path>` (Linux) or `stat -f %A <path>` (macOS). A surprising mode indicates an external process modified the file.

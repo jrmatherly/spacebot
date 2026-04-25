@@ -2,10 +2,10 @@
 
 use super::state::ApiState;
 use super::{
-    activity, admin_teams, agents, attachments, audit, auth_config, bindings, channels, config,
-    cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging, models,
-    notifications, opencode_proxy, portal, projects, providers, resources, secrets, settings,
-    skills, ssh, system, tasks, tools, usage, wiki, workers,
+    activity, admin_claim, admin_teams, agents, attachments, audit, auth_config, bindings,
+    channels, config, cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging,
+    models, notifications, opencode_proxy, portal, projects, providers, resources, secrets,
+    settings, skills, ssh, system, tasks, tools, usage, wiki, workers,
 };
 
 use axum::Json;
@@ -312,6 +312,9 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Admin team directory (admin-only, Phase 7 PR 5)
         .routes(routes!(admin_teams::list_admin_teams))
         .routes(routes!(admin_teams::list_team_members))
+        // Admin claim-resource (admin-only, Phase 9): backfill ownership
+        // for resources that predate the Entra rollout.
+        .routes(routes!(admin_claim::claim_resource))
 }
 
 /// Start the HTTP server on the given address.
