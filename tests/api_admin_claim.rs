@@ -99,16 +99,16 @@ async fn admin_can_claim() {
     // assert. Five 50ms ticks is a very generous bound for an in-memory
     // SQLite write; flakes here would point at a regression in the
     // append-task path, not test slack.
-    let mut audit_row: Option<(String, String, Option<String>, Option<String>, String)> = None;
+    type AuditRow = (String, String, Option<String>, Option<String>, String);
+    let mut audit_row: Option<AuditRow> = None;
     for _ in 0..5 {
-        if let Ok(row) =
-            sqlx::query_as::<_, (String, String, Option<String>, Option<String>, String)>(
-                "SELECT principal_key, action, resource_type, resource_id, metadata_json \
+        if let Ok(row) = sqlx::query_as::<_, AuditRow>(
+            "SELECT principal_key, action, resource_type, resource_id, metadata_json \
              FROM audit_events WHERE action = ? ORDER BY seq DESC LIMIT 1",
-            )
-            .bind("admin_claim_resource")
-            .fetch_one(&pool)
-            .await
+        )
+        .bind("admin_claim_resource")
+        .fetch_one(&pool)
+        .await
         {
             audit_row = Some(row);
             break;

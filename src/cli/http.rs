@@ -160,10 +160,10 @@ impl AuthedClient {
     ) -> anyhow::Result<String> {
         let _guard = self.refresh_lock.lock().await;
         // Double-check the cache; another caller may have refreshed.
-        if let Some(t) = self.cached_access_token().await {
-            if Some(&t) != failed_token.as_ref() {
-                return Ok(t);
-            }
+        if let Some(t) = self.cached_access_token().await
+            && Some(&t) != failed_token.as_ref()
+        {
+            return Ok(t);
         }
         self.refresh_access_token().await
     }
