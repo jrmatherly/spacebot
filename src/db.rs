@@ -200,9 +200,9 @@ async fn open_pool_and_migrate(
 ) -> Result<DbPool> {
     match dialect {
         Dialect::Sqlite => {
-            let pool = SqlitePool::connect(url)
-                .await
-                .with_context(|| format!("failed to connect to SQLite: {url}"))?;
+            let pool = SqlitePool::connect(url).await.with_context(|| {
+                format!("failed to connect to SQLite: {}", redact_url(url))
+            })?;
             let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(tree.sqlite_path()))
                 .await
                 .with_context(|| {
@@ -276,8 +276,28 @@ fn classify_url(url: &str) -> Result<(String, Dialect)> {
     } else if url.starts_with("postgres:") || url.starts_with("postgresql:") {
         Ok((url.to_string(), Dialect::Postgres))
     } else {
-        Err(DbError::UnsupportedScheme(url.to_string()).into())
+        Err(DbError::UnsupportedScheme(redact_url(url)).into())
     }
+}
+
+/// Strip user:pass credentials from a connection URL before embedding it in
+/// log lines, error messages, or panic strings. Replaces `user:pass@` with
+/// `***:***@`. Targets the realistic threat: a typo'd `postgres://` URL
+/// surfacing through `DbError::UnsupportedScheme` or a connect failure
+/// echoing the URL into operator logs.
+///
+/// Limitations: does not redact query-string credentials (`?password=...`)
+/// or URL-encoded user:pass forms. Sufficient for PR 11.1's two callers.
+fn redact_url(url: &str) -> String {
+    let Some(scheme_end) = url.find("://") else {
+        return url.to_string();
+    };
+    let after_scheme = scheme_end + 3;
+    let Some(at_offset) = url[after_scheme..].find('@') else {
+        return url.to_string();
+    };
+    let at = after_scheme + at_offset;
+    format!("{}***:***{}", &url[..after_scheme], &url[at..])
 }
 
 #[cfg(test)]
@@ -309,6 +329,40 @@ mod tests {
     fn classify_url_rejects_unknown_scheme() {
         let err = classify_url("mysql://x").unwrap_err();
         assert!(err.to_string().contains("mysql://x"));
+    }
+
+    #[test]
+    fn classify_url_redacts_credentials_in_unsupported_scheme_error() {
+        let err = classify_url("potgres://user:secret@host:5432/db").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("secret"),
+            "credentials leaked into UnsupportedScheme error: {msg}"
+        );
+        assert!(
+            !msg.contains("user"),
+            "user component leaked into UnsupportedScheme error: {msg}"
+        );
+        assert!(msg.contains("***:***@host:5432/db"));
+        assert!(msg.contains("potgres://"));
+    }
+
+    #[test]
+    fn redact_url_passes_credentialless_urls_through() {
+        assert_eq!(redact_url("sqlite:/tmp/x.db"), "sqlite:/tmp/x.db");
+        assert_eq!(redact_url("sqlite::memory:"), "sqlite::memory:");
+        assert_eq!(
+            redact_url("postgres://host:5432/db"),
+            "postgres://host:5432/db"
+        );
+    }
+
+    #[test]
+    fn redact_url_redacts_user_and_password() {
+        assert_eq!(
+            redact_url("postgres://alice:hunter2@host:5432/db"),
+            "postgres://***:***@host:5432/db"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
