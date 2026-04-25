@@ -309,4 +309,54 @@ mod tests {
         let err = classify_url("mysql://x").unwrap_err();
         assert!(err.to_string().contains("mysql://x"));
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbpool_sqlite_variant_dialect_and_adapter() {
+        let inner = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = DbPool::Sqlite(inner);
+        assert_eq!(pool.dialect(), Dialect::Sqlite);
+        assert_eq!(pool.adapter().now_expr(), "datetime('now')");
+        assert!(pool.as_sqlite().is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbpool_postgres_variant_as_sqlite_returns_err() {
+        let inner = sqlx::PgPool::connect_lazy("postgres://nope:5432/x")
+            .expect("connect_lazy parses URL without connecting");
+        let pool = DbPool::Postgres(inner);
+        assert_eq!(pool.dialect(), Dialect::Postgres);
+        assert_eq!(pool.adapter().now_expr(), "now()");
+        let err = pool.as_sqlite().unwrap_err();
+        assert!(
+            err.to_string().contains("requires SQLite backend"),
+            "expected SQLite-backend error, got: {err}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn db_connect_with_sqlite_url_runs_migrations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let url = format!("sqlite:{}/agent.db?mode=rwc", tmp.path().display());
+        let db = Db::connect(tmp.path(), Some(&url)).await.unwrap();
+        let pool = db.sqlite_pool().unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT count(*) FROM _sqlx_migrations")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert!(row.0 > 0, "expected at least one migration applied");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn db_connect_with_postgres_url_fails_fast_with_pr_pointer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let err = match Db::connect(tmp.path(), Some("postgres://nope:5432/x")).await {
+            Ok(_) => panic!("expected postgres URL to fail at connect"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("PR 11.2") || msg.contains("PR 11.3"),
+            "expected fail-fast message to point at later PR, got: {msg}"
+        );
+    }
 }
