@@ -1,13 +1,14 @@
-//! Phase 10 Task 10.4: JWKS rotation regression test (SOC 2 evidence).
+//! JWKS rotation regression test (SOC 2 CC6.6 / CC7.4 evidence).
 //! When Entra rotates its signing keys, the daemon's JWKS cache may hold
 //! the previous key set. The validator must detect an unknown `kid` on
 //! an incoming token and refetch JWKS rather than rejecting valid tokens
 //! signed by the new key. This test pins that contract end-to-end with
 //! a wiremock-backed `MockTenant` whose keys can be rotated mid-test.
 //!
-//! Per A-07: pure-Rust `rsa` crate, no `openssl` system dep.
-//! Per the Phase 10 plan: uses `MockTenant::mint_user_token` directly,
-//! not the `mint_mock_token` helper paired with `MockValidator`.
+//! Uses the pure-Rust `rsa` crate to avoid an `openssl` system dependency.
+//! Calls `MockTenant::mint_user_token` directly so the rotation path
+//! exercises the real `EntraValidator` and its JWKS refetch logic, not a
+//! `MockValidator` shortcut that skips signature checks.
 
 #[path = "support/mock_entra.rs"]
 mod mock_entra;

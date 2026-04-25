@@ -44,7 +44,7 @@ curl -H "Authorization: Bearer <admin-token>" \
     https://<deployment>/api/admin/orphans > orphans.json
 ```
 
-Expected: empty list in a mature deployment (everything claimed). MissingOwnership rows in a freshly-rolled-out tenant are normal until Phase 9's `spacebot entra admin claim-resource` has been run for each pre-Entra resource.
+Expected: empty list in a mature deployment (everything claimed). MissingOwnership rows in a freshly-rolled-out tenant are normal until `spacebot entra admin claim-resource` has been run for each pre-Entra resource.
 
 ## Cross-references
 

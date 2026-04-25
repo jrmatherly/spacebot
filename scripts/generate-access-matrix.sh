@@ -11,8 +11,9 @@
 #   SPACEBOT_ADMIN_TOKEN=$(spacebot entra admin token) \
 #       scripts/generate-access-matrix.sh
 #
-# SOC 2 evidence: this script's output is artifact #3 in the evidence
-# index. Run quarterly (or whenever the auditor asks).
+# SOC 2 evidence: this script's output is listed in
+# docs/security/entra-soc2-evidence-index.md. Run quarterly (or
+# whenever the auditor asks).
 
 set -euo pipefail
 

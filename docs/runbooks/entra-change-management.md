@@ -37,7 +37,7 @@ GitHub branch protection enforces the required-reviewer count. CODEOWNERS declar
 | SPA redirect URIs | N/A (additive only) | New deployment |
 | Desktop redirect URIs (50000-50009) | N/A (fixed set) | n/a |
 
-Rotation playbooks land in `docs/runbooks/entra-credential-rotation.md` (future, not in this phase).
+Rotation playbooks land in `docs/runbooks/entra-credential-rotation.md` (planned, not yet shipped).
 
 ## Cross-references
 

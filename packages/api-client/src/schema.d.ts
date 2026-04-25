@@ -3492,6 +3492,13 @@ export interface components {
             updated_at: string;
             value: string;
         };
+        /**
+         * @description Output format for the access-review export. Typed (not stringly-
+         *     typed) so the Query extractor rejects unknown values like
+         *     `?format=xml` at the boundary instead of silently downgrading to CSV.
+         * @enum {string}
+         */
+        Format: "csv" | "json";
         GlobalSettingsResponse: {
             api_bind: string;
             api_enabled: boolean;
@@ -3887,13 +3894,34 @@ export interface components {
             /** Format: int64 */
             server_startup_timeout_secs?: number | null;
         };
+        /**
+         * @description Direction of the orphan: `MissingOwnership` means the agent DB has the
+         *     resource but the instance lacks an ownership row; `StaleOwnership`
+         *     means the instance has the row but no agent DB has the resource.
+         *
+         *     Serialized snake_case to match the wire convention established by
+         *     `Visibility` (`src/auth/principals.rs`).
+         * @enum {string}
+         */
+        OrphanKind: "missing_ownership" | "stale_ownership";
+        /**
+         * @description Wire-shape DTO for a single orphan finding. `kind` is the typed
+         *     [`OrphanKind`] enum (snake_case on the wire); the schema generator
+         *     emits a discriminated string union for TypeScript clients.
+         */
         OrphanReport: {
-            kind: string;
+            kind: components["schemas"]["OrphanKind"];
             owning_agent_id?: string | null;
             resource_id: string;
             resource_type: string;
         };
+        /**
+         * @description Response body for `GET /admin/orphans`. `agent_dbs_scanned` is `u32`
+         *     for a deterministic wire width; the count is bounded well below 4
+         *     billion in practice.
+         */
         OrphansResponse: {
+            /** Format: int32 */
             agent_dbs_scanned: number;
             orphans: components["schemas"]["OrphanReport"][];
         };
@@ -5097,7 +5125,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description csv (default) or json */
-                format?: string;
+                format?: components["schemas"]["Format"];
             };
             header?: never;
             path?: never;
@@ -5107,6 +5135,13 @@ export interface operations {
         responses: {
             /** @description Access-review report (CSV or JSON) */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid query parameter (e.g. unknown format) */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,7 +1,7 @@
-//! Phase 10 Task 10.5: orphan-resource sweep regression coverage.
-//! Pins the contract of `spacebot::admin::sweep_orphans` for both
-//! directions (MissingOwnership + StaleOwnership) plus the negative
-//! "partially-initialized agent" path required by IMPORTANT-7 #6.
+//! Orphan-resource sweep regression coverage. Pins the contract of
+//! `spacebot::admin::sweep_orphans` for both directions
+//! (MissingOwnership + StaleOwnership) plus the negative
+//! "partially-initialized agent" path and the path-traversal guard.
 
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
@@ -89,21 +89,21 @@ async fn sweep_reports_resources_without_ownership_rows() {
         .unwrap();
 
     assert!(
-        orphans.iter().any(|o| o.resource_id == "m-orphan-1"
-            && matches!(o.kind, spacebot::admin::OrphanKind::MissingOwnership)),
+        orphans.iter().any(|o| o.resource_id() == "m-orphan-1"
+            && matches!(o.kind(), spacebot::admin::OrphanKind::MissingOwnership)),
         "expected m-orphan-1 in MissingOwnership, got {orphans:?}",
     );
     assert!(
-        !orphans.iter().any(|o| o.resource_id == "m-owned"),
+        !orphans.iter().any(|o| o.resource_id() == "m-owned"),
         "m-owned has an ownership row, must NOT be in orphan list, got {orphans:?}",
     );
 }
 
 #[tokio::test]
 async fn sweep_tolerates_partially_initialized_agent_directory() {
-    // IMPORTANT-7 #6: an agent directory exists but `spacebot.db` is
-    // missing (partial init or concurrent delete). Sweep must not crash;
-    // it must log and proceed.
+    // An agent directory exists but `spacebot.db` is missing (partial
+    // init or concurrent delete). Sweep must not crash; it must log
+    // and proceed.
     let pool = instance_pool().await;
     let tmp = tempfile::tempdir().expect("tempdir");
     let stub_dir = tmp.path().join("agents").join("agent-half").join("data");
@@ -126,18 +126,18 @@ async fn sweep_tolerates_partially_initialized_agent_directory() {
 
     // m-fresh has no ownership row, so it should still be flagged.
     assert!(
-        orphans.iter().any(|o| o.resource_id == "m-fresh"
-            && matches!(o.kind, spacebot::admin::OrphanKind::MissingOwnership)),
+        orphans.iter().any(|o| o.resource_id() == "m-fresh"
+            && matches!(o.kind(), spacebot::admin::OrphanKind::MissingOwnership)),
         "expected sweep to continue past the broken agent and find m-fresh; got {orphans:?}",
     );
 }
 
 #[tokio::test]
 async fn sweep_reports_stale_ownership_when_agent_db_is_gone() {
-    // I4: Direction-2 of the sweep must flag rows in resource_ownership
+    // Direction-2 of the sweep must flag rows in resource_ownership
     // whose owning agent has no per-agent DB on disk. Without this
-    // coverage the StaleOwnership branch (src/admin.rs Direction-2)
-    // would be unverified despite being half the sweep's contract.
+    // coverage the StaleOwnership branch in `src/admin.rs` would be
+    // unverified despite being half the sweep's contract.
     let pool = instance_pool().await;
     let alice = alice_ctx();
     upsert_user_from_auth(&pool, &alice).await.unwrap();
@@ -175,15 +175,15 @@ async fn sweep_reports_stale_ownership_when_agent_db_is_gone() {
     let orphans = spacebot::admin::sweep_orphans(&pool, &[]).await.unwrap();
 
     assert!(
-        orphans.iter().any(|o| o.resource_id == "m-stale"
-            && matches!(o.kind, spacebot::admin::OrphanKind::StaleOwnership)),
+        orphans.iter().any(|o| o.resource_id() == "m-stale"
+            && matches!(o.kind(), spacebot::admin::OrphanKind::StaleOwnership)),
         "expected m-stale in StaleOwnership; got {orphans:?}",
     );
 }
 
 #[tokio::test]
 async fn sweep_rejects_path_traversal_in_owner_agent_id() {
-    // C3 regression guard: a malicious owner_agent_id like
+    // Path-traversal regression guard: a malicious owner_agent_id like
     // "../../etc" must not redirect the sweep to read arbitrary files.
     // is_safe_agent_id rejects the value, so the sweep skips the row
     // entirely and produces no orphans for it.
@@ -216,7 +216,7 @@ async fn sweep_rejects_path_traversal_in_owner_agent_id() {
     // with a tracing::warn!. The audit-log surface still records the
     // sweep run via the calling endpoint's AdminRead emission.
     assert!(
-        !orphans.iter().any(|o| o.resource_id == "m-evil"),
+        !orphans.iter().any(|o| o.resource_id() == "m-evil"),
         "path-traversal owner_agent_id must not appear in orphan output; got {orphans:?}",
     );
 }

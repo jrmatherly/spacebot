@@ -1,26 +1,36 @@
-//! SOC 2 evidence-gathering helpers that operate at the instance level
-//! (above any single agent's scope). Currently exposes the orphan-resource
-//! sweep that detects two classes of resource_ownership drift:
+//! Instance-level evidence-gathering helpers. The sweep runs above any
+//! single agent's scope and detects two classes of `resource_ownership`
+//! drift:
 //!
 //! - `MissingOwnership`: a resource exists in an agent DB but has no row
 //!   in the instance-level `resource_ownership` table. These are
-//!   pre-Entra-rollout resources awaiting an admin claim
-//!   (`spacebot entra admin claim-resource`).
+//!   pre-Entra-rollout resources awaiting an admin claim via
+//!   `spacebot entra admin claim-resource`.
 //! - `StaleOwnership`: a `resource_ownership` row exists but the
 //!   referenced resource is gone (cross-DB FK is not enforceable in
 //!   SQLite, so these accumulate when agents are deleted).
 //!
-//! Per Phase 10 IMPORTANT-7: the sweep runs at instance scope, not inside
-//! a per-agent cortex, to keep the AgentId isolation boundary intact. It
-//! is currently report-only; auto-deletion of stale rows is gated on a
-//! future config flag (`[audit.orphan_sweep] auto_delete_stale = false`).
+//! Running at instance scope (not inside any per-agent cortex) keeps the
+//! AgentId isolation boundary intact: the sweep is the only authorized
+//! cross-agent reader, gated by `SpacebotAdmin` at the calling endpoint.
+//! It is currently report-only; auto-deletion of stale rows is gated on
+//! a future config flag (`[audit.orphan_sweep] auto_delete_stale = false`).
+
+use serde::{Deserialize, Serialize};
 
 use std::path::{Path, PathBuf};
 
 /// Direction of the orphan: `MissingOwnership` means the agent DB has the
 /// resource but the instance lacks an ownership row; `StaleOwnership`
 /// means the instance has the row but no agent DB has the resource.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serialized snake_case to match the wire convention established by
+/// `Visibility` (`src/auth/principals.rs`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum OrphanKind {
     MissingOwnership,
     StaleOwnership,
@@ -28,12 +38,31 @@ pub enum OrphanKind {
 
 /// One detected orphan. Logged via `tracing::warn!` and (when scheduling
 /// is wired up) emitted as an `OrphanDetected` audit event by the caller.
-#[derive(Debug, Clone)]
+/// Fields are crate-scoped; external consumers (including integration
+/// tests) read through the accessor methods or the wire DTO
+/// (`crate::api::admin_orphans::OrphanReport`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Orphan {
-    pub kind: OrphanKind,
-    pub resource_type: String,
-    pub resource_id: String,
-    pub owning_agent_id: Option<String>,
+    pub(crate) kind: OrphanKind,
+    pub(crate) resource_type: String,
+    pub(crate) resource_id: String,
+    pub(crate) owning_agent_id: Option<String>,
+}
+
+impl Orphan {
+    pub fn kind(&self) -> OrphanKind {
+        self.kind
+    }
+    pub fn resource_type(&self) -> &str {
+        &self.resource_type
+    }
+    pub fn resource_id(&self) -> &str {
+        &self.resource_id
+    }
+    pub fn owning_agent_id(&self) -> Option<&str> {
+        self.owning_agent_id.as_deref()
+    }
 }
 
 /// Map an agent-DB path back to its agent_id. The convention is
@@ -88,7 +117,9 @@ fn table_for_resource_type(rt: &str) -> Option<&'static str> {
 /// Sweep every supplied agent DB plus every `resource_ownership` row,
 /// returning the union of MissingOwnership + StaleOwnership findings.
 /// Race-tolerant: a missing or partially-initialized agent DB is logged
-/// and skipped, not crashed (per IMPORTANT-7 #5).
+/// via `tracing::warn!` and skipped, not crashed. Concurrent agent
+/// creation or deletion during a sweep is expected and surfaces as a
+/// follow-up cycle's findings.
 pub async fn sweep_orphans(
     instance_pool: &sqlx::SqlitePool,
     agent_db_paths: &[PathBuf],

@@ -50,6 +50,8 @@ struct InterfaceAssets;
         // body / request body types are still auto-registered via each
         // handler's `#[utoipa::path(responses(...), body = ...)]`.
         schemas(
+            crate::admin::OrphanKind,
+            crate::api::admin_access_review::Format,
             crate::auth::principals::ResourceScope,
         ),
     )

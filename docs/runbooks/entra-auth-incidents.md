@@ -37,7 +37,7 @@ Operator guide for diagnosing and recovering from Entra ID auth incidents. Sourc
 4. If Microsoft-side: communicate to customers; degrade gracefully (the daemon already fails 503, not 500).
 5. If local: check egress rules from the pod to `login.microsoftonline.com`; verify the JWKS cache has a fallback.
 
-The Phase 10 fix to `src/auth/jwks.rs` ensures that an unknown `kid` triggers an immediate JWKS refetch (refresh_interval = 0; retry_interval = 10s). If keys were rotated upstream, the validator picks up the new set on the first request after rotation rather than waiting 10 minutes.
+`src/auth/jwks.rs` configures jwt-authorizer with `refresh_interval = 0` and `retry_interval = 10s`. An unknown `kid` triggers an immediate JWKS refetch, so keys rotated upstream are picked up on the first request after rotation. The retry interval rate-limits hits when the JWKS endpoint is itself failing.
 
 ### Audit chain tamper
 

@@ -14,15 +14,22 @@ use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::roles::{ROLE_ADMIN, require_role};
 
+/// Output format for the access-review export. Typed (not stringly-
+/// typed) so the Query extractor rejects unknown values like
+/// `?format=xml` at the boundary instead of silently downgrading to CSV.
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum Format {
+    #[default]
+    Csv,
+    Json,
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ReviewQuery {
-    #[serde(default = "default_format")]
-    pub format: String,
-}
-
-fn default_format() -> String {
-    "csv".into()
+    #[serde(default)]
+    pub format: Format,
 }
 
 #[derive(sqlx::FromRow)]
@@ -39,9 +46,10 @@ struct Row {
 #[utoipa::path(
     get,
     path = "/admin/access-review",
-    params(("format" = Option<String>, Query, description = "csv (default) or json")),
+    params(("format" = Option<Format>, Query, description = "csv (default) or json")),
     responses(
         (status = 200, description = "Access-review report (CSV or JSON)"),
+        (status = 400, description = "Invalid query parameter (e.g. unknown format)"),
         (status = 403, description = "Caller is not a SpacebotAdmin"),
         (status = 500, description = "Pool unavailable or query failed"),
     ),
@@ -97,6 +105,10 @@ pub(super) async fn access_review(
         let actor = ctx.principal_key();
         let principal_type = ctx.principal_type.as_canonical_str().to_string();
         let row_count = rows.len();
+        let format = match q.format {
+            Format::Csv => "csv",
+            Format::Json => "json",
+        };
         tokio::spawn(async move {
             if let Err(error) = audit
                 .append(crate::audit::AuditEvent {
@@ -108,7 +120,10 @@ pub(super) async fn access_review(
                     result: "allowed".into(),
                     source_ip: None,
                     request_id: None,
-                    metadata: serde_json::json!({ "row_count": row_count }),
+                    metadata: serde_json::json!({
+                        "row_count": row_count,
+                        "format": format,
+                    }),
                 })
                 .await
             {
@@ -117,7 +132,7 @@ pub(super) async fn access_review(
         });
     }
 
-    let response = if q.format == "json" {
+    let response = if matches!(q.format, Format::Json) {
         let data: Vec<serde_json::Value> = rows
             .iter()
             .map(|r| {

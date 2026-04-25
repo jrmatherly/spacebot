@@ -3,10 +3,10 @@
 //! JSON. Admin-gated; the sweep emits an `AdminRead` audit event so the
 //! cross-agent scan is itself logged.
 //!
-//! Per Phase 10 IMPORTANT-7: this is a manual on-demand evidence
-//! collection point. Automated weekly scheduling (with dry-run defaults
-//! and per-agent-DB AdminRead events) is a follow-up that requires a new
-//! instance-level maintenance subsystem outside the per-agent cortex.
+//! Manual on-demand evidence collection. Automated weekly scheduling
+//! (with dry-run defaults and per-agent-DB AdminRead events) is a
+//! follow-up that requires a new instance-level maintenance subsystem
+//! outside the per-agent cortex.
 
 use std::sync::Arc;
 
@@ -20,27 +20,30 @@ use crate::api::state::ApiState;
 use crate::auth::context::AuthContext;
 use crate::auth::roles::{ROLE_ADMIN, require_role};
 
-#[derive(Serialize, utoipa::ToSchema)]
+/// Wire-shape DTO for a single orphan finding. `kind` is the typed
+/// [`OrphanKind`] enum (snake_case on the wire); the schema generator
+/// emits a discriminated string union for TypeScript clients.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(super) struct OrphanReport {
-    pub kind: String,
+    pub kind: OrphanKind,
     pub resource_type: String,
     pub resource_id: String,
     pub owning_agent_id: Option<String>,
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+/// Response body for `GET /admin/orphans`. `agent_dbs_scanned` is `u32`
+/// for a deterministic wire width; the count is bounded well below 4
+/// billion in practice.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(super) struct OrphansResponse {
     pub orphans: Vec<OrphanReport>,
-    pub agent_dbs_scanned: usize,
+    pub agent_dbs_scanned: u32,
 }
 
 impl From<Orphan> for OrphanReport {
     fn from(o: Orphan) -> Self {
         Self {
-            kind: match o.kind {
-                OrphanKind::MissingOwnership => "missing_ownership".into(),
-                OrphanKind::StaleOwnership => "stale_ownership".into(),
-            },
+            kind: o.kind,
             resource_type: o.resource_type,
             resource_id: o.resource_id,
             owning_agent_id: o.owning_agent_id,
@@ -80,7 +83,10 @@ pub(super) async fn list_orphans(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let agent_dbs = discover_agent_db_paths();
-    let agent_dbs_scanned = agent_dbs.len();
+    // u32 on the wire keeps the schema deterministic across 32/64-bit
+    // hosts; agent counts on a single instance are bounded well below
+    // 4 billion so the saturating cast is a no-op in practice.
+    let agent_dbs_scanned = u32::try_from(agent_dbs.len()).unwrap_or(u32::MAX);
     let orphans = sweep_orphans(&pool, &agent_dbs).await.map_err(|error| {
         tracing::error!(%error, "admin_orphans: sweep_orphans failed");
         StatusCode::INTERNAL_SERVER_ERROR

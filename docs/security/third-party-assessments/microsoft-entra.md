@@ -20,7 +20,7 @@
 ## Compensating controls
 
 - JWT validation is local via JWKS cache, so the daemon survives brief Entra hiccups.
-- The Phase 10 jwks.rs fix sets `refresh_interval = 0`, so unknown-kid tokens trigger an immediate refetch when Entra rotates keys.
+- `src/auth/jwks.rs` sets `refresh_interval = 0` so unknown-kid tokens trigger an immediate refetch when Entra rotates keys.
 - The legacy `auth_token` path remains available as an emergency admin route via config.
 - The audit log is append-only and verifiable without Entra dependency.
 
