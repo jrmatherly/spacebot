@@ -1,18 +1,25 @@
-// Phase 6 Task 6.A.5 — React wrapper that gates the app shell behind
-// Entra sign-in. Exposes a four-state machine:
+// React wrapper that gates the app shell behind Entra sign-in. Exposes
+// a six-state machine:
 //
-//   loading        — pre-init, async bootstrap in-flight
-//   entra_disabled — daemon is in static-token mode; render children directly
-//   unauthenticated — Entra configured but no active account yet
-//   authenticated  — MSAL has an account and token provider is wired
+//   waiting_for_server — Tauri cold-start: daemon URL not resolved yet.
+//                        Defers loadAuthConfig() until ServerProvider
+//                        publishes a usable URL.
+//   loading            — async bootstrap in-flight (loadAuthConfig +
+//                        getMsalInstance + handleRedirectPromise).
+//   entra_disabled     — daemon is in static-token mode; render children
+//                        directly.
+//   unauthenticated    — Entra configured but no active account yet.
+//   authenticated      — MSAL has an account, token provider is wired.
+//   error              — bootstrap failed; show a diagnostic banner
+//                        instead of fail-open to entra_disabled.
 //
 // Responsibilities:
 //   - handleRedirectPromise for return-from-Entra redirect flows
 //   - setActiveAccount so MsalProvider has a stable account throughout the tree
 //   - setAuthTokenProvider wires a silent-acquisition closure into the
 //     api-client so every outbound call can attach a Bearer token
-//   - SignInPrompt child renders the interactive sign-in button + A-17
-//     "stay signed in on this device" opt-in checkbox
+//   - SignInPrompt child renders the interactive sign-in button (and a
+//     "stay signed in on this device" opt-in checkbox in browser mode)
 
 import {
 	InteractionRequiredAuthError,
@@ -25,11 +32,14 @@ import {
 	type AuthExhaustedDetail,
 } from "@spacebot/api-client/client";
 import { useEffect, useState, type ReactNode } from "react";
+import { useServer } from "@/hooks/useServer";
+import { IS_DESKTOP } from "@/platform";
 import { getActiveScopes, getMsalInstance, loadAuthConfig } from "./msalConfig";
 
 const TRUST_DEVICE_KEY = "spacebot.auth.trust_device";
 
 type GateState =
+	| { kind: "waiting_for_server" }
 	| { kind: "loading" }
 	| { kind: "entra_disabled" }
 	| { kind: "unauthenticated"; msal: PublicClientApplication }
@@ -37,7 +47,16 @@ type GateState =
 	| { kind: "error"; message: string };
 
 export function AuthGate({ children }: { children: ReactNode }) {
-	const [state, setState] = useState<GateState>({ kind: "loading" });
+	// In desktop mode the daemon URL is async (Tauri command +
+	// localStorage reconcile in useServer). Until ServerProvider
+	// publishes a non-empty URL, loadAuthConfig() would fetch against
+	// an unresolved/stale base. Browser mode is same-origin (relative
+	// API base) so the URL gate is a no-op there.
+	const { serverUrl } = useServer();
+	const serverReady = !IS_DESKTOP || serverUrl.length > 0;
+	const [state, setState] = useState<GateState>(
+		serverReady ? { kind: "loading" } : { kind: "waiting_for_server" },
+	);
 
 	// authedFetch dispatches `spacebot:auth-exhausted` on 401
 	// refresh-exhaustion. SSE via fetchEventSource(fetch: authedFetch)
@@ -46,7 +65,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	//
 	// TODO: replace console.warn with a toast banner + "Re-sign in"
 	// CTA wired to acquireTokenRedirect. Trigger: when the
-	// notifications surface lands (tracked as a Phase 7 scope item).
+	// notifications surface lands.
 	useEffect(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent<AuthExhaustedDetail>).detail;
@@ -60,6 +79,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	}, []);
 
 	useEffect(() => {
+		if (!serverReady) return;
+		// Re-entering the bootstrap (e.g. desktop URL just resolved):
+		// flip out of waiting_for_server so the user sees "Signing in…"
+		// rather than nothing.
+		setState((prev) =>
+			prev.kind === "waiting_for_server" ? { kind: "loading" } : prev,
+		);
 		let cancelled = false;
 
 		(async () => {
@@ -121,8 +147,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [serverReady]);
 
+	if (state.kind === "waiting_for_server") {
+		return (
+			<div
+				data-testid="auth-gate-waiting-server"
+				role="status"
+				aria-live="polite"
+			>
+				Connecting to Spacebot…
+			</div>
+		);
+	}
 	if (state.kind === "loading") {
 		return (
 			<div data-testid="auth-gate-loading" role="status" aria-live="polite">
@@ -163,14 +200,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			</MsalProvider>
 		);
 	}
-	return <MsalProvider instance={state.msal}>{children}</MsalProvider>;
+	if (state.kind === "authenticated") {
+		return <MsalProvider instance={state.msal}>{children}</MsalProvider>;
+	}
+	// Exhaustiveness guard: a new GateState variant added without
+	// updating this render chain becomes a TypeScript compile error
+	// (assignment to `never`), not a silent default-case render.
+	const _exhaustive: never = state;
+	return _exhaustive;
 }
 
 /// Builds the closure that `api-client/client.ts` calls on every request
 /// that needs a Bearer token. Silent acquisition is the happy path; if
 /// MSAL says "user must interact," we kick off a full-page redirect and
-/// return a never-resolving Promise so authedFetch (Task 6.B.1) suspends
-/// gracefully until the redirect completes and the tab reloads.
+/// return a never-resolving Promise so authedFetch suspends gracefully
+/// until the redirect completes and the tab reloads.
 function makeTokenProvider(
 	msal: PublicClientApplication,
 	account: AccountInfo,
@@ -183,12 +227,39 @@ function makeTokenProvider(
 			return result.accessToken;
 		} catch (err) {
 			if (err instanceof InteractionRequiredAuthError) {
-				// Full-page navigation; the returned Promise resolves after
-				// the page is gone. Using `never` ensures authedFetch's retry
-				// loop suspends rather than racing the navigation.
-				void msal.acquireTokenRedirect({ scopes, account });
+				// Kick off the redirect. Real MSAL navigates the page;
+				// the Tauri shim opens the system browser. Both resolve
+				// to a "page is gone or about to be" state, so we
+				// return a never-resolving Promise and let authedFetch
+				// suspend. If the redirect itself fails (locked store,
+				// daemon unreachable in Tauri mode), surface it via
+				// `spacebot:auth-exhausted` so the listener at the top
+				// of AuthGate logs it and a future toast can pick it up
+				// — never silently leave authedFetch hanging.
+				msal.acquireTokenRedirect({ scopes, account }).catch((redirectErr) => {
+					const message =
+						redirectErr instanceof Error
+							? redirectErr.message
+							: String(redirectErr);
+					console.error(
+						`[AuthGate] acquireTokenRedirect failed: ${message}`,
+					);
+					window.dispatchEvent(
+						new CustomEvent<AuthExhaustedDetail>(
+							"spacebot:auth-exhausted",
+							{
+								detail: {
+									url: "(internal:acquireTokenRedirect)",
+									reason: "refresh_failed",
+								},
+							},
+						),
+					);
+				});
 				return new Promise<string | null>(() => {
-					/* never resolves; page navigates away */
+					/* never resolves; page navigates away or the
+					 * auth-exhausted dispatch above is the user's
+					 * recovery path. */
 				});
 			}
 			throw err;
@@ -197,10 +268,12 @@ function makeTokenProvider(
 }
 
 function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
-	// A-17: "Stay signed in on this device" opt-in. Default off; reading
-	// the localStorage key here (not from msalConfig) because the checkbox
-	// state must reflect the value BEFORE the next MSAL init reads it on
-	// reload.
+	// "Stay signed in on this device" opt-in. Default off; reading the
+	// localStorage key here (not from msalConfig) because the checkbox
+	// state must reflect the value BEFORE the next MSAL init reads it
+	// on reload. The opt-in is browser-only; in Tauri the daemon's
+	// secret store handles persistence and localStorage is not the
+	// cache MSAL would use anyway.
 	const [trust, setTrust] = useState(
 		window.localStorage.getItem(TRUST_DEVICE_KEY) === "true",
 	);
@@ -219,23 +292,41 @@ function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
 		await msal.loginRedirect({ scopes });
 	};
 
+	const buttonLabel = IS_DESKTOP
+		? "Sign in with Microsoft (opens system browser)"
+		: "Sign in with Microsoft";
+	const ariaLabel = IS_DESKTOP
+		? "Sign in with Microsoft Entra ID; opens the system browser to complete sign-in"
+		: "Sign in with Microsoft Entra ID";
+
 	return (
 		<div data-testid="auth-gate-signin" role="status">
-			<button
-				type="button"
-				onClick={onSignIn}
-				aria-label="Sign in with Microsoft Entra ID"
-			>
-				Sign in with Microsoft
+			<button type="button" onClick={onSignIn} aria-label={ariaLabel}>
+				{buttonLabel}
 			</button>
-			<label style={{ display: "block", marginTop: "0.75rem" }}>
-				<input
-					type="checkbox"
-					checked={trust}
-					onChange={(e) => onTrustToggle(e.target.checked)}
-				/>
-				Stay signed in on this device (uses encrypted local storage)
-			</label>
+			{!IS_DESKTOP && (
+				<label style={{ display: "block", marginTop: "0.75rem" }}>
+					<input
+						type="checkbox"
+						checked={trust}
+						onChange={(e) => onTrustToggle(e.target.checked)}
+					/>
+					Stay signed in on this device (uses encrypted local storage)
+				</label>
+			)}
+			{IS_DESKTOP && (
+				<p
+					style={{
+						display: "block",
+						marginTop: "0.75rem",
+						fontSize: "0.875rem",
+						color: "var(--color-text-muted, #6b7280)",
+					}}
+				>
+					Sign-in completes in your default browser. Tokens are stored
+					in the daemon's encrypted secret store, not in this window.
+				</p>
+			)}
 		</div>
 	);
 }

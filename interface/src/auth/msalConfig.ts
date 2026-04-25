@@ -1,4 +1,4 @@
-// Phase 6 Task 6.A.4 — MSAL.js v5 loader + `PublicClientApplication` factory.
+// MSAL.js v5 loader + `PublicClientApplication` factory.
 //
 // Flow at SPA boot:
 //   1. `loadAuthConfig()` fetches `/api/auth/config` (unprotected — no bearer
@@ -9,18 +9,18 @@
 //      instance so every consumer (AuthGate, authedFetch, UserMenu) works
 //      against one MSAL state.
 //   3. If `entra_enabled` is `false` or the bootstrap fields are missing,
-//      `getMsalInstance()` returns `null` so callers can branch to static-
-//      token mode without null-pointer surprises.
+//      `getMsalInstance()` returns a discriminated result so callers can
+//      branch to static-token or error mode without null-pointer surprises.
 //
-// Amendments applied:
-//   - A-16: `cacheLocation: "memoryStorage"` is the canonical default.
-//     MSAL types accept the string "memory" but silently fall back to
+// Cache-location pitfalls worth pinning:
+//   - `cacheLocation: "memoryStorage"` is the canonical default. MSAL
+//     types accept the string "memory" but silently fall back to
 //     `sessionStorage` at runtime — do NOT use it.
-//   - A-17: "Trust this device" opt-in flips cache to `localStorage`
-//     (MSAL v5 AES-GCM-encrypts the cache blob, so this is safe). Default
-//     (checkbox unchecked) is memoryStorage, which means the user re-auths
-//     on every tab close. Acceptable XSS-mitigation trade-off per
-//     research §12 S-C4.
+//   - "Trust this device" opt-in flips cache to `localStorage` (MSAL v5
+//     AES-GCM-encrypts the cache blob, so this is safe). Default
+//     (checkbox unchecked) is memoryStorage, which means the user
+//     re-auths on every tab close. The trade-off is documented in the
+//     entra-auth design doc.
 
 import { PublicClientApplication, type Configuration } from "@azure/msal-browser";
 import { getApiBase } from "@spacebot/api-client/client";
@@ -28,7 +28,7 @@ import type { AuthConfigResponse } from "@spacebot/api-client/types";
 
 /// localStorage key read by `getMsalInstance()` to decide between
 /// `memoryStorage` (default) and `localStorage` caching. Written by the
-/// sign-in UI's "stay signed in on this device" checkbox (Task 6.A.6).
+/// sign-in UI's "stay signed in on this device" checkbox.
 const TRUST_DEVICE_KEY = "spacebot.auth.trust_device";
 
 let cachedConfig: AuthConfigResponse | null = null;
@@ -108,6 +108,35 @@ export async function getMsalInstance(): Promise<MsalInstanceResult> {
 			return { ok: true, instance: cachedInstance };
 		}
 
+		// Tauri desktop mode: replace MSAL.js with the loopback-shim
+		// PCA. Real MSAL.js cannot complete the sign-in dance from
+		// inside a Tauri WebView because the system-browser redirect
+		// returns to the loopback HTTP server, not the WebView, so
+		// MSAL's localStorage cache never sees the redirect_state.
+		// Phase 8 PR A introduced the loopback flow; the shim adapts
+		// it to MsalProvider's structural contract. Dynamic import
+		// keeps the shim and tauriBridge out of the browser bundle.
+		const { IS_DESKTOP } = await import("@/platform");
+		if (IS_DESKTOP) {
+			const { getApiBase } = await import("@spacebot/api-client/client");
+			const { getTauriMsalInstance } = await import(
+				/* @vite-ignore */ "./tauriMsalShim"
+			);
+			// getApiBase returns "<serverUrl>/api"; the daemon endpoints
+			// the shim hits live under that prefix already, so strip the
+			// trailing "/api" to get the bare server URL.
+			const apiBase = getApiBase();
+			const serverUrl = apiBase.replace(/\/api$/, "");
+			cachedInstance = await getTauriMsalInstance(
+				cfg,
+				serverUrl,
+				cfg.scopes ?? [],
+				cfg.tenant_id ?? "",
+				cfg.client_id ?? "",
+			);
+			return { ok: true, instance: cachedInstance };
+		}
+
 		const trustThisDevice =
 			window.localStorage.getItem(TRUST_DEVICE_KEY) === "true";
 
@@ -119,21 +148,21 @@ export async function getMsalInstance(): Promise<MsalInstanceResult> {
 			auth: {
 				clientId: cfg.client_id as string,
 				authority: cfg.authority as string,
-				// F18 (Task 6.A.6 implementation): use the SPA root as the
-				// redirect URI. The plan's `/auth/callback` assumed a dedicated
-				// route, but the TanStack router does not declare one and MSAL's
-				// handleRedirectPromise runs ABOVE RouterProvider in the tree
-				// anyway — by the time the router mounts the URL fragment is
-				// already consumed. Using `/` avoids a "no route matches"
-				// flash on redirect return. Task 6.A.7 can add a pushState
-				// cleanup to restore deep-links via state.redirectStartPage.
+				// Use the SPA root as the redirect URI. A dedicated
+				// `/auth/callback` route is unnecessary because MSAL's
+				// handleRedirectPromise runs ABOVE RouterProvider in the
+				// tree — by the time the router mounts the URL fragment
+				// is already consumed. Using `/` avoids a "no route
+				// matches" flash on redirect return. A future deep-link
+				// restoration could push state.redirectStartPage back
+				// after MSAL clears the fragment.
 				redirectUri: `${window.location.origin}/`,
 				postLogoutRedirectUri: `${window.location.origin}/`,
 			},
 			cache: {
-				// A-16: canonical string is `memoryStorage`. Do not shorten to
-				// `memory` — that typechecks but degrades to sessionStorage
-				// silently at runtime.
+				// Canonical string is `memoryStorage`. MSAL types accept
+				// the shorter `memory` but it degrades to sessionStorage
+				// silently at runtime — do NOT use it.
 				cacheLocation: trustThisDevice ? "localStorage" : "memoryStorage",
 				// MSAL v5 dropped `storeAuthStateInCookie` from CacheOptions
 				// (it was a v2/v3 IE-compat legacy path). Nothing to set here.
@@ -171,7 +200,6 @@ export async function getActiveScopes(): Promise<string[]> {
 
 /// Test-only reset. Drops cached config + instance + in-flight promises
 /// so a subsequent `loadAuthConfig()` / `getMsalInstance()` re-fetches.
-/// Exported for vitest teardown in Tasks 6.A.5 / 6.C.1.
 ///
 /// NOT exported from `interface/src/auth/index.ts` (when created) — this
 /// is deliberately off the happy-path import surface.

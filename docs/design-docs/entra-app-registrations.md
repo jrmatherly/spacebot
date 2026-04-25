@@ -42,10 +42,34 @@ Sources: `https://learn.microsoft.com/graph/api/directoryobject-getmemberobjects
   - Production: `https://{deployment-host}/` (exact origin, trailing slash included).
   - Local hosted dev: `http://localhost:19898/` (for bundled-server development).
   - Vite dev server: `http://localhost:19840/` (for `bun run dev` in `interface/`).
-- **Redirect URIs (Mobile/Desktop type, added later for Tauri in Phase 8):**
-  - `http://127.0.0.1` — IP literal, NOT `localhost`. Must be added via manifest `replyUrlsWithType` attribute. The Azure portal UI blocks direct entry of IP literals (§12 E-6).
+- **Redirect URIs (Mobile/Desktop type, Tauri desktop app):** see "Desktop redirect URIs" below.
 - **API permissions:** Delegated `api.access` scope from `spacebot-web-api`.
 - **Admin consent:** granted in tenant before rollout (users never see consent prompt for delegated Graph).
+
+### Desktop redirect URIs (Mobile/Desktop platform)
+
+Phase 8 (PR #117, 2026-04-24) added the Tauri desktop app's loopback OAuth flow. The desktop binds the first available port in the range `50000-50009` and runs an ephemeral HTTP listener for the authorization-code callback.
+
+Add these 10 URIs via the app registration manifest's `replyUrlsWithType` attribute. The Azure portal UI blocks IP-literal entries (§12 E-6); the manifest is the only path:
+
+```json
+{
+  "replyUrlsWithType": [
+    { "url": "http://127.0.0.1:50000/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50001/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50002/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50003/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50004/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50005/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50006/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50007/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50008/callback", "type": "InstalledClient" },
+    { "url": "http://127.0.0.1:50009/callback", "type": "InstalledClient" }
+  ]
+}
+```
+
+The desktop loopback listener rejects requests whose `state` param does not match the outbound authorize request and tracks a bounded bad-request budget per session (see `desktop/src-tauri/src/auth.rs::accept_callback`). Tokens are persisted via `POST /api/desktop/tokens` to the Spacebot daemon, which enforces a three-layer defense: peer IP must be loopback, `Host` header must be a loopback literal, and the secret store must be unlocked.
 
 ## Why two, not one
 

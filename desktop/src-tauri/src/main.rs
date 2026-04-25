@@ -304,6 +304,98 @@ async fn sign_in_with_entra_inner(
     }))
 }
 
+/// Read the cached Entra access token from the daemon's secret store
+/// via the loopback-only `GET /api/desktop/tokens` endpoint.
+///
+/// Returns `None` whenever the SPA should fall back to interactive
+/// sign-in: no cached token, daemon unreachable, daemon locked, 403
+/// loopback rejection, parse failure. This is the cold-start path:
+/// the Tauri MSAL shim calls this once on mount to seed an
+/// `AccountInfo` so the SPA renders `<AuthenticatedTemplate>` without
+/// prompting.
+///
+/// Severity policy: each failure mode is logged at a level that
+/// reflects its impact on debugging. Daemon-down is operator-actionable
+/// (warn), 503 locked store is a user-facing prompt the SPA should
+/// already surface (warn), 403 loopback is a configuration bug
+/// (error), 404/200-with-null is the expected "no token yet" path
+/// (debug). This makes a misconfigured daemon URL or a stuck-locked
+/// vault visible in the daemon's logs even when the SPA only sees `None`.
+#[tauri::command]
+async fn get_cached_access_token(server_url: String) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Status {
+        access_token: Option<String>,
+    }
+    let res = match reqwest::Client::new()
+        .get(format!("{server_url}/api/desktop/tokens"))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(error) => {
+            tracing::warn!(
+                %error, %server_url,
+                "get_cached_access_token: daemon unreachable"
+            );
+            return None;
+        }
+    };
+    let status = res.status();
+    if !status.is_success() {
+        match status {
+            reqwest::StatusCode::SERVICE_UNAVAILABLE => {
+                tracing::warn!(
+                    "get_cached_access_token: daemon secret store is locked; user must unlock and retry sign-in"
+                );
+            }
+            reqwest::StatusCode::FORBIDDEN => {
+                tracing::error!(
+                    %server_url,
+                    "get_cached_access_token: daemon refused loopback request; check that server_url points at the local daemon, not a remote/proxied endpoint"
+                );
+            }
+            other => {
+                tracing::debug!(status = %other, "get_cached_access_token: non-success");
+            }
+        }
+        return None;
+    }
+    match res.json::<Status>().await {
+        Ok(s) => s.access_token,
+        Err(error) => {
+            tracing::warn!(%error, "get_cached_access_token: response parse failed");
+            None
+        }
+    }
+}
+
+/// Wipe the daemon's cached Entra tokens via the loopback-only
+/// `DELETE /api/desktop/tokens` endpoint. Used on sign-out.
+///
+/// Returns the daemon's status verbatim so the SPA can distinguish
+/// "cleared" from "daemon locked, retry after unlock". Any transport
+/// failure surfaces as an Err so the SPA can show a sign-out error.
+#[tauri::command]
+async fn clear_auth_tokens(server_url: String) -> Result<(), String> {
+    let res = reqwest::Client::new()
+        .delete(format!("{server_url}/api/desktop/tokens"))
+        .send()
+        .await
+        .map_err(|error| format!("daemon unreachable: {error}"))?;
+    match res.status() {
+        reqwest::StatusCode::NO_CONTENT => Ok(()),
+        reqwest::StatusCode::SERVICE_UNAVAILABLE => Err(
+            "Spacebot is locked. Unlock it from the tray or settings and try signing out again."
+                .to_string(),
+        ),
+        other => {
+            tracing::error!(status = %other, "daemon rejected DELETE /api/desktop/tokens");
+            Err(format!("daemon rejected token clear: {other}"))
+        }
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -354,6 +446,8 @@ fn main() {
             toggle_voice_overlay,
             resize_overlay_window,
             sign_in_with_entra,
+            get_cached_access_token,
+            clear_auth_tokens,
         ])
         .setup(|app| {
             // Apply macOS titlebar style (invisible toolbar for traffic light padding)

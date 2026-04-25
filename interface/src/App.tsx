@@ -53,19 +53,25 @@ export function App() {
 	// Provider layering (outermost → innermost):
 	//   ErrorBoundary      — catches any descendant render/effect throw
 	//   QueryClientProvider — shared react-query state
-	//   AuthGate           — resolves MSAL state BEFORE ServerProvider boots,
-	//                        so the daemon-probe fetch inherits the token
-	//                        provider (Task 6.B.1 authedFetch reads it)
-	//   ServerProvider     — connection-state machine + heartbeat
-	//   AppShell           — ConnectionScreen | LiveContextProvider+router
+	//   ServerProvider     — resolves the daemon URL FIRST so AuthGate's
+	//                        loadAuthConfig() fetch hits the right host.
+	//                        Required for Tauri cold-start: in desktop
+	//                        mode the URL is async (Tauri command); the
+	//                        SPA cannot bootstrap MSAL against an
+	//                        unresolved or stale URL.
+	//   AuthGate           — bootstraps MSAL once useServer() reports a
+	//                        usable URL; gates children on
+	//                        authenticated state.
+	//   AppShell           — ConnectionScreen | LiveContextProvider+router.
+	//                        Uses useServer() — still inside ServerProvider.
 	return (
 		<ErrorBoundary>
 			<QueryClientProvider client={queryClient}>
-				<AuthGate>
-					<ServerProvider>
+				<ServerProvider>
+					<AuthGate>
 						<AppShell />
-					</ServerProvider>
-				</AuthGate>
+					</AuthGate>
+				</ServerProvider>
 				{import.meta.env.DEV && (
 					<ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
 				)}

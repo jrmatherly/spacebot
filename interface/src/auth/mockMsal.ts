@@ -83,6 +83,7 @@ export async function getMockMsalInstance(_cfg: AuthConfigResponse) {
 		// `unknown`, so a caller passing the wrong argument type fails
 		// at the TS boundary instead of silently at runtime.
 		setActiveAccount: (_a: AccountInfo | null) => {},
+		getActiveAccount: () => account,
 		acquireTokenSilent: async () => ({ accessToken: mintToken() }),
 		acquireTokenRedirect: async () => {},
 		loginRedirect: async () => {},
@@ -91,5 +92,24 @@ export async function getMockMsalInstance(_cfg: AuthConfigResponse) {
 			// under a subpath don't land at the wrong root after mock sign-out.
 			window.location.href = opts?.postLogoutRedirectUri ?? "/";
 		},
+		// Lifecycle no-ops MsalProvider touches at mount. Kept in lockstep
+		// with the Tauri shim's surface (tauriMsalShim.ts) so adding a
+		// new MsalProvider call site does not regress one stub but not
+		// the other.
+		addEventCallback: (_cb: unknown) => "",
+		removeEventCallback: (_id: string) => {},
+		enableAccountStorageEvents: () => {},
+		disableAccountStorageEvents: () => {},
+		initializeWrapperLibrary: (_name: string, _version: string) => {},
+		getLogger: () => ({
+			info: () => {},
+			warning: () => {},
+			error: () => {},
+			verbose: () => {},
+			trace: () => {},
+		}),
+		getConfiguration: () => ({
+			auth: { clientId: "", authority: "" },
+		}),
 	};
 }
