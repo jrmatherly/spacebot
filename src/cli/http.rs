@@ -1,6 +1,6 @@
 //! HTTP client for CLI ↔ daemon communication. Attaches Authorization
-//! from the operator-local CliTokenStore, refreshes silently on 401
-//! using the refresh token (STORE-D).
+//! from the operator-local CliTokenStore and refreshes silently on
+//! 401 using the cached refresh token.
 
 use anyhow::Context as _;
 use reqwest::{Client, RequestBuilder};
@@ -9,6 +9,10 @@ use tokio::sync::Mutex;
 use crate::cli::login::{TokenPollOutcome, persist_tokens};
 use crate::cli::store::CliTokenStore;
 
+/// HTTP client that attaches the cached Entra access token to every
+/// outbound request and transparently refreshes on 401. Refreshes are
+/// single-flight under `refresh_lock` so concurrent callers serialize on
+/// a single round-trip to Entra's token endpoint.
 pub struct AuthedClient {
     http: Client,
     store: Mutex<CliTokenStore>,
@@ -19,6 +23,9 @@ pub struct AuthedClient {
 }
 
 impl AuthedClient {
+    /// Build an `AuthedClient` against a real Entra tenant. The token
+    /// endpoint is derived from `tenant_id`. Use `with_token_url` in
+    /// tests to point the refresh path at a mock server.
     pub fn new(
         store: CliTokenStore,
         base_url: String,
@@ -49,8 +56,8 @@ impl AuthedClient {
         }
     }
 
-    // STORE-D: token reads come from the in-memory CliTokenStore. The
-    // store is loaded once at construction and refreshed in place under
+    // Token reads come from the in-memory CliTokenStore. The store is
+    // loaded once at construction and refreshed in place under
     // refresh_lock when send() encounters a 401.
     async fn cached_access_token(&self) -> Option<String> {
         self.store.lock().await.access_token.clone()
@@ -100,6 +107,10 @@ impl AuthedClient {
         }
     }
 
+    /// Send a request with `Authorization: Bearer <jwt>` attached. On
+    /// 401, refresh the access token and retry once. Bails on a second
+    /// 401 to avoid loops. The request body must be clone-capable since
+    /// the builder is cloned for the retry attempt.
     pub async fn send(&self, builder: RequestBuilder) -> anyhow::Result<reqwest::Response> {
         // Refresh discipline:
         // - Refresh runs under `refresh_lock` so concurrent send() calls

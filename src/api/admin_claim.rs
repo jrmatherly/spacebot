@@ -1,7 +1,7 @@
-//! Admin endpoint for claiming orphaned resources (Phase 2 backfill
-//! policy). Writes a `resource_ownership` row for a `resource_type` /
-//! `resource_id` pair with no existing owner, gated by the
-//! `SpacebotAdmin` role and emits a Phase-5 audit event on success.
+//! Admin endpoint for claiming orphaned resources. Writes a
+//! `resource_ownership` row for a `resource_type` / `resource_id`
+//! pair with no existing owner, gated by the `SpacebotAdmin` role
+//! and emits an audit event on success.
 
 use std::sync::Arc;
 

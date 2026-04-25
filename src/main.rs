@@ -118,8 +118,8 @@ async fn cmd_entra(entra_cmd: EntraCommand) -> anyhow::Result<()> {
                 scopes: cfg.cli_scopes,
             })
             .await?;
-            // STORE-D: load (or create empty) the operator-local token
-            // file, mutate in place, save. persist_tokens is sync.
+            // Load (or create empty) the operator-local token file,
+            // mutate in place, save. persist_tokens is sync.
             let mut store = spacebot::cli::store::CliTokenStore::load()?;
             spacebot::cli::login::persist_tokens(&mut store, &tokens)?;
             println!(

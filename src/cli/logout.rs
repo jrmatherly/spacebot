@@ -1,8 +1,10 @@
-//! Logout: remove the operator-local CLI token cache. Idempotent —
+//! Logout: remove the operator-local CLI token cache. Idempotent:
 //! clearing an already-empty store is not an error.
 
 use crate::cli::store::CliTokenStore;
 
+/// Remove the operator-local CLI token cache. Idempotent: clearing an
+/// already-empty store is not an error.
 pub fn clear_tokens() -> anyhow::Result<()> {
     let store = CliTokenStore::load()?;
     store.clear()

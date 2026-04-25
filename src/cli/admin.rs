@@ -1,9 +1,14 @@
 //! Admin CLI wrappers that POST to `/api/admin/*` endpoints via the
-//! `AuthedClient` (STORE-D: local JSON token cache + Bearer header).
+//! `AuthedClient`. Tokens come from the operator-local JSON cache;
+//! every request attaches `Authorization: Bearer <jwt>` on the way out.
 
 use crate::cli::http::AuthedClient;
 use crate::cli::store::CliTokenStore;
 
+/// POST to `/api/admin/claim-resource`. Backfills a
+/// `resource_ownership` row for an orphaned resource. The caller's
+/// access token must carry the `SpacebotAdmin` role; the daemon
+/// returns 403 otherwise.
 pub async fn claim_resource(
     resource_type: &str,
     resource_id: &str,

@@ -1,9 +1,9 @@
-//! Operator-local CLI token cache (STORE-D). JSON-serialized flat file
-//! at `directories::ProjectDirs::data_dir().join("cli-tokens.json")`,
-//! mode 0600 on POSIX. The daemon plays no role; CLI HTTP calls attach
-//! the cached access token as `Authorization: Bearer <jwt>` and the
-//! daemon's existing JWT validator handles auth (matching the SPA
-//! pattern used by `authedFetch`).
+//! Operator-local CLI token cache. JSON-serialized flat file at
+//! `directories::ProjectDirs::data_dir().join("cli-tokens.json")`,
+//! mode 0600 on POSIX. The daemon plays no role: CLI HTTP calls
+//! attach the cached access token as `Authorization: Bearer <jwt>`
+//! and the daemon's existing JWT validator handles auth (matching
+//! the SPA pattern used by `authedFetch`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,9 @@ use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
+/// Operator-local cache of Entra ID tokens used by the CLI. Holds the
+/// access token, refresh token, and observed expiry. Persisted as JSON
+/// at `directories::ProjectDirs::data_dir().join("cli-tokens.json")`.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CliTokenStore {
     #[serde(default)]
@@ -83,6 +86,10 @@ impl CliTokenStore {
     }
 }
 
+/// Resolve the platform-appropriate path to the CLI token cache file.
+/// Linux: `$XDG_DATA_HOME/spacebot/cli-tokens.json`. macOS:
+/// `~/Library/Application Support/spacebot/cli-tokens.json`. Windows:
+/// `%APPDATA%\spacebot\cli-tokens.json`.
 pub fn cli_token_store_path() -> anyhow::Result<PathBuf> {
     let dirs = ProjectDirs::from("com", "Spacebot", "spacebot")
         .context("cannot resolve user data directory; set $XDG_DATA_HOME or $HOME")?;
@@ -100,8 +107,8 @@ fn write_atomic_0600(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     // left a brief window between creation (umask-derived 0644) and the
     // mode narrowing where a racing local observer could open an fd at
     // 0644 and hold it through the rename. This single-syscall path
-    // closes that window — the file is born at 0600 and never visible
-    // at any wider mode.
+    // closes that window: the file is born at 0600 and is never
+    // visible at any wider mode.
     let mut tmp = tempfile::Builder::new()
         .permissions(std::fs::Permissions::from_mode(0o600))
         .tempfile_in(parent)?;
