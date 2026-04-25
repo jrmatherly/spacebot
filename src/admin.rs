@@ -40,12 +40,34 @@ pub struct Orphan {
 /// `<root>/agents/<agent_id>/data/spacebot.db`, so the agent_id is the
 /// grandparent's file name.
 fn agent_id_from_path(p: &Path) -> String {
-    p.parent()
+    let id = p
+        .parent()
         .and_then(|p| p.parent())
         .and_then(|p| p.file_name())
         .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string()
+        .unwrap_or("");
+    if id.is_empty() {
+        tracing::warn!(
+            path = %p.display(),
+            "orphan_sweep: agent_id_from_path could not extract agent_id; using 'unknown'",
+        );
+        return "unknown".to_string();
+    }
+    id.to_string()
+}
+
+/// Defense-in-depth path-component validator. Rejects strings that contain
+/// path separators, parent-directory references, leading dots, or any
+/// character outside the expected agent-id charset (alphanumeric plus `-`
+/// and `_`). Used before joining a database-supplied `agent_id` into a
+/// filesystem path so a malicious or corrupted `resource_ownership` row
+/// can't redirect the orphan sweep to read arbitrary files.
+fn is_safe_agent_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && !s.starts_with('.')
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 /// Per-agent resource_type to table-name map. Add to this when a new
@@ -145,6 +167,15 @@ pub async fn sweep_orphans(
             .await?;
 
     let root = std::env::var("SPACEBOT_DIR").ok().map(PathBuf::from);
+    if root.is_none() {
+        // Without a root the reverse-check can't resolve any path, so
+        // Direction 2 is silently disabled. Log once before the loop so
+        // operators reviewing CC6.1 evidence can distinguish "no stale
+        // ownership" from "the env was unset and the scan didn't run".
+        tracing::warn!(
+            "orphan_sweep: SPACEBOT_DIR unset; StaleOwnership detection disabled for this run",
+        );
+    }
     for (rt, rid, owning_agent_id) in ownership_rows {
         let Some(agent_id) = owning_agent_id.as_deref() else {
             // Non-agent-owned ownership rows (instance-scope resources)
@@ -152,8 +183,6 @@ pub async fn sweep_orphans(
             continue;
         };
         let Some(root) = root.as_deref() else {
-            // Without a root we can't resolve the back-reference path.
-            // Direction 1 still produces useful output; just skip Direction 2.
             continue;
         };
         let Some(table) = table_for_resource_type(&rt) else {
@@ -161,11 +190,35 @@ pub async fn sweep_orphans(
             continue;
         };
 
+        if !is_safe_agent_id(agent_id) {
+            // Defense-in-depth: a malicious or corrupted resource_ownership
+            // row could carry an agent_id like `../../etc` that would
+            // redirect SqlitePool::connect to an arbitrary path. Reject
+            // any value outside the expected slug/UUID charset.
+            tracing::warn!(
+                agent_id = %agent_id,
+                resource_type = %rt,
+                resource_id = %rid,
+                "orphan_sweep: skipping reverse-check for agent_id that fails shape validation",
+            );
+            continue;
+        }
         let agent_db_path = root
             .join("agents")
             .join(agent_id)
             .join("data")
             .join("spacebot.db");
+        // Belt-and-suspenders prefix check after the join, in case the
+        // shape validator above misses an edge case on a future platform.
+        let agents_root = root.join("agents");
+        if !agent_db_path.starts_with(&agents_root) {
+            tracing::warn!(
+                agent_id = %agent_id,
+                path = %agent_db_path.display(),
+                "orphan_sweep: constructed path escaped the agents root; refusing to open",
+            );
+            continue;
+        }
 
         if !agent_db_path.exists() {
             orphans.push(Orphan {
@@ -193,11 +246,29 @@ pub async fn sweep_orphans(
             };
 
         let query = format!("SELECT 1 FROM {table} WHERE id = ?");
-        let exists: Option<i64> = sqlx::query_scalar(&query)
+        let exists: Option<i64> = match sqlx::query_scalar(&query)
             .bind(&rid)
             .fetch_optional(&agent_pool)
             .await
-            .unwrap_or(None);
+        {
+            Ok(v) => v,
+            Err(e) => {
+                // A genuine sqlx error (locked DB, schema drift, IO) was
+                // previously swallowed via `.unwrap_or(None)`, which then
+                // wrote a false-positive StaleOwnership row into the
+                // SOC 2 evidence report. Skip the row instead so operators
+                // don't act on a transient query failure.
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    resource_type = %rt,
+                    resource_id = %rid,
+                    %e,
+                    "orphan_sweep: reverse-check query failed; skipping row to avoid false-positive StaleOwnership",
+                );
+                agent_pool.close().await;
+                continue;
+            }
+        };
         if exists.is_none() {
             orphans.push(Orphan {
                 kind: OrphanKind::StaleOwnership,
@@ -214,7 +285,9 @@ pub async fn sweep_orphans(
 
 /// Discover agent DB paths by scanning `$SPACEBOT_DIR/agents/*/data/spacebot.db`.
 /// Returns an empty Vec if the env var is unset or the directory is
-/// unreadable; the caller decides whether that's an error.
+/// unreadable; the caller decides whether that's an error. Subdirectory
+/// names that fail [`is_safe_agent_id`] are skipped with a warning so a
+/// stray symlink or accidental directory can't redirect the sweep.
 pub fn discover_agent_db_paths() -> Vec<PathBuf> {
     let Ok(root) = std::env::var("SPACEBOT_DIR") else {
         return Vec::new();
@@ -226,6 +299,19 @@ pub fn discover_agent_db_paths() -> Vec<PathBuf> {
     entries
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            let safe = e
+                .file_name()
+                .to_str()
+                .is_some_and(is_safe_agent_id);
+            if !safe {
+                tracing::warn!(
+                    name = ?e.file_name(),
+                    "discover_agent_db_paths: skipping subdirectory that fails agent_id shape",
+                );
+            }
+            safe
+        })
         .map(|e| e.path().join("data").join("spacebot.db"))
         .filter(|p| p.exists())
         .collect()

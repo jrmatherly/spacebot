@@ -160,12 +160,28 @@ pub(super) async fn access_review(
     Ok(response)
 }
 
-/// Escape a field per RFC 4180: wrap in quotes when the field contains a
-/// comma, double-quote, or newline; double up any embedded quotes.
+/// RFC 4180 quoting plus an Excel formula-injection guard. Mirrors the
+/// `csv_escape` helper at `src/api/audit.rs::csv_escape`: a leading `=`,
+/// `+`, `-`, `@`, CR, or LF on the raw field gets a single-quote sigil
+/// inside the quoted value so Excel and Google Sheets treat the cell as
+/// text and never evaluate `=WEBSERVICE(...)` exfiltration formulas in
+/// auditor-facing CSV exports.
 fn escape_csv(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-        format!("\"{}\"", s.replace('"', "\"\""))
+    let needs_formula_guard = s
+        .as_bytes()
+        .first()
+        .is_some_and(|b| matches!(*b, b'=' | b'+' | b'-' | b'@' | b'\r' | b'\n'));
+    let needs_quotes = needs_formula_guard
+        || s.as_bytes()
+            .iter()
+            .any(|b| matches!(*b, b',' | b'"' | b'\r' | b'\n'));
+    if !needs_quotes {
+        return s.to_string();
+    }
+    let escaped = s.replace('"', "\"\"");
+    if needs_formula_guard {
+        format!("\"'{escaped}\"")
     } else {
-        s.to_string()
+        format!("\"{escaped}\"")
     }
 }
