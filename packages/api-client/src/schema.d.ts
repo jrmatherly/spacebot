@@ -94,6 +94,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/orphans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_orphans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/teams": {
         parameters: {
             query?: never;
@@ -3871,6 +3887,16 @@ export interface components {
             /** Format: int64 */
             server_startup_timeout_secs?: number | null;
         };
+        OrphanReport: {
+            kind: string;
+            owning_agent_id?: string | null;
+            resource_id: string;
+            resource_type: string;
+        };
+        OrphansResponse: {
+            agent_dbs_scanned: number;
+            orphans: components["schemas"]["OrphanReport"][];
+        };
         PlatformCredentials: {
             discord_token?: string | null;
             email_from_address?: string | null;
@@ -5217,6 +5243,40 @@ export interface operations {
                 content?: never;
             };
             /** @description Pool unavailable or write failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_orphans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Orphan-resource sweep report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrphansResponse"];
+                };
+            };
+            /** @description Caller is not a SpacebotAdmin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Pool unavailable or sweep failed */
             500: {
                 headers: {
                     [name: string]: unknown;

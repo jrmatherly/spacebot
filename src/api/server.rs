@@ -2,8 +2,8 @@
 
 use super::state::ApiState;
 use super::{
-    activity, admin_access_review, admin_claim, admin_teams, agents, attachments, audit,
-    auth_config, bindings,
+    activity, admin_access_review, admin_claim, admin_orphans, admin_teams, agents, attachments,
+    audit, auth_config, bindings,
     channels, config, cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging,
     models, notifications, opencode_proxy, portal, projects, providers, resources, secrets,
     settings, skills, ssh, system, tasks, tools, usage, wiki, workers,
@@ -319,6 +319,10 @@ pub fn api_router() -> OpenApiRouter<Arc<ApiState>> {
         // Admin access-review (admin-only): SOC 2 CC6.7 quarterly evidence
         // export covering identity, status, and team membership per principal.
         .routes(routes!(admin_access_review::access_review))
+        // Admin orphan-resource sweep (admin-only): on-demand evidence
+        // collection for resource_ownership drift in either direction.
+        // Auto-scheduled weekly cadence + dry-run config flag are deferred.
+        .routes(routes!(admin_orphans::list_orphans))
 }
 
 /// Start the HTTP server on the given address.

@@ -7,6 +7,7 @@
 mod activity;
 mod admin_access_review;
 mod admin_claim;
+mod admin_orphans;
 mod admin_teams;
 pub mod agents;
 mod attachments;

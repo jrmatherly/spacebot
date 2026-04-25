@@ -11,6 +11,7 @@ compile_error!(
      dev-only shortcut to skip the ort-sys C++ build."
 );
 
+pub mod admin;
 pub mod agent;
 pub mod anthropic_oauth;
 pub mod api;
