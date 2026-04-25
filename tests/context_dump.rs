@@ -55,7 +55,7 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         .await
         .context("failed to connect databases")?;
 
-    let memory_store = spacebot::memory::MemoryStore::new(db.sqlite.clone());
+    let memory_store = spacebot::memory::MemoryStore::new(db.sqlite_pool().unwrap().clone());
 
     let embedding_table = spacebot::memory::EmbeddingTable::open_or_create(&db.lance)
         .await
@@ -70,7 +70,7 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         embedding_table,
         embedding_model,
     ));
-    let task_store = Arc::new(spacebot::tasks::TaskStore::new(db.sqlite.clone()));
+    let task_store = Arc::new(spacebot::tasks::TaskStore::new(db.sqlite_pool().unwrap().clone()));
 
     let identity = spacebot::identity::Identity::load(&agent_config.workspace).await;
     let prompts =
@@ -112,12 +112,12 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         llm_manager,
         mcp_manager,
         task_store,
-        project_store: Arc::new(spacebot::projects::ProjectStore::new(db.sqlite.clone())),
+        project_store: Arc::new(spacebot::projects::ProjectStore::new(db.sqlite_pool().unwrap().clone())),
         cron_tool: None,
         runtime_config,
         event_tx,
         memory_event_tx,
-        sqlite_pool: db.sqlite.clone(),
+        sqlite_pool: db.sqlite_pool().unwrap().clone(),
         messaging_manager: None,
         sandbox,
         links: Arc::new(arc_swap::ArcSwap::from_pointee(Vec::new())),
@@ -128,7 +128,7 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         ),
         injection_tx: tokio::sync::mpsc::channel(1).0,
         working_memory: spacebot::memory::WorkingMemoryStore::new(
-            db.sqlite.clone(),
+            db.sqlite_pool().unwrap().clone(),
             chrono_tz::Tz::UTC,
         ),
         api_state: None,
