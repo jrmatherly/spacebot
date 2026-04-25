@@ -133,6 +133,95 @@ async fn sweep_tolerates_partially_initialized_agent_directory() {
 }
 
 #[tokio::test]
+async fn sweep_reports_stale_ownership_when_agent_db_is_gone() {
+    // I4: Direction-2 of the sweep must flag rows in resource_ownership
+    // whose owning agent has no per-agent DB on disk. Without this
+    // coverage the StaleOwnership branch (src/admin.rs Direction-2)
+    // would be unverified despite being half the sweep's contract.
+    let pool = instance_pool().await;
+    let alice = alice_ctx();
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // SPACEBOT_DIR is the resolution root for Direction-2's reverse
+    // path lookup. Setting it makes the sweep look under
+    // `<tmp>/agents/<agent_id>/data/spacebot.db`.
+    // SAFETY: nextest's process-per-test isolation prevents this from
+    // racing the env-unset test below.
+    unsafe {
+        std::env::set_var("SPACEBOT_DIR", tmp.path());
+    }
+
+    // Insert an ownership row whose owner_agent_id = "ghost-agent".
+    // No `<tmp>/agents/ghost-agent/` directory exists, so the sweep's
+    // Direction-2 path-existence check fires and produces a
+    // StaleOwnership entry.
+    sqlx::query(
+        "INSERT INTO resource_ownership \
+         (resource_type, resource_id, owner_agent_id, owner_principal_key, \
+          visibility, shared_with_team_id) \
+         VALUES (?, ?, ?, ?, 'personal', NULL)",
+    )
+    .bind("memory")
+    .bind("m-stale")
+    .bind("ghost-agent")
+    .bind(alice.principal_key())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Direction-1 needs no agent DBs to scan; we're only exercising the
+    // reverse-direction path resolution.
+    let orphans = spacebot::admin::sweep_orphans(&pool, &[]).await.unwrap();
+
+    assert!(
+        orphans.iter().any(|o| o.resource_id == "m-stale"
+            && matches!(o.kind, spacebot::admin::OrphanKind::StaleOwnership)),
+        "expected m-stale in StaleOwnership; got {orphans:?}",
+    );
+}
+
+#[tokio::test]
+async fn sweep_rejects_path_traversal_in_owner_agent_id() {
+    // C3 regression guard: a malicious owner_agent_id like
+    // "../../etc" must not redirect the sweep to read arbitrary files.
+    // is_safe_agent_id rejects the value, so the sweep skips the row
+    // entirely and produces no orphans for it.
+    let pool = instance_pool().await;
+    let alice = alice_ctx();
+    upsert_user_from_auth(&pool, &alice).await.unwrap();
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    unsafe {
+        std::env::set_var("SPACEBOT_DIR", tmp.path());
+    }
+
+    sqlx::query(
+        "INSERT INTO resource_ownership \
+         (resource_type, resource_id, owner_agent_id, owner_principal_key, \
+          visibility, shared_with_team_id) \
+         VALUES (?, ?, ?, ?, 'personal', NULL)",
+    )
+    .bind("memory")
+    .bind("m-evil")
+    .bind("../../some-other-path")
+    .bind(alice.principal_key())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let orphans = spacebot::admin::sweep_orphans(&pool, &[]).await.unwrap();
+    // The traversal-attempt row must NOT produce a StaleOwnership entry
+    // (because we never opened the bogus path); it's silently dropped
+    // with a tracing::warn!. The audit-log surface still records the
+    // sweep run via the calling endpoint's AdminRead emission.
+    assert!(
+        !orphans.iter().any(|o| o.resource_id == "m-evil"),
+        "path-traversal owner_agent_id must not appear in orphan output; got {orphans:?}",
+    );
+}
+
+#[tokio::test]
 async fn discover_agent_db_paths_returns_empty_when_env_unset() {
     // Pin: discover_agent_db_paths gracefully handles unset env var.
     // SAFETY: this single-threaded test is the only one in this file that
