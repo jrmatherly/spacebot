@@ -14,8 +14,10 @@ use crate::auth::context::{AuthContext, PrincipalType};
 use crate::auth::errors::AuthError;
 
 use jsonwebtoken::Algorithm;
-use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
+use jwt_authorizer::{Authorizer, JwtAuthorizer, Refresh, RefreshStrategy, Validation};
 use serde::Deserialize;
+
+use std::time::Duration;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -124,8 +126,24 @@ impl EntraValidator {
             .jwks_url_override
             .clone()
             .unwrap_or_else(|| cfg.jwks_url());
+        // SOC 2 / key-rotation correctness: jwt-authorizer's default Refresh
+        // (refresh_interval = 600s, strategy = KeyNotFound) requires the
+        // load time to exceed `refresh_interval` before the JWKS endpoint
+        // is hit again on an unknown `kid`. That means a token signed with
+        // a freshly-rotated Entra key is rejected with `InvalidKid` until
+        // 10 minutes after the daemon's last successful JWKS fetch — for
+        // up to 600s after every restart, every emergency rotation, etc.
+        // Set `refresh_interval = 0` so unknown-kid triggers an immediate
+        // refetch; `retry_interval` (10s default) still acts as a circuit
+        // breaker against runaway loops if the JWKS endpoint is down.
+        let refresh = Refresh {
+            strategy: RefreshStrategy::KeyNotFound,
+            refresh_interval: Duration::ZERO,
+            retry_interval: Duration::from_secs(10),
+        };
         let inner = JwtAuthorizer::<EntraClaims>::from_jwks_url(&jwks_url)
             .validation(validation)
+            .refresh(refresh)
             .build()
             .await?;
         Ok(Self {

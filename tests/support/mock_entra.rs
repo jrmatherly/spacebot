@@ -284,6 +284,65 @@ impl MockTenant {
         header.kid = Some(self.kid.clone());
         encode(&header, &claims, &self.signing_key).expect("jwt encode")
     }
+
+    /// Rotate the tenant's signing key. Generates a fresh RSA keypair, picks
+    /// a new `kid`, rebuilds the JWKS document, and re-mounts both the
+    /// openid-configuration and JWKS endpoints on the wiremock server.
+    /// Subsequent `mint_*_token` calls sign with the new key under the new
+    /// `kid`; the validator must refetch JWKS to verify.
+    ///
+    /// Mirrors how Entra rotates: the JWKS endpoint just starts returning
+    /// new content; clients with a stale cache see an unknown `kid` and
+    /// trigger a refetch.
+    #[allow(dead_code)]
+    pub async fn rotate_keys(&mut self) {
+        let mut rng = OsRng;
+        let private_key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
+        let public_key = private_key.to_public_key();
+        let pkcs8 = private_key
+            .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
+            .expect("pkcs8 pem serialize");
+        self.signing_key =
+            EncodingKey::from_rsa_pem(pkcs8.as_bytes()).expect("rsa encoding key");
+
+        let n = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(public_key.n().to_bytes_be());
+        let e = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(public_key.e().to_bytes_be());
+        self.kid = format!("test-kid-{}", chrono::Utc::now().timestamp_millis());
+        self.jwks = json!({
+            "keys": [{
+                "kid": self.kid,
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "n": n,
+                "e": e,
+            }]
+        });
+
+        // Wiremock has no per-mount mutation, so reset all mounts and
+        // re-register both endpoints with the rotated key set. Equivalent
+        // to "the tenant just changed its keys" from the validator's
+        // perspective.
+        self.server.reset().await;
+        Mock::given(method("GET"))
+            .and(path(format!(
+                "/{}/v2.0/.well-known/openid-configuration",
+                self.tenant_id
+            )))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "issuer": format!("{}/{}/v2.0", self.server.uri(), self.tenant_id),
+                "jwks_uri": format!("{}/{}/discovery/v2.0/keys", self.server.uri(), self.tenant_id),
+            })))
+            .mount(&self.server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/{}/discovery/v2.0/keys", self.tenant_id)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(self.jwks.clone()))
+            .mount(&self.server)
+            .await;
+    }
 }
 
 /// Mount the OBO token-exchange stub. Returns a fixed `access_token` so
