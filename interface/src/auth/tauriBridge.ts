@@ -65,6 +65,12 @@ export async function signInWithEntraDesktop(
  * daemon's `GET /api/desktop/tokens` endpoint. Returns `null` whenever
  * the SPA should fall back to interactive sign-in: not in Tauri, no
  * cached token, daemon unreachable, daemon locked, parse failure.
+ *
+ * `null` and `undefined` are NOT interchangeable. Under Tauri,
+ * `invoke` resolving to `undefined` means the command itself was not
+ * registered — a deployment bug, not a "no token" condition. We log
+ * loudly and return null to keep the SPA from looping silently, but
+ * an operator looking at the console sees the deployment regression.
  */
 export async function getCachedAccessToken(
 	serverUrl: string,
@@ -73,7 +79,13 @@ export async function getCachedAccessToken(
 	const token = await invoke<string | null>("get_cached_access_token", {
 		serverUrl,
 	});
-	return token ?? null;
+	if (token === undefined) {
+		console.error(
+			"[tauriBridge] get_cached_access_token returned undefined under Tauri; the command may not be registered in src-tauri/main.rs",
+		);
+		return null;
+	}
+	return token;
 }
 
 /**
