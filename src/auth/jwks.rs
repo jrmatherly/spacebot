@@ -14,8 +14,10 @@ use crate::auth::context::{AuthContext, PrincipalType};
 use crate::auth::errors::AuthError;
 
 use jsonwebtoken::Algorithm;
-use jwt_authorizer::{Authorizer, JwtAuthorizer, Validation};
+use jwt_authorizer::{Authorizer, JwtAuthorizer, Refresh, RefreshStrategy, Validation};
 use serde::Deserialize;
+
+use std::time::Duration;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -124,8 +126,41 @@ impl EntraValidator {
             .jwks_url_override
             .clone()
             .unwrap_or_else(|| cfg.jwks_url());
+        // SOC 2 / key-rotation correctness.
+        //
+        // jwt-authorizer's default Refresh (refresh_interval = 600s,
+        // strategy = KeyNotFound) gates unknown-kid refetch on
+        // `load_tm.elapsed() > refresh_interval`, leaving a 10-minute
+        // window after every JWKS fetch where a freshly-rotated Entra
+        // key is rejected with InvalidKid. That broke production after
+        // every emergency rotation (regression-guarded by
+        // `tests/jwks_rotation.rs`).
+        //
+        // Setting `refresh_interval = 0` makes unknown-kid trigger an
+        // immediate refetch, fixing the rotation correctness bug.
+        // `retry_interval = 10s` still gates attempts after a failed
+        // JWKS fetch, so a downstream JWKS outage cannot loop the
+        // daemon.
+        //
+        // Residual risk: an attacker can craft tokens with random `kid`
+        // values (the JWT header is unsigned) to force a JWKS fetch per
+        // bad token. This is bounded in practice by:
+        // - Production K8s sits behind Envoy with per-IP rate limits.
+        // - Microsoft Entra's JWKS endpoint has its own rate limiting.
+        // - Each fetch returns the cached `Authorizer` HTTP client's
+        //   pool entry, so total outbound connections stay bounded.
+        // If this becomes operationally relevant, the right fix is an
+        // in-process unknown-kid TTL cache wrapper around the
+        // KeyStoreManager rather than a longer refresh_interval (which
+        // would re-introduce the rotation correctness bug).
+        let refresh = Refresh {
+            strategy: RefreshStrategy::KeyNotFound,
+            refresh_interval: Duration::ZERO,
+            retry_interval: Duration::from_secs(10),
+        };
         let inner = JwtAuthorizer::<EntraClaims>::from_jwks_url(&jwks_url)
             .validation(validation)
+            .refresh(refresh)
             .build()
             .await?;
         Ok(Self {

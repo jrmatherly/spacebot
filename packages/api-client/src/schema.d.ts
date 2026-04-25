@@ -21,6 +21,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/access-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["access_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/audit": {
         parameters: {
             query?: never;
@@ -72,6 +88,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["claim_resource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/orphans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_orphans"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3460,6 +3492,13 @@ export interface components {
             updated_at: string;
             value: string;
         };
+        /**
+         * @description Output format for the access-review export. Typed (not stringly-
+         *     typed) so the Query extractor rejects unknown values like
+         *     `?format=xml` at the boundary instead of silently downgrading to CSV.
+         * @enum {string}
+         */
+        Format: "csv" | "json";
         GlobalSettingsResponse: {
             api_bind: string;
             api_enabled: boolean;
@@ -3854,6 +3893,37 @@ export interface components {
             permissions?: null | components["schemas"]["OpenCodePermissionsUpdate"];
             /** Format: int64 */
             server_startup_timeout_secs?: number | null;
+        };
+        /**
+         * @description Direction of the orphan: `MissingOwnership` means the agent DB has the
+         *     resource but the instance lacks an ownership row; `StaleOwnership`
+         *     means the instance has the row but no agent DB has the resource.
+         *
+         *     Serialized snake_case to match the wire convention established by
+         *     `Visibility` (`src/auth/principals.rs`).
+         * @enum {string}
+         */
+        OrphanKind: "missing_ownership" | "stale_ownership";
+        /**
+         * @description Wire-shape DTO for a single orphan finding. `kind` is the typed
+         *     [`OrphanKind`] enum (snake_case on the wire); the schema generator
+         *     emits a discriminated string union for TypeScript clients.
+         */
+        OrphanReport: {
+            kind: components["schemas"]["OrphanKind"];
+            owning_agent_id?: string | null;
+            resource_id: string;
+            resource_type: string;
+        };
+        /**
+         * @description Response body for `GET /admin/orphans`. `agent_dbs_scanned` is `u32`
+         *     for a deterministic wire width; the count is bounded well below 4
+         *     billion in practice.
+         */
+        OrphansResponse: {
+            /** Format: int32 */
+            agent_dbs_scanned: number;
+            orphans: components["schemas"]["OrphanReport"][];
         };
         PlatformCredentials: {
             discord_token?: string | null;
@@ -5051,6 +5121,48 @@ export interface operations {
             };
         };
     };
+    access_review: {
+        parameters: {
+            query?: {
+                /** @description csv (default) or json */
+                format?: components["schemas"]["Format"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access-review report (CSV or JSON) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid query parameter (e.g. unknown format) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller is not a SpacebotAdmin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Pool unavailable or query failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_audit_events: {
         parameters: {
             query?: {
@@ -5166,6 +5278,40 @@ export interface operations {
                 content?: never;
             };
             /** @description Pool unavailable or write failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_orphans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Orphan-resource sweep report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrphansResponse"];
+                };
+            };
+            /** @description Caller is not a SpacebotAdmin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Pool unavailable or sweep failed */
             500: {
                 headers: {
                     [name: string]: unknown;
