@@ -8326,6 +8326,7 @@ dependencies = [
  "cron",
  "daemonize",
  "dialoguer",
+ "directories",
  "dirs",
  "emojis",
  "fastembed",
