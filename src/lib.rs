@@ -16,6 +16,7 @@ pub mod anthropic_oauth;
 pub mod api;
 pub mod audit;
 pub mod auth;
+pub mod cli;
 pub mod config;
 pub mod conversation;
 pub mod cron;
