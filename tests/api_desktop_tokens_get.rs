@@ -89,6 +89,32 @@ async fn rejects_attacker_host_header() {
     );
 }
 
+// Parity with POST: all three loopback Host names must pass.
+
+#[tokio::test]
+async fn accepts_all_three_loopback_host_names() {
+    for host in ["127.0.0.1", "127.0.0.1:19898", "[::1]", "localhost"] {
+        let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+        let (store, _dir) = fresh_unlocked_store();
+        let (app, _state) = router_with_peer(peer, Some(store));
+        let res = app.oneshot(get_tokens(host)).await.unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "Host {host} must pass the loopback pin on GET"
+        );
+    }
+}
+
+#[tokio::test]
+async fn returns_500_when_store_absent() {
+    // ApiState without a secrets_store set — operational bug, returns 500.
+    let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+    let (app, _state) = router_with_peer(peer, None);
+    let res = app.oneshot(get_tokens("127.0.0.1")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
 // ----------------------------------------------------------------------------
 // Locked-store surfacing (three-layer defense, layer 3)
 // ----------------------------------------------------------------------------

@@ -124,6 +124,30 @@ async fn returns_204_when_no_tokens_persisted() {
     );
 }
 
+// Idempotency parity: only one of the two keys present.
+// The handler calls delete on both serially; NotFound on either must
+// not surface a 404 / 500 to the caller.
+
+#[tokio::test]
+async fn returns_204_when_only_access_token_present() {
+    let peer: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+    let (store, _dir) = fresh_unlocked_store();
+    store
+        .set("entra_access_token", "at-only", SecretCategory::System)
+        .expect("seed access token");
+    let (app, _state) = router_with_peer(peer, Some(store.clone()));
+    let res = app.oneshot(delete_tokens("127.0.0.1")).await.unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::NO_CONTENT,
+        "DELETE must return 204 when refresh token is absent"
+    );
+    assert!(
+        store.get("entra_access_token").is_err(),
+        "access token must be gone after DELETE"
+    );
+}
+
 // ----------------------------------------------------------------------------
 // Happy path — both tokens wiped
 // ----------------------------------------------------------------------------
