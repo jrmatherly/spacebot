@@ -79,7 +79,21 @@ impl AuthedClient {
             TokenPollOutcome::Success(t) => {
                 let mut store = self.store.lock().await;
                 let access_token = t.access_token.clone();
-                persist_tokens(&mut store, &t)?;
+                if let Err(error) = persist_tokens(&mut store, &t) {
+                    // The in-memory store is now mutated to the new tokens
+                    // (including any rotated refresh_token), but the on-disk
+                    // file still holds the previous values. The current
+                    // process keeps working until restart; the next CLI
+                    // invocation loads the stale RT and trips invalid_grant
+                    // when Entra rotates. Surface this so operators can
+                    // re-login proactively rather than chase the symptom.
+                    tracing::warn!(
+                        %error,
+                        "token rotation: in-memory updated but disk persist failed; \
+                         next CLI restart will need re-login",
+                    );
+                    return Err(error);
+                }
                 Ok(access_token)
             }
             _ => anyhow::bail!("refresh failed; run `spacebot entra login`"),

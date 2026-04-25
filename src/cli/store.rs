@@ -92,19 +92,21 @@ pub fn cli_token_store_path() -> anyhow::Result<PathBuf> {
 #[cfg(unix)]
 fn write_atomic_0600(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     use std::io::Write as _;
-    use std::os::unix::fs::OpenOptionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     let parent = path.parent().context("path has no parent")?;
-    let tmp = tempfile::NamedTempFile::new_in(parent)?;
-    {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(tmp.path())?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-    }
+    // Build tempfile with mode 0600 in a single syscall. The earlier
+    // `NamedTempFile::new_in` + `OpenOptions::mode(0o600)` reopen pattern
+    // left a brief window between creation (umask-derived 0644) and the
+    // mode narrowing where a racing local observer could open an fd at
+    // 0644 and hold it through the rename. This single-syscall path
+    // closes that window — the file is born at 0600 and never visible
+    // at any wider mode.
+    let mut tmp = tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o600))
+        .tempfile_in(parent)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file_mut().sync_all()?;
     tmp.persist(path)
         .map_err(|e| anyhow::anyhow!("persist token file: {e}"))?;
     Ok(())

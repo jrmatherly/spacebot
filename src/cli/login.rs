@@ -212,7 +212,7 @@ pub fn persist_tokens(store: &mut CliTokenStore, tokens: &TokenResponseBody) -> 
     // The wall-clock `expires_at` is for operator inspection only; the
     // JWT `exp` claim is authoritative for the auth path.
     let expires_at = chrono::Utc::now()
-        + chrono::Duration::seconds(tokens.expires_in.min(i64::MAX as u64) as i64);
+        + chrono::Duration::seconds(i64::try_from(tokens.expires_in).unwrap_or(i64::MAX));
     store.expires_at = Some(expires_at);
     store.save()?;
     Ok(())
