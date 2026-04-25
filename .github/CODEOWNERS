@@ -13,3 +13,23 @@ spacedrive/ @jrmatherly
 
 # Migrations are immutable — extra scrutiny on new ones
 migrations/ @jrmatherly
+
+# Security-sensitive paths (SOC 2 CC8.1: change management).
+# These declarations tell GitHub which paths are under the auth/audit/
+# secrets-handling policy. Branch-protection rules in GitHub settings
+# enforce the required-reviewer count (currently 1 in single-maintainer
+# mode; flip to 2 once a security team handle is added below).
+#
+# To bring a real security team online: replace @jrmatherly on the
+# entries below with @spacebot-security-team (or whichever handle is
+# created), then update branch protection to require both
+# `code-owners` and a minimum of 2 approvals on these paths.
+/src/api/server.rs   @jrmatherly
+/src/api/admin_*.rs  @jrmatherly
+/src/auth/           @jrmatherly
+/src/audit/          @jrmatherly
+/src/secrets/        @jrmatherly
+/src/admin.rs        @jrmatherly
+/migrations/global/  @jrmatherly
+/docs/security/      @jrmatherly
+/docs/runbooks/      @jrmatherly
