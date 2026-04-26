@@ -1,6 +1,6 @@
 # Spacebot - Project Overview
 
-**Version:** 0.5.1
+**Version:** 0.6.0  (released 2026-04-26 from `ef548b7`; tag `v0.6.0`. Marketing copy at `.scratchpad/release/v0.6.0-marketing.md`. The v0.5.1 → v0.6.0 release shipped Phases 1-10 Entra ID rollout + Phase 11.1 Postgres backend foundation + 12-commit deps/automation cycle + Tauri desktop + CLI auth.)
 **Language:** Rust (edition 2024), ~130K lines of code
 **Purpose:** An agentic system where every LLM process has a dedicated role. Replaces the monolithic session model with specialized processes (Channel, Branch, Worker, Compactor, Cortex).
 

@@ -1,6 +1,14 @@
 # Phase 11 PR 11.1 — Postgres Backend Foundation (shipped 2026-04-26)
 
-Squash commit `7eba8cd` on main. PR #121, 14 files, +944/-100, 952 lib tests.
+> **Cross-session retention anchor (refreshed 2026-04-26 by user directive):**
+> - **PR #121 was completed, merged, and closed out — the worktree, branch, and PR are fully cleaned up.** No follow-up R7+ remediation pending; the Phase 11.1 work is done.
+> - **Phase 11.2 / 11.3 / 11.4 are still pending.** No PRs open against these phases yet; per-PR plans get written when the predecessor merges (per the writing-plans discipline).
+> - **The `enum DbPool` is foundation only.** Stores still take `&SqlitePool` parameters in the codebase as of `5c446d7`. Per-store dispatch lands in PR 11.2 (instance tier) + PR 11.3 (per-agent tier).
+> - **The daemon defaults to SQLite.** Postgres is opt-in via `[database] url = "postgres://..."` in config.toml. Without that block the daemon ignores the `DbPool::Postgres` variant entirely. Hard-errors at connect-time if Postgres URL is supplied because `migrations/postgres/` does not exist until PR 11.2.
+> - **Authoritative reference:** `docs/design-docs/postgres-migration.md` (committed `0fd21aa`). PR 11.2/11.3/11.4 scope tables live at lines 252-279 of that doc.
+> - **Shipped in v0.6.0** (release commit `ef548b7`, tag `v0.6.0`).
+
+Squash commit `7eba8cd` on main. PR #121, 14 files, +944/-100, 952 lib tests. **Closed and cleaned up 2026-04-26.**
 
 ## What landed
 
@@ -78,5 +86,7 @@ Pattern worth repeating on Phase 11.2/11.3 PRs: the second-pass review specifica
 
 ## Reference
 
-- Public design doc: `docs/design-docs/postgres-migration.md` (committed `0fd21aa`)
+- Public design doc: `docs/design-docs/postgres-migration.md` (committed `0fd21aa`). Source of truth for PR 11.2/11.3/11.4 scope tables (lines 252-279).
 - Archived AnyPool design (do NOT use for planning): `docs/design-docs/archive/postgres-migration-anypool-attempt-2026-04-25.md` (committed `ff9bcf4`)
+- Release: shipped in **v0.6.0** at commit `ef548b7` (tag `v0.6.0`, 2026-04-26). v0.6.0 release narrative at `.scratchpad/release/v0.6.0-marketing.md` + the corresponding `## v0.6.0` section in `CHANGELOG.md`.
+- Deploy alignment: `deploy/docker/config.toml` carries a commented-out `[database]` block (commit `5c446d7`) with the operator-friendly Postgres opt-in pattern + the PR 11.2/11.3/11.4 sequencing notes. `deploy/helm/spacebot/values.yaml` does NOT yet have the database block; it gets added in PR 11.4 alongside the CloudNativePG cluster manifest in the cluster repo.
