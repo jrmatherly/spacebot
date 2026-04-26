@@ -24,6 +24,24 @@ updates:
     commit-message:
       prefix: "deps"
     open-pull-requests-limit: 10
+    # Major-version bumps that require dedicated migration PRs are pinned
+    # below. Dependabot continues to surface patch and minor updates within
+    # the allowed range; major updates surface only when the pin is lifted
+    # (after the API-migration PR lands).
+    ignore:
+      # jsonwebtoken 10.x has breaking API changes (E0308 mismatched-types
+      # at every call site in src/auth/{jwks,middleware}.rs as of PR #90).
+      # Migration tracked separately. Re-evaluate after the auth-refresh
+      # PR lands. See PR #90 for the failure surface.
+      - dependency-name: "jsonwebtoken"
+        update-types: ["version-update:semver-major"]
+      # nom 8.x has breaking API changes (Parser::parse signature, error
+      # type bounds, FindToken removal). Spacebot pulls nom transitively
+      # via the vendored imap-proto crate. Migration would touch
+      # vendor/imap-proto/. Re-evaluate after imap-proto upstream releases
+      # nom-8 support OR the vendored copy is forked. See PR #100.
+      - dependency-name: "nom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "cargo"
     directory: "/desktop/src-tauri"
