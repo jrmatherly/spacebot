@@ -46,7 +46,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// authz middleware reads. Required because `ApiState::new_test_state_*`
 /// leaves `wiki_store` unset (handler returns 503 without it).
 fn attach_wiki_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_wiki_store(Arc::new(WikiStore::new(pool.clone())));
+    state.set_wiki_store(Arc::new(WikiStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_get_page(slug: &str, bearer: &str) -> Request<Body> {
@@ -86,7 +88,7 @@ fn req_create_page(bearer: &str, title: &str) -> Request<Body> {
 /// Create a wiki page directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns the created page.
 async fn seed_page(pool: &sqlx::SqlitePool, owner: &AuthContext) -> WikiPage {
-    let store = WikiStore::new(pool.clone());
+    let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let page = store
         .create(CreateWikiPageInput {
             title: "Seed Page".to_string(),
@@ -288,7 +290,7 @@ async fn list_pages_enriches_team_scoped_page_with_chip_fields() {
         .await
         .unwrap();
     let page = {
-        let store = WikiStore::new(pool.clone());
+        let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
         store
             .create(CreateWikiPageInput {
                 title: "Team Runbook".to_string(),
@@ -362,7 +364,7 @@ async fn search_pages_enriches_team_scoped_page_with_chip_fields() {
         .await
         .unwrap();
     let page = {
-        let store = WikiStore::new(pool.clone());
+        let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
         store
             .create(CreateWikiPageInput {
                 title: "Team Runbook".to_string(),

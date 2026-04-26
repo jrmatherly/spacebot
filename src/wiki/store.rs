@@ -1,10 +1,21 @@
-//! Instance-wide wiki storage (SQLite).
+//! Instance-wide wiki storage (SQLite + Postgres).
+//!
+//! Per-method dispatch on `Arc<DbPool>` per Phase 11.2. The biggest
+//! divergence is `search()`: SQLite uses an FTS5 virtual table
+//! (`wiki_pages_fts MATCH ?`); Postgres uses a tsvector STORED column
+//! (`search_tsv @@ websearch_to_tsquery('english', $1)`) backed by a GIN
+//! index. The `sanitize_fts_query` helper produces FTS5-style tokens for
+//! the SQLite arm; the Postgres arm uses `websearch_to_tsquery` which
+//! handles user input directly without escaping.
 
+use crate::db::DbPool;
 use crate::error::{Result, WikiError};
 use anyhow::Context as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sqlx::{Row as _, SqlitePool};
+use sqlx::Row as _;
+
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -405,15 +416,15 @@ pub fn extract_wiki_links(content: &str) -> Vec<String> {
 
 #[derive(Debug, Clone)]
 pub struct WikiStore {
-    pool: SqlitePool,
+    pool: Arc<DbPool>,
 }
 
 impl WikiStore {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: Arc<DbPool>) -> Self {
         Self { pool }
     }
 
-    pub fn pool(&self) -> &SqlitePool {
+    pub fn pool(&self) -> &Arc<DbPool> {
         &self.pool
     }
 
@@ -426,49 +437,86 @@ impl WikiStore {
 
         // Check slug uniqueness; append suffix if needed
         let slug = self.unique_slug(&slug).await?;
-
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin transaction")?;
-
-        sqlx::query(
-            r#"INSERT INTO wiki_pages
-               (id, slug, title, page_type, content, related, created_by, updated_by, version, archived)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)"#,
-        )
-        .bind(&id)
-        .bind(&slug)
-        .bind(&input.title)
-        .bind(input.page_type.as_str())
-        .bind(&input.content)
-        .bind(&related_json)
-        .bind(&input.author_id)
-        .bind(&input.author_id)
-        .execute(&mut *tx)
-        .await
-        .context("failed to insert wiki page")?;
-
-        // Write version 1
         let version_id = lower_hex_id();
-        sqlx::query(
-            r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
-               VALUES (?, ?, 1, ?, ?, ?, ?)"#,
-        )
-        .bind(&version_id)
-        .bind(&id)
-        .bind(&input.content)
-        .bind(&input.edit_summary)
-        .bind(&input.author_type)
-        .bind(&input.author_id)
-        .execute(&mut *tx)
-        .await
-        .context("failed to insert wiki page version")?;
 
-        tx.commit()
-            .await
-            .context("failed to commit wiki page creation")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut tx = p.begin().await.context("failed to begin transaction")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_pages
+                       (id, slug, title, page_type, content, related, created_by, updated_by, version, archived)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)"#,
+                )
+                .bind(&id)
+                .bind(&slug)
+                .bind(&input.title)
+                .bind(input.page_type.as_str())
+                .bind(&input.content)
+                .bind(&related_json)
+                .bind(&input.author_id)
+                .bind(&input.author_id)
+                .execute(&mut *tx)
+                .await
+                .context("failed to insert wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES (?, ?, 1, ?, ?, ?, ?)"#,
+                )
+                .bind(&version_id)
+                .bind(&id)
+                .bind(&input.content)
+                .bind(&input.edit_summary)
+                .bind(&input.author_type)
+                .bind(&input.author_id)
+                .execute(&mut *tx)
+                .await
+                .context("failed to insert wiki page version")?;
+
+                tx.commit()
+                    .await
+                    .context("failed to commit wiki page creation")?;
+            }
+            DbPool::Postgres(p) => {
+                let mut tx = p.begin().await.context("failed to begin transaction")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_pages
+                       (id, slug, title, page_type, content, related, created_by, updated_by, version, archived)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 0)"#,
+                )
+                .bind(&id)
+                .bind(&slug)
+                .bind(&input.title)
+                .bind(input.page_type.as_str())
+                .bind(&input.content)
+                .bind(&related_json)
+                .bind(&input.author_id)
+                .bind(&input.author_id)
+                .execute(&mut *tx)
+                .await
+                .context("failed to insert wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES ($1, $2, 1, $3, $4, $5, $6)"#,
+                )
+                .bind(&version_id)
+                .bind(&id)
+                .bind(&input.content)
+                .bind(&input.edit_summary)
+                .bind(&input.author_type)
+                .bind(&input.author_id)
+                .execute(&mut *tx)
+                .await
+                .context("failed to insert wiki page version")?;
+
+                tx.commit()
+                    .await
+                    .context("failed to commit wiki page creation")?;
+            }
+        }
 
         self.load_by_id(&id)
             .await?
@@ -494,35 +542,68 @@ impl WikiStore {
         .map_err(|e| WikiError::EditFailed(e.to_string()))?;
 
         let new_version = page.version + 1;
-
-        sqlx::query(
-            r#"UPDATE wiki_pages SET content = ?, version = ?, updated_by = ?,
-               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-               WHERE id = ?"#,
-        )
-        .bind(&new_content)
-        .bind(new_version)
-        .bind(&input.author_id)
-        .bind(&page.id)
-        .execute(&self.pool)
-        .await
-        .context("failed to update wiki page")?;
-
         let version_id = lower_hex_id();
-        sqlx::query(
-            r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)"#,
-        )
-        .bind(&version_id)
-        .bind(&page.id)
-        .bind(new_version)
-        .bind(&new_content)
-        .bind(&input.edit_summary)
-        .bind(&input.author_type)
-        .bind(&input.author_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert wiki page version")?;
+
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    r#"UPDATE wiki_pages SET content = ?, version = ?, updated_by = ?,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                       WHERE id = ?"#,
+                )
+                .bind(&new_content)
+                .bind(new_version)
+                .bind(&input.author_id)
+                .bind(&page.id)
+                .execute(p)
+                .await
+                .context("failed to update wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                )
+                .bind(&version_id)
+                .bind(&page.id)
+                .bind(new_version)
+                .bind(&new_content)
+                .bind(&input.edit_summary)
+                .bind(&input.author_type)
+                .bind(&input.author_id)
+                .execute(p)
+                .await
+                .context("failed to insert wiki page version")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    r#"UPDATE wiki_pages SET content = $1, version = $2, updated_by = $3,
+                       updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                       WHERE id = $4"#,
+                )
+                .bind(&new_content)
+                .bind(new_version)
+                .bind(&input.author_id)
+                .bind(&page.id)
+                .execute(p)
+                .await
+                .context("failed to update wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+                )
+                .bind(&version_id)
+                .bind(&page.id)
+                .bind(new_version)
+                .bind(&new_content)
+                .bind(&input.edit_summary)
+                .bind(&input.author_type)
+                .bind(&input.author_id)
+                .execute(p)
+                .await
+                .context("failed to insert wiki page version")?;
+            }
+        }
 
         self.load_by_id(&page.id)
             .await?
@@ -538,14 +619,24 @@ impl WikiStore {
             let Some(mut page) = page else {
                 return Ok(None);
             };
-            let historical: Option<String> = sqlx::query_scalar(
-                "SELECT content FROM wiki_page_versions WHERE page_id = ? AND version = ?",
-            )
-            .bind(&page.id)
-            .bind(v)
-            .fetch_optional(&self.pool)
-            .await
-            .context("failed to fetch historical version")?;
+            let historical: Option<String> = match &*self.pool {
+                DbPool::Sqlite(p) => sqlx::query_scalar(
+                    "SELECT content FROM wiki_page_versions WHERE page_id = ? AND version = ?",
+                )
+                .bind(&page.id)
+                .bind(v)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch historical version")?,
+                DbPool::Postgres(p) => sqlx::query_scalar(
+                    "SELECT content FROM wiki_page_versions WHERE page_id = $1 AND version = $2",
+                )
+                .bind(&page.id)
+                .bind(v)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch historical version")?,
+            };
 
             if let Some(content) = historical {
                 page.content = content;
@@ -561,90 +652,191 @@ impl WikiStore {
 
     /// List all pages, optionally filtered by type. Excludes archived pages.
     pub async fn list(&self, page_type: Option<WikiPageType>) -> Result<Vec<WikiPageSummary>> {
-        let rows = if let Some(pt) = page_type {
-            sqlx::query(
-                r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
-                   FROM wiki_pages WHERE archived = 0 AND page_type = ?
-                   ORDER BY updated_at DESC"#,
-            )
-            .bind(pt.as_str())
-            .fetch_all(&self.pool)
-            .await
-        } else {
-            sqlx::query(
-                r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
-                   FROM wiki_pages WHERE archived = 0
-                   ORDER BY updated_at DESC"#,
-            )
-            .fetch_all(&self.pool)
-            .await
-        }
-        .context("failed to list wiki pages")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let rows = if let Some(pt) = page_type {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages WHERE archived = 0 AND page_type = ?
+                           ORDER BY updated_at DESC"#,
+                    )
+                    .bind(pt.as_str())
+                    .fetch_all(p)
+                    .await
+                } else {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages WHERE archived = 0
+                           ORDER BY updated_at DESC"#,
+                    )
+                    .fetch_all(p)
+                    .await
+                }
+                .context("failed to list wiki pages")?;
 
-        rows.into_iter()
-            .map(|row| {
-                Ok(WikiPageSummary {
-                    id: row.try_get("id")?,
-                    slug: row.try_get("slug")?,
-                    title: row.try_get("title")?,
-                    page_type: row.try_get("page_type")?,
-                    version: row.try_get("version")?,
-                    updated_at: row.try_get("updated_at")?,
-                    updated_by: row.try_get("updated_by")?,
-                })
-            })
-            .collect()
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageSummary {
+                            id: row.try_get("id")?,
+                            slug: row.try_get("slug")?,
+                            title: row.try_get("title")?,
+                            page_type: row.try_get("page_type")?,
+                            version: row.try_get("version")?,
+                            updated_at: row.try_get("updated_at")?,
+                            updated_by: row.try_get("updated_by")?,
+                        })
+                    })
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                let rows = if let Some(pt) = page_type {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages WHERE archived = 0 AND page_type = $1
+                           ORDER BY updated_at DESC"#,
+                    )
+                    .bind(pt.as_str())
+                    .fetch_all(p)
+                    .await
+                } else {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages WHERE archived = 0
+                           ORDER BY updated_at DESC"#,
+                    )
+                    .fetch_all(p)
+                    .await
+                }
+                .context("failed to list wiki pages")?;
+
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageSummary {
+                            id: row.try_get("id")?,
+                            slug: row.try_get("slug")?,
+                            title: row.try_get("title")?,
+                            page_type: row.try_get("page_type")?,
+                            version: row.try_get("version")?,
+                            updated_at: row.try_get("updated_at")?,
+                            updated_by: row.try_get("updated_by")?,
+                        })
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// Full-text search across title and content.
+    ///
+    /// SQLite uses the `wiki_pages_fts` virtual table (FTS5 backed by SQLite's
+    /// own `MATCH` operator) joined to `wiki_pages` on rowid; user input runs
+    /// through `sanitize_fts_query` which strips operators and emits prefix
+    /// tokens. Postgres uses the `search_tsv` STORED generated column on
+    /// `wiki_pages` directly with `websearch_to_tsquery('english', $1)` — the
+    /// `websearch_to_tsquery` parser handles user input safely without the
+    /// FTS5-style escaping that SQLite needs. GIN index `wiki_pages_search_tsv`
+    /// backs the lookup.
     pub async fn search(
         &self,
         query: &str,
         page_type: Option<WikiPageType>,
     ) -> Result<Vec<WikiPageSummary>> {
-        let fts_query = sanitize_fts_query(query);
-        if fts_query.is_empty() {
-            return Ok(Vec::new());
-        }
-        let rows = if let Some(pt) = page_type {
-            sqlx::query(
-                r#"SELECT p.id, p.slug, p.title, p.page_type, p.version, p.updated_at, p.updated_by
-                   FROM wiki_pages_fts f
-                   JOIN wiki_pages p ON p.rowid = f.rowid
-                   WHERE f.wiki_pages_fts MATCH ? AND p.archived = 0 AND p.page_type = ?
-                   ORDER BY rank"#,
-            )
-            .bind(&fts_query)
-            .bind(pt.as_str())
-            .fetch_all(&self.pool)
-            .await
-        } else {
-            sqlx::query(
-                r#"SELECT p.id, p.slug, p.title, p.page_type, p.version, p.updated_at, p.updated_by
-                   FROM wiki_pages_fts f
-                   JOIN wiki_pages p ON p.rowid = f.rowid
-                   WHERE f.wiki_pages_fts MATCH ? AND p.archived = 0
-                   ORDER BY rank"#,
-            )
-            .bind(&fts_query)
-            .fetch_all(&self.pool)
-            .await
-        }
-        .context("failed to search wiki pages")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let fts_query = sanitize_fts_query(query);
+                if fts_query.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let rows = if let Some(pt) = page_type {
+                    sqlx::query(
+                        r#"SELECT p.id, p.slug, p.title, p.page_type, p.version, p.updated_at, p.updated_by
+                           FROM wiki_pages_fts f
+                           JOIN wiki_pages p ON p.rowid = f.rowid
+                           WHERE f.wiki_pages_fts MATCH ? AND p.archived = 0 AND p.page_type = ?
+                           ORDER BY rank"#,
+                    )
+                    .bind(&fts_query)
+                    .bind(pt.as_str())
+                    .fetch_all(p)
+                    .await
+                } else {
+                    sqlx::query(
+                        r#"SELECT p.id, p.slug, p.title, p.page_type, p.version, p.updated_at, p.updated_by
+                           FROM wiki_pages_fts f
+                           JOIN wiki_pages p ON p.rowid = f.rowid
+                           WHERE f.wiki_pages_fts MATCH ? AND p.archived = 0
+                           ORDER BY rank"#,
+                    )
+                    .bind(&fts_query)
+                    .fetch_all(p)
+                    .await
+                }
+                .context("failed to search wiki pages")?;
 
-        rows.into_iter()
-            .map(|row| {
-                Ok(WikiPageSummary {
-                    id: row.try_get("id")?,
-                    slug: row.try_get("slug")?,
-                    title: row.try_get("title")?,
-                    page_type: row.try_get("page_type")?,
-                    version: row.try_get("version")?,
-                    updated_at: row.try_get("updated_at")?,
-                    updated_by: row.try_get("updated_by")?,
-                })
-            })
-            .collect()
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageSummary {
+                            id: row.try_get("id")?,
+                            slug: row.try_get("slug")?,
+                            title: row.try_get("title")?,
+                            page_type: row.try_get("page_type")?,
+                            version: row.try_get("version")?,
+                            updated_at: row.try_get("updated_at")?,
+                            updated_by: row.try_get("updated_by")?,
+                        })
+                    })
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                // Postgres path skips sanitize_fts_query — websearch_to_tsquery
+                // parses user input safely (it accepts double-quoted phrases
+                // and AND/OR/- operators with sane fallbacks for malformed
+                // queries). Empty input still short-circuits.
+                if query.trim().is_empty() {
+                    return Ok(Vec::new());
+                }
+                let rows = if let Some(pt) = page_type {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages
+                           WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+                             AND archived = 0
+                             AND page_type = $2
+                           ORDER BY ts_rank(search_tsv, websearch_to_tsquery('english', $1)) DESC"#,
+                    )
+                    .bind(query)
+                    .bind(pt.as_str())
+                    .fetch_all(p)
+                    .await
+                } else {
+                    sqlx::query(
+                        r#"SELECT id, slug, title, page_type, version, updated_at, updated_by
+                           FROM wiki_pages
+                           WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+                             AND archived = 0
+                           ORDER BY ts_rank(search_tsv, websearch_to_tsquery('english', $1)) DESC"#,
+                    )
+                    .bind(query)
+                    .fetch_all(p)
+                    .await
+                }
+                .context("failed to search wiki pages")?;
+
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageSummary {
+                            id: row.try_get("id")?,
+                            slug: row.try_get("slug")?,
+                            title: row.try_get("title")?,
+                            page_type: row.try_get("page_type")?,
+                            version: row.try_get("version")?,
+                            updated_at: row.try_get("updated_at")?,
+                            updated_by: row.try_get("updated_by")?,
+                        })
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// List version history for a page.
@@ -652,30 +844,60 @@ impl WikiStore {
         let page = self.load_by_slug(slug).await?;
         let Some(page) = page else { return Ok(vec![]) };
 
-        let rows = sqlx::query(
-            r#"SELECT id, page_id, version, content, edit_summary, author_type, author_id, created_at
-               FROM wiki_page_versions WHERE page_id = ? ORDER BY version DESC LIMIT ?"#,
-        )
-        .bind(&page.id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to fetch wiki page history")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let rows = sqlx::query(
+                    r#"SELECT id, page_id, version, content, edit_summary, author_type, author_id, created_at
+                       FROM wiki_page_versions WHERE page_id = ? ORDER BY version DESC LIMIT ?"#,
+                )
+                .bind(&page.id)
+                .bind(limit)
+                .fetch_all(p)
+                .await
+                .context("failed to fetch wiki page history")?;
 
-        rows.into_iter()
-            .map(|row| {
-                Ok(WikiPageVersion {
-                    id: row.try_get("id")?,
-                    page_id: row.try_get("page_id")?,
-                    version: row.try_get("version")?,
-                    content: row.try_get("content")?,
-                    edit_summary: row.try_get("edit_summary")?,
-                    author_type: row.try_get("author_type")?,
-                    author_id: row.try_get("author_id")?,
-                    created_at: row.try_get("created_at")?,
-                })
-            })
-            .collect()
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageVersion {
+                            id: row.try_get("id")?,
+                            page_id: row.try_get("page_id")?,
+                            version: row.try_get("version")?,
+                            content: row.try_get("content")?,
+                            edit_summary: row.try_get("edit_summary")?,
+                            author_type: row.try_get("author_type")?,
+                            author_id: row.try_get("author_id")?,
+                            created_at: row.try_get("created_at")?,
+                        })
+                    })
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                let rows = sqlx::query(
+                    r#"SELECT id, page_id, version, content, edit_summary, author_type, author_id, created_at
+                       FROM wiki_page_versions WHERE page_id = $1 ORDER BY version DESC LIMIT $2"#,
+                )
+                .bind(&page.id)
+                .bind(limit)
+                .fetch_all(p)
+                .await
+                .context("failed to fetch wiki page history")?;
+
+                rows.into_iter()
+                    .map(|row| {
+                        Ok(WikiPageVersion {
+                            id: row.try_get("id")?,
+                            page_id: row.try_get("page_id")?,
+                            version: row.try_get("version")?,
+                            content: row.try_get("content")?,
+                            edit_summary: row.try_get("edit_summary")?,
+                            author_type: row.try_get("author_type")?,
+                            author_id: row.try_get("author_id")?,
+                            created_at: row.try_get("created_at")?,
+                        })
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// Restore a page to a historical version (creates a new version with old content).
@@ -705,35 +927,68 @@ impl WikiStore {
         let edit_summary = format!("Restored to version {version}");
         let restored_content = content;
         let new_version = page.version + 1;
-
-        sqlx::query(
-            r#"UPDATE wiki_pages SET content = ?, version = ?, updated_by = ?,
-               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-               WHERE id = ?"#,
-        )
-        .bind(&restored_content)
-        .bind(new_version)
-        .bind(author_id)
-        .bind(&page.id)
-        .execute(&self.pool)
-        .await
-        .context("failed to restore wiki page")?;
-
         let version_id = lower_hex_id();
-        sqlx::query(
-            r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)"#,
-        )
-        .bind(&version_id)
-        .bind(&page.id)
-        .bind(new_version)
-        .bind(&restored_content)
-        .bind(&edit_summary)
-        .bind(author_type)
-        .bind(author_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert restored version")?;
+
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    r#"UPDATE wiki_pages SET content = ?, version = ?, updated_by = ?,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                       WHERE id = ?"#,
+                )
+                .bind(&restored_content)
+                .bind(new_version)
+                .bind(author_id)
+                .bind(&page.id)
+                .execute(p)
+                .await
+                .context("failed to restore wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                )
+                .bind(&version_id)
+                .bind(&page.id)
+                .bind(new_version)
+                .bind(&restored_content)
+                .bind(&edit_summary)
+                .bind(author_type)
+                .bind(author_id)
+                .execute(p)
+                .await
+                .context("failed to insert restored version")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    r#"UPDATE wiki_pages SET content = $1, version = $2, updated_by = $3,
+                       updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                       WHERE id = $4"#,
+                )
+                .bind(&restored_content)
+                .bind(new_version)
+                .bind(author_id)
+                .bind(&page.id)
+                .execute(p)
+                .await
+                .context("failed to restore wiki page")?;
+
+                sqlx::query(
+                    r#"INSERT INTO wiki_page_versions (id, page_id, version, content, edit_summary, author_type, author_id)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+                )
+                .bind(&version_id)
+                .bind(&page.id)
+                .bind(new_version)
+                .bind(&restored_content)
+                .bind(&edit_summary)
+                .bind(author_type)
+                .bind(author_id)
+                .execute(p)
+                .await
+                .context("failed to insert restored version")?;
+            }
+        }
 
         self.load_by_id(&page.id)
             .await?
@@ -743,11 +998,22 @@ impl WikiStore {
 
     /// Archive a page (soft delete).
     pub async fn archive(&self, slug: &str) -> Result<()> {
-        sqlx::query("UPDATE wiki_pages SET archived = 1 WHERE slug = ?")
-            .bind(slug)
-            .execute(&self.pool)
-            .await
-            .context("failed to archive wiki page")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query("UPDATE wiki_pages SET archived = 1 WHERE slug = ?")
+                    .bind(slug)
+                    .execute(p)
+                    .await
+                    .context("failed to archive wiki page")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("UPDATE wiki_pages SET archived = 1 WHERE slug = $1")
+                    .bind(slug)
+                    .execute(p)
+                    .await
+                    .context("failed to archive wiki page")?;
+            }
+        }
         Ok(())
     }
 
@@ -756,60 +1022,115 @@ impl WikiStore {
     // ------------------------------------------------------------------
 
     async fn load_by_id(&self, id: &str) -> Result<Option<WikiPage>> {
-        let row = sqlx::query(
-            "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE id = ?"
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to load wiki page by id")?;
-        row.map(parse_wiki_page).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE id = ?"
+            )
+            .bind(id)
+            .fetch_optional(p)
+            .await
+            .context("failed to load wiki page by id")?
+            .map(parse_wiki_page_sqlite)
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE id = $1"
+            )
+            .bind(id)
+            .fetch_optional(p)
+            .await
+            .context("failed to load wiki page by id")?
+            .map(parse_wiki_page_pg)
+            .transpose(),
+        }
     }
 
     pub async fn load_by_slug(&self, slug: &str) -> Result<Option<WikiPage>> {
-        let row = sqlx::query(
-            "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE slug = ?"
-        )
-        .bind(slug)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to load wiki page by slug")?;
-        row.map(parse_wiki_page).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE slug = ?"
+            )
+            .bind(slug)
+            .fetch_optional(p)
+            .await
+            .context("failed to load wiki page by slug")?
+            .map(parse_wiki_page_sqlite)
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT id, slug, title, page_type, content, related, created_by, updated_by, version, archived, created_at, updated_at FROM wiki_pages WHERE slug = $1"
+            )
+            .bind(slug)
+            .fetch_optional(p)
+            .await
+            .context("failed to load wiki page by slug")?
+            .map(parse_wiki_page_pg)
+            .transpose(),
+        }
     }
 
     async fn unique_slug(&self, base: &str) -> Result<String> {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE slug = ?)")
-                .bind(base)
-                .fetch_one(&self.pool)
-                .await
-                .context("failed to check slug uniqueness")?;
-
+        let exists = self.slug_exists(base).await?;
         if !exists {
             return Ok(base.to_string());
         }
 
         for i in 2..=999 {
             let candidate = format!("{base}-{i}");
-            let exists: bool =
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE slug = ?)")
-                    .bind(&candidate)
-                    .fetch_one(&self.pool)
-                    .await
-                    .context("failed to check slug uniqueness")?;
-            if !exists {
+            if !self.slug_exists(&candidate).await? {
                 return Ok(candidate);
             }
         }
 
         Err(anyhow::anyhow!("failed to find unique slug for '{base}'").into())
     }
+
+    async fn slug_exists(&self, slug: &str) -> Result<bool> {
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE slug = ?)",
+            )
+            .bind(slug)
+            .fetch_one(p)
+            .await
+            .context("failed to check slug uniqueness")
+            .map_err(Into::into),
+            DbPool::Postgres(p) => sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE slug = $1)",
+            )
+            .bind(slug)
+            .fetch_one(p)
+            .await
+            .context("failed to check slug uniqueness")
+            .map_err(Into::into),
+        }
+    }
 }
 
-fn parse_wiki_page(row: sqlx::sqlite::SqliteRow) -> Result<WikiPage> {
+fn parse_wiki_page_sqlite(row: sqlx::sqlite::SqliteRow) -> Result<WikiPage> {
     let related_json: String = row.try_get("related")?;
     let related: Vec<String> = serde_json::from_str(&related_json).unwrap_or_default();
     let archived: i64 = row.try_get("archived")?;
+    Ok(WikiPage {
+        id: row.try_get("id")?,
+        slug: row.try_get("slug")?,
+        title: row.try_get("title")?,
+        page_type: row.try_get("page_type")?,
+        content: row.try_get("content")?,
+        related,
+        created_by: row.try_get("created_by")?,
+        updated_by: row.try_get("updated_by")?,
+        version: row.try_get("version")?,
+        archived: archived != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn parse_wiki_page_pg(row: sqlx::postgres::PgRow) -> Result<WikiPage> {
+    let related_json: String = row.try_get("related")?;
+    let related: Vec<String> = serde_json::from_str(&related_json).unwrap_or_default();
+    // Postgres `archived` is INTEGER per the migration (matching SQLite's
+    // boolean-flag-as-integer convention).
+    let archived: i32 = row.try_get("archived")?;
     Ok(WikiPage {
         id: row.try_get("id")?,
         slug: row.try_get("slug")?,

@@ -1834,7 +1834,9 @@ async fn run(
     )));
 
     // Instance-wide wiki knowledge base.
-    let global_wiki_store = Arc::new(spacebot::wiki::WikiStore::new(instance_pool.clone()));
+    let global_wiki_store = Arc::new(spacebot::wiki::WikiStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(instance_pool.clone()),
+    )));
 
     // Instance-level notification store for the dashboard inbox.
     let global_notification_store = Arc::new(spacebot::notifications::NotificationStore::new(
