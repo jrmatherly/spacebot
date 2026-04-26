@@ -82,6 +82,34 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.6.2
+
+### Release Story
+
+### Release Story
+
+v0.6.2 is a runtime-deployment hotfix for v0.6.1's first cluster crash. PR 11.1 (which shipped in v0.6.0) deliberately switched the SQL migration loader from the compile-time `sqlx::migrate!(literal)` macro to the runtime `sqlx::migrate::Migrator::new(Path)` so the daemon can dispatch between the per-agent and instance migration trees, and (in the in-flight Phase 11.2 work) between SQLite and Postgres backends. The architectural change was sound; the Dockerfile runtime stage was never updated to ship the `migrations/` directory alongside the binary, and the runtime CWD defaulted to `/`, so relative paths resolved against an empty root. v0.6.0 never deployed (release CI was red — see the v0.6.1 fixes in commit `3be804f`). v0.6.1 was the first published image, and it surfaced the runtime-mount mismatch in the Talos cluster as `failed to load migrations from migrations/global`.
+
+v0.6.2 ships three Dockerfile-only corrections. The runtime stage now copies `migrations/` from the builder to `/app/migrations/` and sets `WORKDIR /app` so the daemon's relative paths resolve correctly. Both `cargo build` invocations gain `otlp-grpc` so the OTLP/gRPC exporter is linked into the binary; in-cluster Grafana Alloy DaemonSets expose OTLP on `:4317` (gRPC), and without this feature the daemon emitted `OTEL_EXPORTER_OTLP_PROTOCOL=grpc requested but spacebot was built without --features otlp-grpc` and disabled OTLP tracing entirely. The same invocations gain `embeddings` so fastembed + ONNX are linked, restoring vector similarity ranking that had been silently degrading to deterministic zero vectors per the explicit warning in `Cargo.toml:188-191`.
+
+No source-code changes ship with v0.6.2. The fix is build-pipeline only.
+
+### Files
+
+- `Dockerfile` — runtime stage copies `migrations/`, pins `WORKDIR /app`, both build commands gain `--features metrics,otlp-grpc,embeddings`.
+
+### Verification (post-deploy in Talos cluster)
+
+1. Pod boots past `configuration loaded instance_dir=/data` and reaches `starting api on 0.0.0.0:19898`.
+2. No `failed to load migrations` error.
+3. No `OTEL_EXPORTER_OTLP_PROTOCOL=grpc requested but ...` warning when the cluster's `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.observability.svc.cluster.local:4317` is set.
+4. Vector similarity ranking returns non-zero scores for hybrid memory search.
+
+### Phase 11 Postgres backend
+
+The Phase 11.2 worktree (in-flight, instance-tier Postgres dispatch) is unaffected by this hotfix. After v0.6.2 ships, the worktree rebases onto the new main and continues with the per-store dispatch sweeps (TaskStore, WikiStore, ProjectStore, NotificationStore, AuditAppender).
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.6.1...v0.6.2
 ## v0.6.1
 
 ### Release Story
