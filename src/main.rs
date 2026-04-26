@@ -1719,9 +1719,18 @@ async fn run(
 
     // Instance-level global task database. Shared across all agents with globally
     // unique task numbers. Lives alongside secrets.redb in the instance data dir.
-    let instance_pool = spacebot::db::connect_instance_db(&config.instance_dir.join("data"))
-        .await
-        .context("failed to initialize instance database")?;
+    let instance_db = spacebot::db::connect_instance_db(
+        &config.instance_dir.join("data"),
+        config.database.url.as_ref(),
+    )
+    .await
+    .context("failed to initialize instance database")?;
+    let instance_pool = instance_db
+        .as_sqlite()
+        .context(
+            "PR 11.1 instance pool requires SQLite backend; Postgres support lands in PR 11.2",
+        )?
+        .clone();
 
     // Migrate legacy per-agent tasks to the global database on first run.
     spacebot::tasks::migration::migrate_legacy_tasks(&config.instance_dir, &instance_pool)
@@ -2068,6 +2077,7 @@ async fn run(
     let config_path = config.instance_dir.join("config.toml");
     api_state.set_config_path(config_path.clone()).await;
     api_state.set_instance_dir(config.instance_dir.clone());
+    api_state.set_database_url(config.database.url.clone());
     api_state.set_llm_manager(llm_manager.clone()).await;
     api_state.set_embedding_model(embedding_model.clone()).await;
     api_state.set_prompt_engine(prompt_engine.clone()).await;
@@ -2179,7 +2189,8 @@ async fn run(
     // the resumed worker into its state so follow-ups route correctly.
     if agents_initialized {
         for (agent_id, agent) in agents.iter() {
-            let run_logger = spacebot::conversation::ProcessRunLogger::new(agent.db.sqlite.clone());
+            let run_logger =
+                spacebot::conversation::ProcessRunLogger::new(agent.db.sqlite_pool()?.clone());
             let idle_workers = match run_logger
                 .get_idle_interactive_workers(&agent.config.id)
                 .await
@@ -3106,7 +3117,7 @@ async fn initialize_agents(
         })?;
 
         // Per-agent database connections
-        let db = spacebot::db::Db::connect(&agent_config.data_dir)
+        let db = spacebot::db::Db::connect(&agent_config.data_dir, config.database.url.as_ref())
             .await
             .with_context(|| {
                 format!(
@@ -3115,7 +3126,7 @@ async fn initialize_agents(
                 )
             })?;
 
-        let run_logger = spacebot::conversation::ProcessRunLogger::new(db.sqlite.clone());
+        let run_logger = spacebot::conversation::ProcessRunLogger::new(db.sqlite_pool()?.clone());
         let orphaned_workers = run_logger
             .reconcile_running_workers_for_agent(
                 &agent_config.id,
@@ -3165,8 +3176,10 @@ async fn initialize_agents(
             };
 
         // Per-agent memory system
-        let memory_store =
-            spacebot::memory::MemoryStore::with_agent_id(db.sqlite.clone(), &agent_config.id);
+        let memory_store = spacebot::memory::MemoryStore::with_agent_id(
+            db.sqlite_pool()?.clone(),
+            &agent_config.id,
+        );
         let project_store = global_project_store.clone();
         let embedding_table = spacebot::memory::EmbeddingTable::open_or_create(&db.lance)
             .await
@@ -3194,8 +3207,10 @@ async fn initialize_agents(
                 .and_then(|tz_name| tz_name.parse::<chrono_tz::Tz>().ok())
                 .unwrap_or(chrono_tz::Tz::UTC)
         };
-        let working_memory =
-            spacebot::memory::WorkingMemoryStore::new(db.sqlite.clone(), working_memory_timezone);
+        let working_memory = spacebot::memory::WorkingMemoryStore::new(
+            db.sqlite_pool()?.clone(),
+            working_memory_timezone,
+        );
 
         // Per-agent control and memory event buses (broadcast fan-out).
         let (event_tx, memory_event_tx) = spacebot::create_process_event_buses();
@@ -3285,7 +3300,7 @@ async fn initialize_agents(
             runtime_config,
             event_tx,
             memory_event_tx,
-            sqlite_pool: db.sqlite.clone(),
+            sqlite_pool: db.sqlite_pool()?.clone(),
             messaging_manager: None,
             sandbox,
             links: agent_links.clone(),
@@ -3324,11 +3339,13 @@ async fn initialize_agents(
             let to_channel = link.channel_id_for(&link.to_agent_id);
 
             if let Some(agent) = agents.get(&Arc::from(link.from_agent_id.as_str())) {
-                let store = spacebot::conversation::ChannelStore::new(agent.db.sqlite.clone());
+                let store =
+                    spacebot::conversation::ChannelStore::new(agent.db.sqlite_pool()?.clone());
                 store.upsert(&from_channel, &empty_meta);
             }
             if let Some(agent) = agents.get(&Arc::from(link.to_agent_id.as_str())) {
-                let store = spacebot::conversation::ChannelStore::new(agent.db.sqlite.clone());
+                let store =
+                    spacebot::conversation::ChannelStore::new(agent.db.sqlite_pool()?.clone());
                 store.upsert(&to_channel, &empty_meta);
             }
         }
@@ -3366,7 +3383,7 @@ async fn initialize_agents(
         for (agent_id, agent) in agents.iter() {
             let event_rx = agent.deps.event_tx.subscribe();
             api_state.register_agent_events(agent_id.to_string(), event_rx);
-            agent_pools.insert(agent_id.to_string(), agent.db.sqlite.clone());
+            agent_pools.insert(agent_id.to_string(), agent.db.sqlite_pool()?.clone());
             memory_searches.insert(agent_id.to_string(), agent.deps.memory_search.clone());
             mcp_managers.insert(agent_id.to_string(), agent.deps.mcp_manager.clone());
             agent_workspaces.insert(agent_id.to_string(), agent.config.workspace.clone());
@@ -3402,6 +3419,7 @@ async fn initialize_agents(
             api_state.set_secrets_store(store.clone());
         }
         api_state.set_instance_dir(config.instance_dir.clone());
+        api_state.set_database_url(config.database.url.clone());
     }
 
     // Run a startup warmup pass for every agent before adapters begin receiving
@@ -3412,7 +3430,7 @@ async fn initialize_agents(
 
         for (agent_id, agent) in agents.iter() {
             let deps = agent.deps.clone();
-            let sqlite_pool = agent.db.sqlite.clone();
+            let sqlite_pool = agent.db.sqlite_pool()?.clone();
             let agent_id = agent_id.clone();
             startup_warmup.spawn(async move {
                 let logger = spacebot::agent::cortex::CortexLogger::new(sqlite_pool);
@@ -3888,10 +3906,16 @@ async fn initialize_agents(
         }
     }
 
-    let portal_agent_pools = agents
+    let portal_agent_pools: HashMap<String, sqlx::SqlitePool> = agents
         .iter()
-        .map(|(agent_id, agent)| (agent_id.to_string(), agent.db.sqlite.clone()))
-        .collect();
+        .map(|(agent_id, agent)| {
+            agent
+                .db
+                .sqlite_pool()
+                .map(|pool| (agent_id.to_string(), pool.clone()))
+        })
+        .collect::<spacebot::error::Result<_>>()
+        .context("portal adapter requires SQLite agent pools (PR 11.1 invariant)")?;
     let portal_adapter = Arc::new(spacebot::messaging::portal::PortalAdapter::new(
         portal_agent_pools,
     ));
@@ -3920,7 +3944,9 @@ async fn initialize_agents(
     let mut cron_schedulers_map = std::collections::HashMap::new();
 
     for (agent_id, agent) in agents.iter_mut() {
-        let store = Arc::new(spacebot::cron::CronStore::new(agent.db.sqlite.clone()));
+        let store = Arc::new(spacebot::cron::CronStore::new(
+            agent.db.sqlite_pool()?.clone(),
+        ));
         agent.deps.messaging_manager = Some(messaging_manager.clone());
 
         // Seed cron jobs from config into the database
@@ -4021,8 +4047,9 @@ async fn initialize_agents(
 
     // Start cortex warmup, runtime, and association loops for each agent
     for (agent_id, agent) in agents.iter() {
-        let cortex_logger = spacebot::agent::cortex::CortexLogger::new(agent.db.sqlite.clone())
-            .with_notifications(global_notification_store.clone(), agent_id.to_string());
+        let cortex_logger =
+            spacebot::agent::cortex::CortexLogger::new(agent.db.sqlite_pool()?.clone())
+                .with_notifications(global_notification_store.clone(), agent_id.to_string());
         let warmup_handle =
             spacebot::agent::cortex::spawn_warmup_loop(agent.deps.clone(), cortex_logger.clone());
         cortex_handles.push(warmup_handle);
@@ -4040,7 +4067,7 @@ async fn initialize_agents(
 
         let ready_task_handle = spacebot::agent::cortex::spawn_ready_task_loop(
             agent.deps.clone(),
-            spacebot::agent::cortex::CortexLogger::new(agent.db.sqlite.clone())
+            spacebot::agent::cortex::CortexLogger::new(agent.db.sqlite_pool()?.clone())
                 .with_notifications(global_notification_store.clone(), agent_id.to_string()),
         );
         cortex_handles.push(ready_task_handle);
@@ -4053,10 +4080,13 @@ async fn initialize_agents(
         for (agent_id, agent) in agents.iter() {
             let browser_config = (**agent.deps.runtime_config.browser_config.load()).clone();
             let brave_search_key = (**agent.deps.runtime_config.brave_search_key.load()).clone();
-            let conversation_logger =
-                spacebot::conversation::history::ConversationLogger::new(agent.db.sqlite.clone());
-            let channel_store = spacebot::conversation::ChannelStore::new(agent.db.sqlite.clone());
-            let run_logger = spacebot::conversation::ProcessRunLogger::new(agent.db.sqlite.clone());
+            let conversation_logger = spacebot::conversation::history::ConversationLogger::new(
+                agent.db.sqlite_pool()?.clone(),
+            );
+            let channel_store =
+                spacebot::conversation::ChannelStore::new(agent.db.sqlite_pool()?.clone());
+            let run_logger =
+                spacebot::conversation::ProcessRunLogger::new(agent.db.sqlite_pool()?.clone());
             let cortex_ctx = spacebot::agent::cortex_chat::CortexChatSession::create_context();
             #[allow(deprecated)] // Cortex chat is legacy — being replaced by Channel Settings
             let tool_server = spacebot::tools::create_cortex_chat_tool_server(
@@ -4092,7 +4122,8 @@ async fn initialize_agents(
                 }
             };
 
-            let store = spacebot::agent::cortex_chat::CortexChatStore::new(agent.db.sqlite.clone());
+            let store =
+                spacebot::agent::cortex_chat::CortexChatStore::new(agent.db.sqlite_pool()?.clone());
             let session = spacebot::agent::cortex_chat::CortexChatSession::new(
                 agent.deps.clone(),
                 tool_server,

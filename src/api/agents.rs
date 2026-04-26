@@ -1193,7 +1193,9 @@ pub async fn create_agent_internal(
         })?;
     }
 
-    let db = crate::db::Db::connect(&agent_config.data_dir)
+    let db_url_guard = state.database_url.load();
+    let db_url: Option<&crate::db::DatabaseUrl> = (**db_url_guard).as_ref();
+    let db = crate::db::Db::connect(&agent_config.data_dir, db_url)
         .await
         .map_err(|error| {
             tracing::error!(%error, agent_id = %agent_id, "failed to connect agent databases");
@@ -1219,7 +1221,8 @@ pub async fn create_agent_internal(
             .clone()
     };
 
-    let memory_store = crate::memory::MemoryStore::new(db.sqlite.clone());
+    let memory_store =
+        crate::memory::MemoryStore::new(db.sqlite_pool().map_err(|e| e.to_string())?.clone());
     let embedding_table = crate::memory::EmbeddingTable::open_or_create(&db.lance)
         .await
         .map_err(|error| {
@@ -1339,7 +1342,7 @@ pub async fn create_agent_internal(
         runtime_config: runtime_config.clone(),
         event_tx: event_tx.clone(),
         memory_event_tx: memory_event_tx.clone(),
-        sqlite_pool: db.sqlite.clone(),
+        sqlite_pool: db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
         messaging_manager: Some(messaging_manager.clone()),
         sandbox: sandbox.clone(),
         links: Arc::new(arc_swap::ArcSwap::from_pointee(
@@ -1379,7 +1382,10 @@ pub async fn create_agent_internal(
                 .or(agent_config.cron_timezone.as_deref())
                 .and_then(|tz| tz.parse::<chrono_tz::Tz>().ok())
                 .unwrap_or(chrono_tz::Tz::UTC);
-            crate::memory::WorkingMemoryStore::new(db.sqlite.clone(), tz)
+            crate::memory::WorkingMemoryStore::new(
+                db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+                tz,
+            )
         },
         api_state: Some(state.clone()),
         wiki_store: state.wiki_store.load().as_ref().clone(),
@@ -1397,7 +1403,9 @@ pub async fn create_agent_internal(
     let event_rx = event_tx.subscribe();
     state.register_agent_events(agent_id.clone(), event_rx);
 
-    let cron_store = std::sync::Arc::new(crate::cron::CronStore::new(db.sqlite.clone()));
+    let cron_store = std::sync::Arc::new(crate::cron::CronStore::new(
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+    ));
     let cron_context = crate::cron::CronContext {
         deps: deps.clone(),
         screenshot_dir: agent_config.screenshot_dir(),
@@ -1413,10 +1421,15 @@ pub async fn create_agent_internal(
 
     let browser_config = (**runtime_config.browser_config.load()).clone();
     let brave_search_key = (**runtime_config.brave_search_key.load()).clone();
-    let conversation_logger =
-        crate::conversation::history::ConversationLogger::new(db.sqlite.clone());
-    let channel_store = crate::conversation::ChannelStore::new(db.sqlite.clone());
-    let run_logger = crate::conversation::ProcessRunLogger::new(db.sqlite.clone());
+    let conversation_logger = crate::conversation::history::ConversationLogger::new(
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+    );
+    let channel_store = crate::conversation::ChannelStore::new(
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+    );
+    let run_logger = crate::conversation::ProcessRunLogger::new(
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+    );
     let cortex_ctx = crate::agent::cortex_chat::CortexChatSession::create_context();
     #[allow(deprecated)] // Cortex chat is legacy; being replaced by Channel Settings
     let cortex_tool_server = crate::tools::create_cortex_chat_tool_server(
@@ -1445,7 +1458,9 @@ pub async fn create_agent_internal(
         tracing::warn!(%error, agent_id = %agent_id, "failed to add factory tools to cortex chat");
     }
 
-    let cortex_store = crate::agent::cortex_chat::CortexChatStore::new(db.sqlite.clone());
+    let cortex_store = crate::agent::cortex_chat::CortexChatStore::new(
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
+    );
     let cortex_session = crate::agent::cortex_chat::CortexChatSession::new(
         deps.clone(),
         cortex_tool_server,
@@ -1462,14 +1477,14 @@ pub async fn create_agent_internal(
         }
         logger
     };
-    let cortex_logger = make_cortex_logger(db.sqlite.clone());
+    let cortex_logger = make_cortex_logger(db.sqlite_pool().map_err(|e| e.to_string())?.clone());
     let _warmup_loop = crate::agent::cortex::spawn_warmup_loop(deps.clone(), cortex_logger.clone());
     let _cortex_loop = crate::agent::cortex::spawn_cortex_loop(deps.clone(), cortex_logger.clone());
     let _association_loop =
         crate::agent::cortex::spawn_association_loop(deps.clone(), cortex_logger);
     crate::agent::cortex::spawn_ready_task_loop(
         deps.clone(),
-        make_cortex_logger(db.sqlite.clone()),
+        make_cortex_logger(db.sqlite_pool().map_err(|e| e.to_string())?.clone()),
     );
 
     let ingestion_config = **runtime_config.ingestion.load();
@@ -1477,7 +1492,7 @@ pub async fn create_agent_internal(
         crate::agent::ingestion::spawn_ingestion_loop(agent_config.ingest_dir(), deps.clone());
     }
 
-    let sqlite_pool = db.sqlite.clone();
+    let sqlite_pool = db.sqlite_pool().map_err(|e| e.to_string())?.clone();
     let mut deps_with_cron = deps.clone();
     deps_with_cron.cron_tool = Some(cron_tool);
     let agent = crate::Agent {

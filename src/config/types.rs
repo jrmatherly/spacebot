@@ -69,6 +69,9 @@ pub struct Config {
     /// Phase 5 audit-log configuration. `audit.export` is None when
     /// `[audit.export]` is absent from TOML or carries `enabled = false`.
     pub audit: AuditConfig,
+    /// Phase 11 database backend selection. `database.url` is None when
+    /// `[database]` is absent from TOML, falling back to per-agent SQLite.
+    pub database: DatabaseConfig,
 }
 
 /// Phase 5 audit-log configuration root. See `src/audit/export.rs` for
@@ -90,6 +93,18 @@ pub struct AuditConfig {
 pub struct AuditExportScheduledConfig {
     pub config: crate::audit::export::ExportConfig,
     pub interval: std::time::Duration,
+}
+
+/// Phase 11 database backend configuration. The `url` field is a typed
+/// `DatabaseUrl` whose variant encodes the backend dialect, validated at
+/// config load time. `Sqlite` URLs route through the SQLite path in
+/// `db::Db::connect`; `Postgres` URLs route through the Postgres path.
+/// See `docs/design-docs/postgres-migration.md`.
+#[derive(Debug, Clone, Default)]
+pub struct DatabaseConfig {
+    /// Typed connection URL. None falls back to per-agent SQLite under the
+    /// agent data dir (today's behavior).
+    pub url: Option<crate::db::DatabaseUrl>,
 }
 
 impl Config {
