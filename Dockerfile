@@ -83,7 +83,12 @@ COPY packages/api-client/ packages/api-client/
 COPY scripts/check-workspace-protocol.sh scripts/
 COPY interface/package.json interface/bun.lock interface/
 # hadolint ignore=DL3003
-RUN cd interface && bun install --frozen-lockfile
+# SKIP_WORKSPACE_PROTOCOL_CHECK=1: the preinstall hook in interface/package.json
+# runs scripts/check-workspace-protocol.sh, which requires a git worktree. Docker
+# build contexts lack `.git/` (.dockerignore excludes it). The check already ran
+# on the CI host (or via `just gate-pr`) before this image build — suppressing it
+# here is safe. Never set this in dev shells or CI runner steps.
+RUN cd interface && SKIP_WORKSPACE_PROTOCOL_CHECK=1 bun install --frozen-lockfile
 
 # 4. Build the OpenCode embed bundle (live coding UI in Workers tab).
 #    Must run before the frontend build so the embed assets in

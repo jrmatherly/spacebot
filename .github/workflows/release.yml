@@ -155,14 +155,45 @@ jobs:
       - name: Install bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
-      - name: Build frontend
+      # Frontend build is decomposed into discrete steps so failures propagate
+      # via GitHub Actions' default fail-fast semantics. The previous monolithic
+      # `run: |` block used `cd dir && cmd && cd ..` chains, which suppressed
+      # `set -e` for intermediate failures (POSIX-defined behavior: errexit is
+      # not triggered by failed commands in `&&`/`||` lists). On the v0.6.0
+      # release attempt this caused the macOS log to surface a confusing
+      # secondary "No such file or directory" error after the real preinstall
+      # failure — the script kept running with the wrong cwd because `cd ..`
+      # never executed. This shape matches the convention already established
+      # in interface-ci.yml + spaceui.yml.
+
+      - name: Install spaceui dependencies
+        working-directory: spaceui
         env:
           SPACEBOT_SKIP_FRONTEND_BUILD: "1"
-        run: |
-          cd spaceui && bun install --frozen-lockfile && bun run build && cd ..
-          cd interface && bun install --frozen-lockfile && cd ..
-          ./scripts/build-opencode-embed.sh
-          cd interface && bun run build
+        run: bun install --frozen-lockfile
+
+      - name: Build spaceui packages
+        working-directory: spaceui
+        env:
+          SPACEBOT_SKIP_FRONTEND_BUILD: "1"
+        run: bun run build
+
+      - name: Install interface dependencies
+        working-directory: interface
+        env:
+          SPACEBOT_SKIP_FRONTEND_BUILD: "1"
+        run: bun install --frozen-lockfile
+
+      - name: Build OpenCode embed
+        env:
+          SPACEBOT_SKIP_FRONTEND_BUILD: "1"
+        run: ./scripts/build-opencode-embed.sh
+
+      - name: Build interface
+        working-directory: interface
+        env:
+          SPACEBOT_SKIP_FRONTEND_BUILD: "1"
+        run: bun run build
 
       - name: Determine version tag
         id: version
