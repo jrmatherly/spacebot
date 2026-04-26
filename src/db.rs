@@ -544,7 +544,10 @@ mod tests {
         let resolved = resolve_per_agent_url(tmp.path(), Some(&supplied)).unwrap();
         assert_eq!(resolved.as_str(), "sqlite:/somewhere/else.db");
         // Operator-supplied URL bypasses the rename logic entirely.
-        assert!(legacy.exists(), "legacy must not be touched when url supplied");
+        assert!(
+            legacy.exists(),
+            "legacy must not be touched when url supplied"
+        );
     }
 
     #[test]
@@ -588,7 +591,10 @@ mod tests {
         let supplied: DatabaseUrl = "sqlite:/elsewhere.db".parse().unwrap();
         let resolved = resolve_instance_url(tmp.path(), Some(&supplied)).unwrap();
         assert_eq!(resolved.as_str(), "sqlite:/elsewhere.db");
-        assert!(legacy.exists(), "legacy must not be touched when url supplied");
+        assert!(
+            legacy.exists(),
+            "legacy must not be touched when url supplied"
+        );
     }
 
     // R5: connect_instance_db has distinct behavior from Db::connect
@@ -622,7 +628,10 @@ mod tests {
         let pool_handle = inner.clone();
         let pool = DbPool::Sqlite(inner);
         pool.close().await;
-        assert!(pool_handle.is_closed(), "pool must report closed after close()");
+        assert!(
+            pool_handle.is_closed(),
+            "pool must report closed after close()"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
