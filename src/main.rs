@@ -1444,9 +1444,25 @@ const KEYSTORE_INSTANCE_ID: &str = "instance";
 ///
 /// If no instance-level store exists but per-agent stores do (from the previous
 /// per-agent model), secrets are migrated from the first non-empty agent store.
+///
+/// Idempotent within a process: the first successful (or attempted-and-failed)
+/// call caches its result in [`BOOTSTRAPPED_STORE`] and subsequent calls return
+/// the cached value without re-opening redb. This eliminates the
+/// `Database already open. Cannot acquire lock.` warning that surfaced in
+/// containerized deployments where probe sidecars or restart races could
+/// invoke this function more than once against the same flock.
+///
+/// Tracing is not yet initialized at the daemon's first call site
+/// (`tracing` init runs inside `block_on`), so boot-phase visibility uses
+/// `eprintln!` which lands on stderr alongside the existing line-1469
+/// warning.
 fn bootstrap_secrets_store(
     config_path: &Option<std::path::PathBuf>,
 ) -> Option<Arc<spacebot::secrets::store::SecretsStore>> {
+    if let Some(cached) = BOOTSTRAPPED_STORE.get() {
+        return cached.clone();
+    }
+
     // Probe kernel keyring support before any workers spawn. If keyctl is
     // blocked (restrictive seccomp, gVisor, etc.), worker keyring isolation
     // is disabled but workers still start normally.
@@ -1457,16 +1473,26 @@ fn bootstrap_secrets_store(
     let data_dir = instance_dir.join("data");
     if let Err(error) = std::fs::create_dir_all(&data_dir) {
         eprintln!("warning: failed to create instance data directory: {error}");
+        let _ = BOOTSTRAPPED_STORE.set(None);
         return None;
     }
 
     let secrets_path = data_dir.join("secrets.redb");
     let is_new_store = !secrets_path.exists();
 
+    eprintln!(
+        "info: opening instance secrets store path={}",
+        secrets_path.display()
+    );
+
     let store = match spacebot::secrets::store::SecretsStore::new(&secrets_path) {
         Ok(store) => Arc::new(store),
         Err(error) => {
-            eprintln!("warning: failed to open secrets store: {error}");
+            eprintln!(
+                "warning: failed to open secrets store path={} error={error}",
+                secrets_path.display()
+            );
+            let _ = BOOTSTRAPPED_STORE.set(None);
             return None;
         }
     };
@@ -1570,8 +1596,23 @@ fn bootstrap_secrets_store(
     // Set the store into the thread-local for config resolution.
     spacebot::config::set_resolve_secrets_store(store.clone());
 
-    Some(store)
+    let result = Some(store);
+    let _ = BOOTSTRAPPED_STORE.set(result.clone());
+    result
 }
+
+/// Process-wide cache for [`bootstrap_secrets_store`]. The function is called
+/// from both `Command::Run` (daemon boot) and `Command::Secrets` (CLI), and a
+/// hypothetical sidecar invocation against a live daemon would race against
+/// the daemon's existing redb flock. `OnceLock` collapses any second call to
+/// the cached result without re-opening the file.
+///
+/// `None` cached on first-call failure is intentional: the failure is
+/// already logged at the eprintln site, and re-attempting from a second call
+/// would only re-log the same failure.
+static BOOTSTRAPPED_STORE: std::sync::OnceLock<
+    Option<Arc<spacebot::secrets::store::SecretsStore>>,
+> = std::sync::OnceLock::new();
 
 /// Migrate secrets from legacy per-agent redb stores into the new instance-level
 /// store. Only runs once when the instance-level store is first created.
