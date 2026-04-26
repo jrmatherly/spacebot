@@ -1823,7 +1823,15 @@ async fn run(
         .await
         .context("failed to migrate legacy tasks to global database")?;
 
-    let global_task_store = Arc::new(spacebot::tasks::TaskStore::new(instance_pool.clone()));
+    // Wrap the SqlitePool into Arc<DbPool> for the per-store dispatch contract
+    // introduced in PR 11.2 (TaskStore takes Arc<DbPool>). The wider sweep that
+    // makes `instance_pool` itself Arc<DbPool> lands later in PR 11.2 alongside
+    // ApiState.instance_pool widening; until then, this construction site
+    // bridges. WikiStore + others still take SqlitePool until their per-store
+    // sweeps land.
+    let global_task_store = Arc::new(spacebot::tasks::TaskStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(instance_pool.clone()),
+    )));
 
     // Instance-wide wiki knowledge base.
     let global_wiki_store = Arc::new(spacebot::wiki::WikiStore::new(instance_pool.clone()));

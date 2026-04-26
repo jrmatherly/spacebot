@@ -4997,7 +4997,8 @@ mod tests {
         .await
         .expect("failed to create tasks table");
 
-        let task_store = TaskStore::new(pool.clone());
+        let task_store =
+            TaskStore::new(Arc::new(crate::db::DbPool::Sqlite(pool.clone())));
         let registry = crate::agent::process_control::ProcessControlRegistry::new();
         let agent_id: crate::AgentId = Arc::from("agent-1");
         let task_number = 2_i64;
@@ -5081,7 +5082,8 @@ mod tests {
         .await
         .expect("failed to create tasks table");
 
-        let task_store = TaskStore::new(pool.clone());
+        let task_store =
+            TaskStore::new(Arc::new(crate::db::DbPool::Sqlite(pool.clone())));
         let registry = crate::agent::process_control::ProcessControlRegistry::new();
         let agent_id: crate::AgentId = Arc::from("agent-1");
         let task_number = 1_i64;

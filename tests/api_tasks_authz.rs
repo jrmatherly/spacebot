@@ -46,7 +46,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// authz middleware reads. Required because `ApiState::new_test_state_*`
 /// leaves `task_store` unset (service returns 503 without it).
 fn attach_task_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_task_store(Arc::new(TaskStore::new(pool.clone())));
+    state.set_task_store(Arc::new(TaskStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_get_task(number: i64, bearer: &str) -> Request<Body> {
@@ -85,7 +87,7 @@ fn req_create_task(bearer: &str, owner_agent_id: &str) -> Request<Body> {
 /// Create a task directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns `(task_number, task_id)`.
 async fn seed_task(pool: &sqlx::SqlitePool, owner: &AuthContext) -> (i64, String) {
-    let store = TaskStore::new(pool.clone());
+    let store = TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let task = store
         .create(spacebot::tasks::CreateTaskInput {
             owner_agent_id: "agent-a".to_string(),
@@ -397,7 +399,7 @@ async fn list_tasks_enriches_team_scoped_task_with_chip_fields() {
     .unwrap();
 
     // Seed a single team-scoped task under agent-a.
-    let store = TaskStore::new(pool.clone());
+    let store = TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let task = store
         .create(spacebot::tasks::CreateTaskInput {
             owner_agent_id: "agent-a".to_string(),

@@ -9,6 +9,8 @@ use spacebot::agent::process_control::ProcessControlRegistry;
 use spacebot::tasks::TaskStore;
 use sqlx::sqlite::SqlitePoolOptions;
 
+use std::sync::Arc;
+
 #[tokio::test]
 async fn detached_bootstrap_rolls_back_control_entry_on_database_failure() {
     let pool = SqlitePoolOptions::new()
@@ -43,7 +45,7 @@ async fn detached_bootstrap_rolls_back_control_entry_on_database_failure() {
     .await
     .expect("failed to create tasks table");
 
-    let task_store = TaskStore::new(pool.clone());
+    let task_store = TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let registry = ProcessControlRegistry::new();
     let agent_id: AgentId = "agent-1".into();
     let task_number = 7_i64;

@@ -71,9 +71,9 @@ async fn bootstrap_deps() -> anyhow::Result<spacebot::AgentDeps> {
         embedding_table,
         embedding_model,
     ));
-    let task_store = Arc::new(spacebot::tasks::TaskStore::new(
-        db.sqlite_pool().unwrap().clone(),
-    ));
+    let task_store = Arc::new(spacebot::tasks::TaskStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(db.sqlite_pool().unwrap().clone()),
+    )));
 
     let identity = spacebot::identity::Identity::load(&agent_config.workspace).await;
     let prompts =
