@@ -23,7 +23,7 @@ cargo run -- start       # Start the daemon (port 19898)
 
 ## Architecture
 
-Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` — an intentional guard that prevents Cargo from auto-discovering the vendored `spacedrive/` workspace. Do not delete the `[workspace]` block; if anything, the only safe change is to extend the exclude list. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Five process types (Channel, Branch, Worker, Compactor, Cortex), each a Rig `Agent<SpacebotModel, SpacebotHook>`. Three databases: SQLite (relational), LanceDB (vectors), redb (key-value).
+Single binary crate with no workspace **members**. The root `Cargo.toml` carries `[workspace] exclude = ["spacedrive"]` — an intentional guard that prevents Cargo from auto-discovering the vendored `spacedrive/` workspace. Do not delete the `[workspace]` block; if anything, the only safe change is to extend the exclude list. Module files use `src/module.rs` pattern (NEVER `src/module/mod.rs`). Five process types (Channel, Branch, Worker, Compactor, Cortex), each a Rig `Agent<SpacebotModel, SpacebotHook>`. Three database backends: relational SQL via `enum DbPool { Sqlite, Postgres }` (Phase 11.1+; SQLite default, Postgres opt-in via `[database] url = "postgres://..."`), LanceDB (vectors), redb (key-value).
 
 ## Package Managers
 
@@ -91,6 +91,7 @@ just graphify-clean                       # drop graphify-out/ entirely
 - `docs/design-docs/entra-app-registrations.md` — Entra app-registration schema (client IDs, app roles, redirect URIs, API permissions) used by the Phase 1 JWT validator
 - `docs/design-docs/entra-backfill-strategy.md` — No-auto-broadening policy for pre-existing resources under Entra auth, plus the Phase 10 sweep design for both orphan directions
 - `docs/design-docs/entra-audit-log.md` — Phase 5 operator guide: `audit_events` table shape, chain-verification procedure, three export modes (Filesystem dev-only, S3 COMPLIANCE, HttpSiem), separation-of-duties (SOC 2 CC6.6)
+- `docs/design-docs/postgres-migration.md` — Phase 11 dual-backend architecture: `enum DbPool` over native typed sqlx pools, `DialectAdapter` companion trait, `[database]` config block, `DatabaseUrl` newtype validated at TOML deserialize. PR 11.1 (foundation, shipped) defers per-store dispatch to PR 11.2/11.3 and K8s deployment to PR 11.4.
 - `docs/content/docs/(configuration)/entra-auth.mdx` — Phase 6 operator guide (PR A + PR B + PR C, 296 lines): two-app-registration pattern, `[api.auth.entra]` TOML config, SPA MSAL.js v5 bootstrap flow, A-16/A-17 cache-location guidance, authedFetch 401-refresh-exhausted behavior, server-sent events under Entra (fetch-event-source polyfill), sign-out + user menu, `/api/me` consolidated principal endpoint (A-18/A-19), `VITE_AUTH_MOCK=1` local-dev mode, troubleshooting (SPA redirect failure, 401-after-sign-in, overage 403s, SSE silent stall, `/api/me` 401, missing photo, unified 7-day JWKS TTL vocabulary). Renders at `/docs/entra-auth`.
 - `spacedrive/SYNC.md` — Fork provenance + reference-clone discipline for the vendored Spacedrive tree (Spacebot-owned per 2026-04-16 self-reliance decision)
 - `spaceui/SYNC.md` — Cherry-pick discipline for the vendored SpaceUI tree
