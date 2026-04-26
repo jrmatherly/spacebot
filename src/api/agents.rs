@@ -1221,11 +1221,8 @@ pub async fn create_agent_internal(
             .clone()
     };
 
-    let memory_store = crate::memory::MemoryStore::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
-    );
+    let memory_store =
+        crate::memory::MemoryStore::new(db.sqlite_pool().map_err(|e| e.to_string())?.clone());
     let embedding_table = crate::memory::EmbeddingTable::open_or_create(&db.lance)
         .await
         .map_err(|error| {
@@ -1345,10 +1342,7 @@ pub async fn create_agent_internal(
         runtime_config: runtime_config.clone(),
         event_tx: event_tx.clone(),
         memory_event_tx: memory_event_tx.clone(),
-        sqlite_pool: db
-            .sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        sqlite_pool: db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
         messaging_manager: Some(messaging_manager.clone()),
         sandbox: sandbox.clone(),
         links: Arc::new(arc_swap::ArcSwap::from_pointee(
@@ -1389,9 +1383,7 @@ pub async fn create_agent_internal(
                 .and_then(|tz| tz.parse::<chrono_tz::Tz>().ok())
                 .unwrap_or(chrono_tz::Tz::UTC);
             crate::memory::WorkingMemoryStore::new(
-                db.sqlite_pool()
-                    .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-                    .clone(),
+                db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
                 tz,
             )
         },
@@ -1412,9 +1404,7 @@ pub async fn create_agent_internal(
     state.register_agent_events(agent_id.clone(), event_rx);
 
     let cron_store = std::sync::Arc::new(crate::cron::CronStore::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
     ));
     let cron_context = crate::cron::CronContext {
         deps: deps.clone(),
@@ -1432,19 +1422,13 @@ pub async fn create_agent_internal(
     let browser_config = (**runtime_config.browser_config.load()).clone();
     let brave_search_key = (**runtime_config.brave_search_key.load()).clone();
     let conversation_logger = crate::conversation::history::ConversationLogger::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
     );
     let channel_store = crate::conversation::ChannelStore::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
     );
     let run_logger = crate::conversation::ProcessRunLogger::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
     );
     let cortex_ctx = crate::agent::cortex_chat::CortexChatSession::create_context();
     #[allow(deprecated)] // Cortex chat is legacy; being replaced by Channel Settings
@@ -1475,9 +1459,7 @@ pub async fn create_agent_internal(
     }
 
     let cortex_store = crate::agent::cortex_chat::CortexChatStore::new(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
+        db.sqlite_pool().map_err(|e| e.to_string())?.clone(),
     );
     let cortex_session = crate::agent::cortex_chat::CortexChatSession::new(
         deps.clone(),
@@ -1495,22 +1477,14 @@ pub async fn create_agent_internal(
         }
         logger
     };
-    let cortex_logger = make_cortex_logger(
-        db.sqlite_pool()
-            .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-            .clone(),
-    );
+    let cortex_logger = make_cortex_logger(db.sqlite_pool().map_err(|e| e.to_string())?.clone());
     let _warmup_loop = crate::agent::cortex::spawn_warmup_loop(deps.clone(), cortex_logger.clone());
     let _cortex_loop = crate::agent::cortex::spawn_cortex_loop(deps.clone(), cortex_logger.clone());
     let _association_loop =
         crate::agent::cortex::spawn_association_loop(deps.clone(), cortex_logger);
     crate::agent::cortex::spawn_ready_task_loop(
         deps.clone(),
-        make_cortex_logger(
-            db.sqlite_pool()
-                .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-                .clone(),
-        ),
+        make_cortex_logger(db.sqlite_pool().map_err(|e| e.to_string())?.clone()),
     );
 
     let ingestion_config = **runtime_config.ingestion.load();
@@ -1518,10 +1492,7 @@ pub async fn create_agent_internal(
         crate::agent::ingestion::spawn_ingestion_loop(agent_config.ingest_dir(), deps.clone());
     }
 
-    let sqlite_pool = db
-        .sqlite_pool()
-        .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-        .clone();
+    let sqlite_pool = db.sqlite_pool().map_err(|e| e.to_string())?.clone();
     let mut deps_with_cron = deps.clone();
     deps_with_cron.cron_tool = Some(cron_tool);
     let agent = crate::Agent {
