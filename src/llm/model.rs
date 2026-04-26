@@ -263,7 +263,7 @@ impl SpacebotModel {
                     &endpoint,
                     Some(provider_config.api_key.clone()),
                     &[
-                        ("HTTP-Referer", "https://github.com/spacedriveapp/spacebot"),
+                        ("HTTP-Referer", "https://github.com/jrmatherly/spacebot"),
                         ("X-Title", "spacebot"),
                     ],
                 )
@@ -721,7 +721,7 @@ impl CompletionModel for SpacebotModel {
                     &endpoint,
                     Some(provider_config.api_key.clone()),
                     &[
-                        ("HTTP-Referer", "https://github.com/spacedriveapp/spacebot"),
+                        ("HTTP-Referer", "https://github.com/jrmatherly/spacebot"),
                         ("X-Title", "spacebot"),
                     ],
                 )

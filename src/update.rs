@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// GitHub repository for release checks.
-const GITHUB_REPO: &str = "spacedriveapp/spacebot";
+const GITHUB_REPO: &str = "jrmatherly/spacebot";
 
 /// Current binary version from Cargo.toml.
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");

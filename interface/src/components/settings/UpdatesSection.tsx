@@ -11,7 +11,7 @@ function formatCheckedAt(checkedAt: string | null): string {
 }
 
 function pullableDockerImage(image: string | null): string {
-	if (!image) return "ghcr.io/spacedriveapp/spacebot:latest";
+	if (!image) return "ghcr.io/jrmatherly/spacebot:latest";
 	return image.split("@")[0] ?? image;
 }
 
