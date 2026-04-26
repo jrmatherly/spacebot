@@ -1,12 +1,20 @@
-//! Project CRUD storage (SQLite).
+//! Project CRUD storage (SQLite + Postgres).
+//!
+//! Per-method dispatch on `Arc<DbPool>` per Phase 11.2. All methods are
+//! Pattern B (placeholder divergence: `?` for SQLite, `$N` for Postgres);
+//! the schema differs in `created_at`/`updated_at` types (DATETIME for
+//! SQLite, TIMESTAMPTZ for Postgres) so per-backend row readers handle the
+//! deserialization. `CURRENT_TIMESTAMP` works on both backends as-is.
 
+use crate::db::DbPool;
 use crate::error::Result;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{Row as _, SqlitePool};
+use sqlx::Row as _;
 use std::path::Path;
+use std::sync::Arc;
 
 // Enums
 
@@ -180,11 +188,11 @@ pub struct CreateWorktreeInput {
 
 #[derive(Debug, Clone)]
 pub struct ProjectStore {
-    pool: SqlitePool,
+    pool: Arc<DbPool>,
 }
 
 impl ProjectStore {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: Arc<DbPool>) -> Self {
         Self { pool }
     }
 
@@ -196,22 +204,42 @@ impl ProjectStore {
         let settings_json =
             serde_json::to_string(&input.settings).context("failed to serialize settings")?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO projects (id, name, description, icon, tags, root_path, settings, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-            "#,
-        )
-        .bind(&id)
-        .bind(&input.name)
-        .bind(&input.description)
-        .bind(&input.icon)
-        .bind(&tags_json)
-        .bind(&input.root_path)
-        .bind(&settings_json)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert project")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                INSERT INTO projects (id, name, description, icon, tags, root_path, settings, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.name)
+            .bind(&input.description)
+            .bind(&input.icon)
+            .bind(&tags_json)
+            .bind(&input.root_path)
+            .bind(&settings_json)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert project")?,
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                INSERT INTO projects (id, name, description, icon, tags, root_path, settings, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.name)
+            .bind(&input.description)
+            .bind(&input.icon)
+            .bind(&tags_json)
+            .bind(&input.root_path)
+            .bind(&settings_json)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert project")?,
+        };
 
         Ok(self
             .get_project(&id)
@@ -220,56 +248,102 @@ impl ProjectStore {
     }
 
     pub async fn get_project(&self, project_id: &str) -> Result<Option<Project>> {
-        let row = sqlx::query("SELECT * FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("failed to fetch project")?;
-
-        row.map(|r| row_to_project(&r)).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("SELECT * FROM projects WHERE id = ?")
+                .bind(project_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch project")?
+                .map(|r| row_to_project_sqlite(&r))
+                .transpose(),
+            DbPool::Postgres(p) => sqlx::query("SELECT * FROM projects WHERE id = $1")
+                .bind(project_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch project")?
+                .map(|r| row_to_project_pg(&r))
+                .transpose(),
+        }
     }
 
     pub async fn list_projects(&self, status: Option<ProjectStatus>) -> Result<Vec<Project>> {
-        let rows = if let Some(status) = status {
-            sqlx::query(
-                "SELECT * FROM projects WHERE status = ? ORDER BY sort_order ASC, updated_at DESC",
-            )
-            .bind(status.as_str())
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to list projects")?
-        } else {
-            sqlx::query("SELECT * FROM projects ORDER BY sort_order ASC, updated_at DESC")
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to list projects")?
-        };
-
-        rows.iter().map(row_to_project).collect()
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let rows = if let Some(status) = status {
+                    sqlx::query(
+                        "SELECT * FROM projects WHERE status = ? ORDER BY sort_order ASC, updated_at DESC",
+                    )
+                    .bind(status.as_str())
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list projects")?
+                } else {
+                    sqlx::query("SELECT * FROM projects ORDER BY sort_order ASC, updated_at DESC")
+                        .fetch_all(p)
+                        .await
+                        .context("failed to list projects")?
+                };
+                rows.iter().map(row_to_project_sqlite).collect()
+            }
+            DbPool::Postgres(p) => {
+                let rows = if let Some(status) = status {
+                    sqlx::query(
+                        "SELECT * FROM projects WHERE status = $1 ORDER BY sort_order ASC, updated_at DESC",
+                    )
+                    .bind(status.as_str())
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list projects")?
+                } else {
+                    sqlx::query("SELECT * FROM projects ORDER BY sort_order ASC, updated_at DESC")
+                        .fetch_all(p)
+                        .await
+                        .context("failed to list projects")?
+                };
+                rows.iter().map(row_to_project_pg).collect()
+            }
+        }
     }
 
     /// Update the sort_order for a list of projects in a single transaction.
     /// The caller passes IDs in the desired order; each gets sequential order values.
     pub async fn reorder_projects(&self, ids: &[String]) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("failed to begin reorder transaction")?;
-
-        for (order, id) in ids.iter().enumerate() {
-            sqlx::query("UPDATE projects SET sort_order = ? WHERE id = ?")
-                .bind(order as i64)
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-                .context("failed to update project sort_order")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut tx = p
+                    .begin()
+                    .await
+                    .context("failed to begin reorder transaction")?;
+                for (order, id) in ids.iter().enumerate() {
+                    sqlx::query("UPDATE projects SET sort_order = ? WHERE id = ?")
+                        .bind(order as i64)
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await
+                        .context("failed to update project sort_order")?;
+                }
+                tx.commit()
+                    .await
+                    .context("failed to commit reorder transaction")?;
+            }
+            DbPool::Postgres(p) => {
+                let mut tx = p
+                    .begin()
+                    .await
+                    .context("failed to begin reorder transaction")?;
+                for (order, id) in ids.iter().enumerate() {
+                    sqlx::query("UPDATE projects SET sort_order = $1 WHERE id = $2")
+                        .bind(order as i64)
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await
+                        .context("failed to update project sort_order")?;
+                }
+                tx.commit()
+                    .await
+                    .context("failed to commit reorder transaction")?;
+            }
         }
-
-        tx.commit()
-            .await
-            .context("failed to commit reorder transaction")?;
-
         Ok(())
     }
 
@@ -294,37 +368,68 @@ impl ProjectStore {
             serde_json::to_string(&settings).context("failed to serialize settings")?;
         let status = input.status.unwrap_or(existing.status);
 
-        sqlx::query(
-            r#"
-            UPDATE projects
-            SET name = ?, description = ?, icon = ?, tags = ?, logo_path = ?,
-                settings = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            "#,
-        )
-        .bind(&name)
-        .bind(&description)
-        .bind(&icon)
-        .bind(&tags_json)
-        .bind(&logo_path)
-        .bind(&settings_json)
-        .bind(status.as_str())
-        .bind(project_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to update project")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                UPDATE projects
+                SET name = ?, description = ?, icon = ?, tags = ?, logo_path = ?,
+                    settings = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                "#,
+            )
+            .bind(&name)
+            .bind(&description)
+            .bind(&icon)
+            .bind(&tags_json)
+            .bind(&logo_path)
+            .bind(&settings_json)
+            .bind(status.as_str())
+            .bind(project_id)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to update project")?,
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                UPDATE projects
+                SET name = $1, description = $2, icon = $3, tags = $4, logo_path = $5,
+                    settings = $6, status = $7, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $8
+                "#,
+            )
+            .bind(&name)
+            .bind(&description)
+            .bind(&icon)
+            .bind(&tags_json)
+            .bind(&logo_path)
+            .bind(&settings_json)
+            .bind(status.as_str())
+            .bind(project_id)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to update project")?,
+        };
 
         self.get_project(project_id).await
     }
 
     pub async fn delete_project(&self, project_id: &str) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM projects WHERE id = ?")
-            .bind(project_id)
-            .execute(&self.pool)
-            .await
-            .context("failed to delete project")?;
-
-        Ok(result.rows_affected() > 0)
+        let rows_affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("DELETE FROM projects WHERE id = ?")
+                .bind(project_id)
+                .execute(p)
+                .await
+                .context("failed to delete project")?
+                .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query("DELETE FROM projects WHERE id = $1")
+                .bind(project_id)
+                .execute(p)
+                .await
+                .context("failed to delete project")?
+                .rows_affected(),
+        };
+        Ok(rows_affected > 0)
     }
 
     /// Load a project with all its repos and worktrees.
@@ -349,23 +454,44 @@ impl ProjectStore {
     pub async fn create_repo(&self, input: CreateRepoInput) -> Result<ProjectRepo> {
         let id = uuid::Uuid::new_v4().to_string();
 
-        sqlx::query(
-            r#"
-            INSERT INTO project_repos (id, project_id, name, path, remote_url, default_branch, current_branch, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(&input.project_id)
-        .bind(&input.name)
-        .bind(&input.path)
-        .bind(&input.remote_url)
-        .bind(&input.default_branch)
-        .bind(&input.current_branch)
-        .bind(&input.description)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert repo")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                INSERT INTO project_repos (id, project_id, name, path, remote_url, default_branch, current_branch, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.project_id)
+            .bind(&input.name)
+            .bind(&input.path)
+            .bind(&input.remote_url)
+            .bind(&input.default_branch)
+            .bind(&input.current_branch)
+            .bind(&input.description)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert repo")?,
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                INSERT INTO project_repos (id, project_id, name, path, remote_url, default_branch, current_branch, description)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.project_id)
+            .bind(&input.name)
+            .bind(&input.path)
+            .bind(&input.remote_url)
+            .bind(&input.default_branch)
+            .bind(&input.current_branch)
+            .bind(&input.description)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert repo")?,
+        };
 
         Ok(self
             .get_repo(&id)
@@ -374,34 +500,65 @@ impl ProjectStore {
     }
 
     pub async fn get_repo(&self, repo_id: &str) -> Result<Option<ProjectRepo>> {
-        let row = sqlx::query("SELECT * FROM project_repos WHERE id = ?")
-            .bind(repo_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("failed to fetch repo")?;
-
-        row.map(|r| row_to_repo(&r)).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("SELECT * FROM project_repos WHERE id = ?")
+                .bind(repo_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch repo")?
+                .map(|r| row_to_repo_sqlite(&r))
+                .transpose(),
+            DbPool::Postgres(p) => sqlx::query("SELECT * FROM project_repos WHERE id = $1")
+                .bind(repo_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch repo")?
+                .map(|r| row_to_repo_pg(&r))
+                .transpose(),
+        }
     }
 
     pub async fn list_repos(&self, project_id: &str) -> Result<Vec<ProjectRepo>> {
-        let rows =
-            sqlx::query("SELECT * FROM project_repos WHERE project_id = ? ORDER BY name ASC")
-                .bind(project_id)
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to list repos")?;
-
-        rows.iter().map(row_to_repo).collect()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT * FROM project_repos WHERE project_id = ? ORDER BY name ASC",
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list repos")?
+            .iter()
+            .map(row_to_repo_sqlite)
+            .collect(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT * FROM project_repos WHERE project_id = $1 ORDER BY name ASC",
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list repos")?
+            .iter()
+            .map(row_to_repo_pg)
+            .collect(),
+        }
     }
 
     pub async fn delete_repo(&self, repo_id: &str) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM project_repos WHERE id = ?")
-            .bind(repo_id)
-            .execute(&self.pool)
-            .await
-            .context("failed to delete repo")?;
-
-        Ok(result.rows_affected() > 0)
+        let rows_affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("DELETE FROM project_repos WHERE id = ?")
+                .bind(repo_id)
+                .execute(p)
+                .await
+                .context("failed to delete repo")?
+                .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query("DELETE FROM project_repos WHERE id = $1")
+                .bind(repo_id)
+                .execute(p)
+                .await
+                .context("failed to delete repo")?
+                .rows_affected(),
+        };
+        Ok(rows_affected > 0)
     }
 
     /// Find a repo by its relative path within a project.
@@ -410,14 +567,28 @@ impl ProjectStore {
         project_id: &str,
         path: &str,
     ) -> Result<Option<ProjectRepo>> {
-        let row = sqlx::query("SELECT * FROM project_repos WHERE project_id = ? AND path = ?")
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT * FROM project_repos WHERE project_id = ? AND path = ?",
+            )
             .bind(project_id)
             .bind(path)
-            .fetch_optional(&self.pool)
+            .fetch_optional(p)
             .await
-            .context("failed to fetch repo by path")?;
-
-        row.map(|r| row_to_repo(&r)).transpose()
+            .context("failed to fetch repo by path")?
+            .map(|r| row_to_repo_sqlite(&r))
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT * FROM project_repos WHERE project_id = $1 AND path = $2",
+            )
+            .bind(project_id)
+            .bind(path)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch repo by path")?
+            .map(|r| row_to_repo_pg(&r))
+            .transpose(),
+        }
     }
 
     // -- Worktrees ----------------------------------------------------------
@@ -425,22 +596,42 @@ impl ProjectStore {
     pub async fn create_worktree(&self, input: CreateWorktreeInput) -> Result<ProjectWorktree> {
         let id = uuid::Uuid::new_v4().to_string();
 
-        sqlx::query(
-            r#"
-            INSERT INTO project_worktrees (id, project_id, repo_id, name, path, branch, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(&input.project_id)
-        .bind(&input.repo_id)
-        .bind(&input.name)
-        .bind(&input.path)
-        .bind(&input.branch)
-        .bind(&input.created_by)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert worktree")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                INSERT INTO project_worktrees (id, project_id, repo_id, name, path, branch, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.project_id)
+            .bind(&input.repo_id)
+            .bind(&input.name)
+            .bind(&input.path)
+            .bind(&input.branch)
+            .bind(&input.created_by)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert worktree")?,
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                INSERT INTO project_worktrees (id, project_id, repo_id, name, path, branch, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                "#,
+            )
+            .bind(&id)
+            .bind(&input.project_id)
+            .bind(&input.repo_id)
+            .bind(&input.name)
+            .bind(&input.path)
+            .bind(&input.branch)
+            .bind(&input.created_by)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to insert worktree")?,
+        };
 
         Ok(self
             .get_worktree(&id)
@@ -449,24 +640,47 @@ impl ProjectStore {
     }
 
     pub async fn get_worktree(&self, worktree_id: &str) -> Result<Option<ProjectWorktree>> {
-        let row = sqlx::query("SELECT * FROM project_worktrees WHERE id = ?")
-            .bind(worktree_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("failed to fetch worktree")?;
-
-        row.map(|r| row_to_worktree(&r)).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("SELECT * FROM project_worktrees WHERE id = ?")
+                .bind(worktree_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch worktree")?
+                .map(|r| row_to_worktree_sqlite(&r))
+                .transpose(),
+            DbPool::Postgres(p) => sqlx::query("SELECT * FROM project_worktrees WHERE id = $1")
+                .bind(worktree_id)
+                .fetch_optional(p)
+                .await
+                .context("failed to fetch worktree")?
+                .map(|r| row_to_worktree_pg(&r))
+                .transpose(),
+        }
     }
 
     pub async fn list_worktrees(&self, project_id: &str) -> Result<Vec<ProjectWorktree>> {
-        let rows =
-            sqlx::query("SELECT * FROM project_worktrees WHERE project_id = ? ORDER BY name ASC")
-                .bind(project_id)
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to list worktrees")?;
-
-        rows.iter().map(row_to_worktree).collect()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE project_id = ? ORDER BY name ASC",
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees")?
+            .iter()
+            .map(row_to_worktree_sqlite)
+            .collect(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE project_id = $1 ORDER BY name ASC",
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees")?
+            .iter()
+            .map(row_to_worktree_pg)
+            .collect(),
+        }
     }
 
     /// List worktrees with the source repo name resolved via JOIN.
@@ -474,40 +688,68 @@ impl ProjectStore {
         &self,
         project_id: &str,
     ) -> Result<Vec<ProjectWorktreeWithRepo>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT w.*, r.name AS repo_name
-            FROM project_worktrees w
-            JOIN project_repos r ON w.repo_id = r.id
-            WHERE w.project_id = ?
-            ORDER BY w.name ASC
-            "#,
-        )
-        .bind(project_id)
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to list worktrees with repos")?;
-
-        rows.iter()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                SELECT w.*, r.name AS repo_name
+                FROM project_worktrees w
+                JOIN project_repos r ON w.repo_id = r.id
+                WHERE w.project_id = ?
+                ORDER BY w.name ASC
+                "#,
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees with repos")?
+            .iter()
             .map(|r| {
-                let worktree = row_to_worktree(r)?;
-                let repo_name: String = r.try_get("repo_name").context("missing repo_name")?;
-                Ok(ProjectWorktreeWithRepo {
-                    worktree,
-                    repo_name,
-                })
+                let worktree = row_to_worktree_sqlite(r)?;
+                let repo_name: String =
+                    r.try_get("repo_name").context("missing repo_name")?;
+                Ok(ProjectWorktreeWithRepo { worktree, repo_name })
             })
-            .collect()
+            .collect(),
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                SELECT w.*, r.name AS repo_name
+                FROM project_worktrees w
+                JOIN project_repos r ON w.repo_id = r.id
+                WHERE w.project_id = $1
+                ORDER BY w.name ASC
+                "#,
+            )
+            .bind(project_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees with repos")?
+            .iter()
+            .map(|r| {
+                let worktree = row_to_worktree_pg(r)?;
+                let repo_name: String =
+                    r.try_get("repo_name").context("missing repo_name")?;
+                Ok(ProjectWorktreeWithRepo { worktree, repo_name })
+            })
+            .collect(),
+        }
     }
 
     pub async fn delete_worktree(&self, worktree_id: &str) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM project_worktrees WHERE id = ?")
-            .bind(worktree_id)
-            .execute(&self.pool)
-            .await
-            .context("failed to delete worktree")?;
-
-        Ok(result.rows_affected() > 0)
+        let rows_affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("DELETE FROM project_worktrees WHERE id = ?")
+                .bind(worktree_id)
+                .execute(p)
+                .await
+                .context("failed to delete worktree")?
+                .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query("DELETE FROM project_worktrees WHERE id = $1")
+                .bind(worktree_id)
+                .execute(p)
+                .await
+                .context("failed to delete worktree")?
+                .rows_affected(),
+        };
+        Ok(rows_affected > 0)
     }
 
     /// Find a worktree by its relative path within a project.
@@ -516,14 +758,28 @@ impl ProjectStore {
         project_id: &str,
         path: &str,
     ) -> Result<Option<ProjectWorktree>> {
-        let row = sqlx::query("SELECT * FROM project_worktrees WHERE project_id = ? AND path = ?")
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE project_id = ? AND path = ?",
+            )
             .bind(project_id)
             .bind(path)
-            .fetch_optional(&self.pool)
+            .fetch_optional(p)
             .await
-            .context("failed to fetch worktree by path")?;
-
-        row.map(|r| row_to_worktree(&r)).transpose()
+            .context("failed to fetch worktree by path")?
+            .map(|r| row_to_worktree_sqlite(&r))
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE project_id = $1 AND path = $2",
+            )
+            .bind(project_id)
+            .bind(path)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch worktree by path")?
+            .map(|r| row_to_worktree_pg(&r))
+            .transpose(),
+        }
     }
 
     /// Update the current_branch for a repo (e.g. after a scan detects a checkout change).
@@ -532,68 +788,134 @@ impl ProjectStore {
         repo_id: &str,
         current_branch: Option<&str>,
     ) -> Result<()> {
-        sqlx::query(
-            "UPDATE project_repos SET current_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        )
-        .bind(current_branch)
-        .bind(repo_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to update repo current_branch")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE project_repos SET current_branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            )
+            .bind(current_branch)
+            .bind(repo_id)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to update repo current_branch")?,
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE project_repos SET current_branch = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+            )
+            .bind(current_branch)
+            .bind(repo_id)
+            .execute(p)
+            .await
+            .map(|_| ())
+            .context("failed to update repo current_branch")?,
+        };
         Ok(())
     }
 
     /// Update cached disk usage for a repo.
     pub async fn set_repo_disk_usage(&self, repo_id: &str, bytes: i64) -> Result<()> {
-        sqlx::query("UPDATE project_repos SET disk_usage_bytes = ? WHERE id = ?")
-            .bind(bytes)
-            .bind(repo_id)
-            .execute(&self.pool)
-            .await
-            .context("failed to update repo disk usage")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query("UPDATE project_repos SET disk_usage_bytes = ? WHERE id = ?")
+                    .bind(bytes)
+                    .bind(repo_id)
+                    .execute(p)
+                    .await
+                    .context("failed to update repo disk usage")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("UPDATE project_repos SET disk_usage_bytes = $1 WHERE id = $2")
+                    .bind(bytes)
+                    .bind(repo_id)
+                    .execute(p)
+                    .await
+                    .context("failed to update repo disk usage")?;
+            }
+        }
         Ok(())
     }
 
     /// Update cached disk usage for a worktree.
     pub async fn set_worktree_disk_usage(&self, worktree_id: &str, bytes: i64) -> Result<()> {
-        sqlx::query("UPDATE project_worktrees SET disk_usage_bytes = ? WHERE id = ?")
-            .bind(bytes)
-            .bind(worktree_id)
-            .execute(&self.pool)
-            .await
-            .context("failed to update worktree disk usage")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query("UPDATE project_worktrees SET disk_usage_bytes = ? WHERE id = ?")
+                    .bind(bytes)
+                    .bind(worktree_id)
+                    .execute(p)
+                    .await
+                    .context("failed to update worktree disk usage")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("UPDATE project_worktrees SET disk_usage_bytes = $1 WHERE id = $2")
+                    .bind(bytes)
+                    .bind(worktree_id)
+                    .execute(p)
+                    .await
+                    .context("failed to update worktree disk usage")?;
+            }
+        }
         Ok(())
     }
 
     /// Set the detected logo path for a project.
     pub async fn set_logo_path(&self, project_id: &str, logo_path: Option<&str>) -> Result<()> {
-        sqlx::query(
-            "UPDATE projects SET logo_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        )
-        .bind(logo_path)
-        .bind(project_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to update project logo_path")?;
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    "UPDATE projects SET logo_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                )
+                .bind(logo_path)
+                .bind(project_id)
+                .execute(p)
+                .await
+                .context("failed to update project logo_path")?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    "UPDATE projects SET logo_path = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+                )
+                .bind(logo_path)
+                .bind(project_id)
+                .execute(p)
+                .await
+                .context("failed to update project logo_path")?;
+            }
+        }
         Ok(())
     }
 
     /// List worktrees belonging to a specific repo.
     pub async fn list_worktrees_for_repo(&self, repo_id: &str) -> Result<Vec<ProjectWorktree>> {
-        let rows =
-            sqlx::query("SELECT * FROM project_worktrees WHERE repo_id = ? ORDER BY name ASC")
-                .bind(repo_id)
-                .fetch_all(&self.pool)
-                .await
-                .context("failed to list worktrees for repo")?;
-
-        rows.iter().map(row_to_worktree).collect()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE repo_id = ? ORDER BY name ASC",
+            )
+            .bind(repo_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees for repo")?
+            .iter()
+            .map(row_to_worktree_sqlite)
+            .collect(),
+            DbPool::Postgres(p) => sqlx::query(
+                "SELECT * FROM project_worktrees WHERE repo_id = $1 ORDER BY name ASC",
+            )
+            .bind(repo_id)
+            .fetch_all(p)
+            .await
+            .context("failed to list worktrees for repo")?
+            .iter()
+            .map(row_to_worktree_pg)
+            .collect(),
+        }
     }
 }
 
-// Row mapping helpers
+// Row mapping helpers — split per backend because the schema diverges:
+// SQLite uses DATETIME columns (read as String directly), Postgres uses
+// TIMESTAMPTZ columns (read as chrono::DateTime<Utc>, formatted to RFC-3339).
 
-fn row_to_project(row: &sqlx::sqlite::SqliteRow) -> Result<Project> {
+fn row_to_project_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<Project> {
     let tags_raw: String = row.try_get("tags").context("missing tags")?;
     let tags: Vec<String> = serde_json::from_str(&tags_raw).unwrap_or_default();
 
@@ -620,7 +942,39 @@ fn row_to_project(row: &sqlx::sqlite::SqliteRow) -> Result<Project> {
     })
 }
 
-fn row_to_repo(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectRepo> {
+fn row_to_project_pg(row: &sqlx::postgres::PgRow) -> Result<Project> {
+    let tags_raw: String = row.try_get("tags").context("missing tags")?;
+    let tags: Vec<String> = serde_json::from_str(&tags_raw).unwrap_or_default();
+
+    let settings_raw: String = row.try_get("settings").context("missing settings")?;
+    let settings: Value =
+        serde_json::from_str(&settings_raw).unwrap_or(Value::Object(Default::default()));
+
+    let status_raw: String = row.try_get("status").context("missing status")?;
+    let status = ProjectStatus::parse(&status_raw).unwrap_or(ProjectStatus::Active);
+
+    let created_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("created_at").context("missing created_at")?;
+    let updated_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("updated_at").context("missing updated_at")?;
+
+    Ok(Project {
+        id: row.try_get("id").context("missing id")?,
+        name: row.try_get("name").context("missing name")?,
+        description: row.try_get("description").context("missing description")?,
+        icon: row.try_get("icon").context("missing icon")?,
+        tags,
+        root_path: row.try_get("root_path").context("missing root_path")?,
+        logo_path: row.try_get("logo_path").unwrap_or(None),
+        settings,
+        status,
+        sort_order: row.try_get::<i32, _>("sort_order").unwrap_or(0) as i64,
+        created_at: created_at.to_rfc3339(),
+        updated_at: updated_at.to_rfc3339(),
+    })
+}
+
+fn row_to_repo_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectRepo> {
     Ok(ProjectRepo {
         id: row.try_get("id").context("missing id")?,
         project_id: row.try_get("project_id").context("missing project_id")?,
@@ -638,7 +992,29 @@ fn row_to_repo(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectRepo> {
     })
 }
 
-fn row_to_worktree(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectWorktree> {
+fn row_to_repo_pg(row: &sqlx::postgres::PgRow) -> Result<ProjectRepo> {
+    let created_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("created_at").context("missing created_at")?;
+    let updated_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("updated_at").context("missing updated_at")?;
+    Ok(ProjectRepo {
+        id: row.try_get("id").context("missing id")?,
+        project_id: row.try_get("project_id").context("missing project_id")?,
+        name: row.try_get("name").context("missing name")?,
+        path: row.try_get("path").context("missing path")?,
+        remote_url: row.try_get("remote_url").context("missing remote_url")?,
+        default_branch: row
+            .try_get("default_branch")
+            .context("missing default_branch")?,
+        current_branch: row.try_get("current_branch").unwrap_or(None),
+        description: row.try_get("description").context("missing description")?,
+        disk_usage_bytes: row.try_get("disk_usage_bytes").unwrap_or(None),
+        created_at: created_at.to_rfc3339(),
+        updated_at: updated_at.to_rfc3339(),
+    })
+}
+
+fn row_to_worktree_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectWorktree> {
     Ok(ProjectWorktree {
         id: row.try_get("id").context("missing id")?,
         project_id: row.try_get("project_id").context("missing project_id")?,
@@ -650,6 +1026,25 @@ fn row_to_worktree(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectWorktree> {
         disk_usage_bytes: row.try_get("disk_usage_bytes").unwrap_or(None),
         created_at: row.try_get("created_at").context("missing created_at")?,
         updated_at: row.try_get("updated_at").context("missing updated_at")?,
+    })
+}
+
+fn row_to_worktree_pg(row: &sqlx::postgres::PgRow) -> Result<ProjectWorktree> {
+    let created_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("created_at").context("missing created_at")?;
+    let updated_at: chrono::DateTime<chrono::Utc> =
+        row.try_get("updated_at").context("missing updated_at")?;
+    Ok(ProjectWorktree {
+        id: row.try_get("id").context("missing id")?,
+        project_id: row.try_get("project_id").context("missing project_id")?,
+        repo_id: row.try_get("repo_id").context("missing repo_id")?,
+        name: row.try_get("name").context("missing name")?,
+        path: row.try_get("path").context("missing path")?,
+        branch: row.try_get("branch").context("missing branch")?,
+        created_by: row.try_get("created_by").context("missing created_by")?,
+        disk_usage_bytes: row.try_get("disk_usage_bytes").unwrap_or(None),
+        created_at: created_at.to_rfc3339(),
+        updated_at: updated_at.to_rfc3339(),
     })
 }
 
@@ -729,15 +1124,15 @@ fn scan_for_logo(root: &Path, dir: &Path, depth: u8) -> Option<String> {
 mod tests {
     use super::*;
 
-    async fn setup_pool() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:")
+    async fn setup_pool() -> Arc<DbPool> {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("failed to create in-memory pool");
         sqlx::migrate!("./migrations/global")
             .run(&pool)
             .await
             .expect("failed to run migrations");
-        pool
+        Arc::new(DbPool::Sqlite(pool))
     }
 
     #[tokio::test]

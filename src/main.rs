@@ -1845,7 +1845,9 @@ async fn run(
 
     // Instance-level shared project store. Replaces per-agent project stores.
     let global_project_store =
-        Arc::new(spacebot::projects::ProjectStore::new(instance_pool.clone()));
+        Arc::new(spacebot::projects::ProjectStore::new(Arc::new(
+            spacebot::db::DbPool::Sqlite(instance_pool.clone()),
+        )));
 
     // Migrate per-agent projects into the instance database on first run.
     spacebot::projects::migration::migrate_legacy_projects(&config.instance_dir, &instance_pool)
