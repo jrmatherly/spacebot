@@ -178,7 +178,11 @@ describe("ShareResourceModal", () => {
 			expect(onClose).not.toHaveBeenCalled();
 
 			// The log line is for a non-API error (check the first arg).
-			const errorArg = consoleErrorSpy.mock.calls.find((call) =>
+			// Explicit `unknown[]` annotation: vitest 4 made `mock.calls`
+			// typing stricter than v3, so the callback param no longer
+			// auto-infers and falls back to implicit `any` under
+			// noImplicitAny. Matches the existing `as string` cast below.
+			const errorArg = consoleErrorSpy.mock.calls.find((call: unknown[]) =>
 				(call[0] as string).includes("non-API error"),
 			);
 			expect(errorArg).toBeDefined();

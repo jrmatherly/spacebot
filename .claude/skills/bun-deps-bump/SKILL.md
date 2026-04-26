@@ -61,6 +61,23 @@ Major bumps (e.g., 3.x → 4.x) need investigation BEFORE merge. Check:
 
 Past sessions surface in `.serena/memories/phase11_dual_backend.md` and the `feat-/dependabot-/...` commit log. The vitest 3 → 4 upgrade in PR #125/#130 (commit `2b63a14`) needed a custom `reactSingletonPlugin` in `interface/vitest.config.ts` because of a workspace-symlink interaction with `spaceui/node_modules/.bun/react@19.2.5`. Read that commit message before any future Vite-ecosystem major bump.
 
+## Type-check after a major-version bump
+
+`bunx tsc --noEmit` validates against the type defs in `node_modules/.bun/<pkg>@<version>/`. After a major-version bump, the local node_modules cache may still hold the OLD version's type defs even after `bun.lock` resolves to the new version. Two failure modes:
+
+1. **Local tsc passes, CI fails** — your local `node_modules/.bun/<pkg>@<oldver>/` is still on disk and gets resolved before the new version. CI does a clean install → uses only the new defs → catches stricter typing.
+2. **Local tsc fails immediately** — the new defs are correctly resolved.
+
+**Always** run a clean tsc verification after a major bump:
+
+```bash
+cd <workspace>
+bun install --force      # rebuild node_modules from lockfile
+bunx tsc --noEmit        # validates against the new type defs
+```
+
+Concrete example (caught at commit `4f6c1c8`, 2026-04-26): vitest 4 made `mock.calls` typing stricter than v3. A test using `consoleErrorSpy.mock.calls.find((call) => ...)` had a callback param that auto-inferred under v3 but fell back to implicit `any` under v4. Local tsc passed (vitest 3 type defs still cached); CI failed with `TS7006: Parameter 'call' implicitly has an 'any' type`. Fix: explicit `(call: unknown[])` annotation at the call site, matching the `as string` cast on the next line.
+
 ## Related dependabot pinning
 
 If a major bump cannot land cleanly, document the deferral in `.github/dependabot.yml` with an `ignore` rule + an inline comment that names the unblock condition. Pattern from commit `faca85b` (jsonwebtoken + nom) and `2b63a14` (jsdom):
