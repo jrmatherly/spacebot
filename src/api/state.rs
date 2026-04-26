@@ -1134,7 +1134,14 @@ impl ApiState {
         // the appender owns its pool handle; callers that read
         // `state.instance_pool` directly (non-audit code paths) see None
         // and no-op as designed.
-        let appender = Arc::new(crate::audit::AuditAppender::new(pool.clone()));
+        // Wrap the SqlitePool into Arc<DbPool::Sqlite(...)> for the audit
+        // appender's per-variant dispatch contract introduced in PR 11.2 Task 10.
+        // The set_instance_pool public signature still takes SqlitePool so the
+        // 22+ test fixture call sites stay unchanged (Option Fixture-A bridge).
+        // Task 13 widens this signature to Arc<DbPool> as part of the
+        // instance_pool ArcSwap widen.
+        let dbpool = Arc::new(crate::db::DbPool::Sqlite(pool.clone()));
+        let appender = Arc::new(crate::audit::AuditAppender::new(dbpool));
         self.audit.store(Arc::new(Some(appender)));
         self.instance_pool.store(Arc::new(Some(pool)));
     }
