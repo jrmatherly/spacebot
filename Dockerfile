@@ -42,7 +42,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY vendor/ vendor/
 RUN mkdir -p src/bin && echo "fn main() {}" > src/main.rs \
     && echo "fn main() {}" > src/bin/openapi_spec.rs \
-    && cargo build --release --locked --features metrics \
+    && cargo build --release --locked --features metrics,otlp-grpc,embeddings \
     && rm -rf src
 
 # 2. Stage SpaceUI source and build it first.
@@ -123,7 +123,7 @@ COPY src/ src/
 # The builder stage is discarded after the runtime stage's COPY --from=builder
 # pulls only the binary, so no cleanup of /build/target is needed here.
 # `--locked` mirrors the stub build at step 1 (see rationale there).
-RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --locked --features metrics \
+RUN SPACEBOT_SKIP_FRONTEND_BUILD=1 cargo build --release --locked --features metrics,otlp-grpc,embeddings \
     && mv /build/target/release/spacebot /usr/local/bin/spacebot
 
 # ---- Runtime stage ----
@@ -160,11 +160,24 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/bin/spacebot /usr/local/bin/spacebot
+# Ship migrations alongside the binary. PR 11.1 (v0.6.0) switched src/db.rs
+# from compile-time sqlx::migrate!(literal) to runtime
+# sqlx::migrate::Migrator::new(Path) so the daemon can dispatch the
+# migration tree (per-agent vs instance) and backend (SQLite vs Postgres)
+# at startup. The trade-off: migrations must ship on disk next to the
+# binary. The WORKDIR below pins relative-path resolution so
+# `tree.sqlite_path() = "migrations/global"` resolves against /app.
+COPY --from=builder /build/migrations/ /app/migrations/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV SPACEBOT_DIR=/data
 ENV SPACEBOT_DEPLOYMENT=docker
+# Anchor relative paths (migrations/global, migrations/) to /app at runtime.
+# The daemon resolves migrations from the WORKDIR; without this, Linux
+# defaults to /, which doesn't contain the migrations tree, and startup
+# fails with `failed to load migrations from migrations/global`.
+WORKDIR /app
 EXPOSE 19898 18789 9090
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
