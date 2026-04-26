@@ -2,6 +2,12 @@
 
 Quick-start dev/test stack for Spacebot. One `docker-compose.yml`, six profiles.
 
+> **Image**: `ghcr.io/jrmatherly/spacebot:v0.6.0` (digest-pinned in `.env`). Bump `SPACEBOT_IMAGE_TAG` + `SPACEBOT_IMAGE_DIGEST` after every release. Release notes live in [`CHANGELOG.md`](../../CHANGELOG.md).
+
+> **Phase 11 dual-backend (PR #121)**: SQLite is the daemon default. To opt into Postgres uncomment the `[database]` block in `config.toml`. Per-store dispatch + the K8s CloudNativePG cluster ship in PRs 11.2/11.3/11.4 (foundation only as of v0.6.0). See [`docs/design-docs/postgres-migration.md`](../../docs/design-docs/postgres-migration.md).
+
+> **Entra ID auth (Phases 1-10, PRs #100-#120)**: A commented-out `[api.auth.entra]` template in `config.toml` shows the two-app-registration pattern. Operator runbook at [`docs/content/docs/(configuration)/entra-auth.mdx`](../../docs/content/docs/(configuration)/entra-auth.mdx).
+
 ## Prerequisites
 
 - Docker Engine 24+

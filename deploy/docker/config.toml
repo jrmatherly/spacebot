@@ -28,3 +28,75 @@ port = 19898
 enabled = true
 port = 9090
 bind = "0.0.0.0"
+
+# ========================================================================
+# OPTIONAL: Postgres backend (Phase 11.1+, PR #121)
+# ========================================================================
+# SQLite is the default. To opt into Postgres, uncomment the [database]
+# block below and point `url` at a reachable Postgres instance. The
+# DatabaseUrl newtype validates the scheme at startup; operator typos
+# surface as a clear startup error rather than at first connect.
+#
+# IMPORTANT: PR 11.1 ships the foundation only. The daemon will hard-error
+# on Postgres URLs at connect time until PR 11.2 lands the
+# `migrations/postgres/global/` tree (per-store dispatch lands in PR 11.3,
+# K8s CloudNativePG cluster ships in PR 11.4). Track the rollout via the
+# Phase 11 design doc at docs/design-docs/postgres-migration.md.
+#
+# For local Postgres testing today (after PR 11.2 ships):
+#   docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16-alpine
+#
+# [database]
+# url = "postgres://postgres:dev@host.docker.internal:5432/spacebot"
+
+# ========================================================================
+# OPTIONAL: Entra ID authentication (Phases 1-10, PRs #100-#120)
+# ========================================================================
+# Spacebot supports Microsoft Entra ID (Azure AD) authentication with
+# JWT validation, hash-chained audit log, and SOC 2 evidence package.
+# Two app registrations needed: one for the Web API (this daemon) and one
+# for the SPA client. See docs/design-docs/entra-app-registrations.md for
+# the registration schema and required Graph API permissions.
+#
+# Operator runbook: docs/content/docs/(configuration)/entra-auth.mdx
+#
+# When this block is absent OR enabled = false, the daemon falls back to
+# the static [api].auth_token bearer-token middleware (which itself can be
+# absent for fully-open access — typical for loopback dev).
+#
+# [api.auth.entra]
+# enabled = true
+#
+# # Tenant where the app registrations live. GUID form, NOT
+# # "contoso.onmicrosoft.com".
+# tenant_id = "env:ENTRA_TENANT_ID"
+#
+# # Expected `aud` claim value. For v2.0 tokens this is the Web API
+# # registration's client_id GUID, NOT the Application ID URI.
+# audience = "env:ENTRA_API_AUDIENCE"
+#
+# # Required scope for delegated (user) tokens. Empty list skips scope
+# # validation, which lets app-only tokens through.
+# allowed_scopes = ["api.access"]
+#
+# # SPA app registration's client_id GUID. Returned verbatim to the
+# # browser via /api/auth/config. Never a secret.
+# spa_client_id = "env:ENTRA_SPA_CLIENT_ID"
+#
+# # Scopes the SPA requests at sign-in. Must match the scope the Web API
+# # registration exposes, prefixed by its Application ID URI.
+# spa_scopes = ["api://{web-api-guid}/api.access"]
+#
+# # JWKS cache lifetime. Microsoft rotates signing keys roughly weekly
+# # with a ~24h overlap window; 3600s stays well within the validated
+# # signing-key set.
+# jwks_cache_ttl_secs = 3600
+#
+# # Clock-skew tolerance between the daemon and Microsoft. 60s default
+# # handles normal NTP drift; never exceed 300.
+# clock_skew_leeway_secs = 60
+#
+# # Per-principal group-membership cache lifetime. Phase 3's middleware
+# # resolves overage claims via Graph; this sets how long the resolved
+# # list is trusted.
+# group_cache_ttl_secs = 300

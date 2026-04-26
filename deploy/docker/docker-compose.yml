@@ -98,6 +98,10 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-spacebot}
+      # Persist fastembed BGESmallENV15 ONNX model on the spacebot-data
+      # volume; see same-named env in the default-profile spacebot service
+      # for full rationale.
+      HF_HOME: /data/.fastembed_cache
     ports:
       - "${SPACEBOT_BIND:-127.0.0.1}:19898:19898"
       - "${SPACEBOT_BIND:-127.0.0.1}:9090:9090"
