@@ -38,7 +38,7 @@
 //! is the file resource family (`"agents"`), never a per-handler
 //! sub-label, to keep cardinality flat.
 
-use super::state::{AgentInfo, ApiState};
+use super::state::{AgentInfo, ApiState, try_persist_config};
 
 use crate::agent::cortex::CortexLogger;
 use crate::auth::principals::{ResourceScope, Visibility};
@@ -1105,13 +1105,9 @@ pub async fn create_agent_internal(
     }
     agents_array.push(new_table);
 
-    tokio::fs::write(&config_path, doc.to_string())
+    try_persist_config(state, &config_path, doc.to_string())
         .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            format!("failed to write config.toml: {error}")
-        })?;
-
+        .map_err(|status| format!("failed to persist config.toml (status {})", status.as_u16()))?;
     // Release the config write mutex. Remaining work doesn't touch config.toml.
     drop(_config_guard);
 
@@ -1708,12 +1704,7 @@ pub(super) async fn update_agent(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     drop(_config_guard);
 
@@ -1867,12 +1858,7 @@ pub(super) async fn delete_agent(
             }
         }
 
-        tokio::fs::write(&config_path, doc.to_string())
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to write config.toml");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        try_persist_config(&state, &config_path, doc.to_string()).await?;
     }
 
     // Close the SQLite pool before removing state

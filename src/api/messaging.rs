@@ -1,4 +1,4 @@
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 
 use axum::Json;
 use axum::extract::State;
@@ -1025,12 +1025,7 @@ pub(super) async fn disconnect_platform(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     if let Ok(new_config) = crate::config::Config::load_from_path(&config_path) {
         let bindings_guard = state.bindings.read().await;
@@ -1182,12 +1177,7 @@ pub(super) async fn toggle_platform(
         table["enabled"] = toml_edit::value(request.enabled);
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     let manager_guard = state.messaging_manager.read().await;
     let manager = manager_guard.as_ref();
@@ -2025,12 +2015,7 @@ pub(super) async fn create_messaging_instance(
     }
 
     // Write updated config
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Reload config and hot-start the new adapter
     if let Ok(new_config) = crate::config::Config::load_from_path(&config_path) {
@@ -2228,12 +2213,7 @@ pub(super) async fn delete_messaging_instance(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Reload bindings
     if let Ok(new_config) = crate::config::Config::load_from_path(&config_path) {

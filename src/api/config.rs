@@ -1,4 +1,4 @@
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 use crate::config::ClosePolicy;
 
 use axum::Json;
@@ -493,12 +493,7 @@ pub(super) async fn update_agent_config(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    tokio::fs::write(&config_path, updated_content)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, updated_content).await?;
 
     // Release the config write mutex. Remaining work is read-only state updates.
     drop(_config_guard);

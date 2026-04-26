@@ -2117,6 +2117,24 @@ async fn run(
     // Set the config path on the API state for config.toml writes
     let config_path = config.instance_dir.join("config.toml");
     api_state.set_config_path(config_path.clone()).await;
+
+    // Probe the config.toml mount once. Kubernetes ConfigMap subPath mounts
+    // are read-only and produce per-request EROFS log spam in handlers that
+    // persist mutations back to disk. When read-only, those handlers update
+    // in-memory state only; an operator-facing warn fires here at boot so
+    // the disabled-persistence behavior is visible without log noise.
+    let config_writable = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&config_path)
+        .is_ok();
+    api_state.set_config_writable(config_writable);
+    if !config_writable {
+        tracing::warn!(
+            path = %config_path.display(),
+            "config.toml is on a read-only mount; runtime API mutations will not persist across restarts"
+        );
+    }
+
     api_state.set_instance_dir(config.instance_dir.clone());
     api_state.set_database_url(config.database.url.clone());
     api_state.set_llm_manager(llm_manager.clone()).await;

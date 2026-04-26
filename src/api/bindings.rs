@@ -1,4 +1,4 @@
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -493,12 +493,7 @@ pub(super) async fn create_binding(
     }
     bindings_array.push(binding_table);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     tracing::info!(
         agent_id = %request.agent_id,
@@ -877,12 +872,7 @@ pub(super) async fn update_binding(
         binding.remove("dm_allowed_users");
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     tracing::info!(
         agent_id = %request.agent_id,
@@ -1034,12 +1024,7 @@ pub(super) async fn delete_binding(
 
     bindings_array.remove(idx);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     tracing::info!(
         agent_id = %request.agent_id,

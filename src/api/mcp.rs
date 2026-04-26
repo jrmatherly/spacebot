@@ -3,7 +3,7 @@
 //! CRUD endpoints for `[[mcp_servers]]` in config.toml, plus per-agent
 //! connection status.
 
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -214,9 +214,7 @@ pub(super) async fn create_mcp_server(
         arr.push(new_table);
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     Ok(Json(MutationResponse {
         success: true,
@@ -304,9 +302,7 @@ pub(super) async fn update_mcp_server(
         }));
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     Ok(Json(MutationResponse {
         success: true,
@@ -378,9 +374,7 @@ pub(super) async fn delete_mcp_server(
         }));
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     Ok(Json(MutationResponse {
         success: true,

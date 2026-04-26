@@ -105,6 +105,12 @@ pub struct ApiState {
     /// Guards read-modify-write cycles on config.toml to prevent concurrent
     /// modifications from clobbering each other.
     pub config_write_mutex: tokio::sync::Mutex<()>,
+    /// Whether config.toml lives on a writable mount. Probed once at startup
+    /// (`set_config_writable`). When `false`, runtime API mutations to links,
+    /// agents, settings, messaging, bindings, etc. update in-memory state
+    /// only and skip the persistence write — preventing log spam on
+    /// Kubernetes ConfigMap subPath mounts and similar read-only deploys.
+    pub config_writable: arc_swap::ArcSwap<bool>,
     /// Per-agent cron stores for cron job CRUD operations.
     pub cron_stores: arc_swap::ArcSwap<HashMap<String, Arc<CronStore>>>,
     /// Per-agent cron schedulers for job timer management.
@@ -390,6 +396,7 @@ impl ApiState {
             agent_data_dirs: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             config_path: RwLock::new(PathBuf::new()),
             config_write_mutex: tokio::sync::Mutex::new(()),
+            config_writable: arc_swap::ArcSwap::from_pointee(true),
             cron_stores: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             cron_schedulers: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             task_store: ArcSwap::from_pointee(None),
@@ -1016,6 +1023,19 @@ impl ApiState {
         *guard = path;
     }
 
+    /// Record whether config.toml lives on a writable mount. Called once at
+    /// daemon startup; the result drives `try_persist_config` behavior in
+    /// every config-mutating handler.
+    pub fn set_config_writable(&self, writable: bool) {
+        self.config_writable.store(Arc::new(writable));
+    }
+
+    /// Returns whether config.toml is currently writable. Read inside
+    /// `try_persist_config`; handlers don't normally call this directly.
+    pub fn is_config_writable(&self) -> bool {
+        **self.config_writable.load()
+    }
+
     /// Set the cron stores for all agents.
     pub fn set_cron_stores(&self, stores: HashMap<String, Arc<CronStore>>) {
         self.cron_stores.store(Arc::new(stores));
@@ -1269,5 +1289,87 @@ fn process_id_info(id: &ProcessId) -> (String, String) {
         ProcessId::Channel(channel_id) => ("channel".into(), channel_id.to_string()),
         ProcessId::Branch(branch_id) => ("branch".into(), branch_id.to_string()),
         ProcessId::Worker(worker_id) => ("worker".into(), worker_id.to_string()),
+    }
+}
+
+/// Persist `contents` to `path` if `state.config_writable` is true; otherwise
+/// return `Ok(())` so the caller's in-memory update still proceeds.
+///
+/// Kubernetes ConfigMap subPath mounts are read-only by design, and the
+/// daemon's response to a runtime API mutation has to be: update in-memory
+/// state, skip the disk write, log once at startup that persistence is
+/// disabled. Returning an error here would 500 every link/agent/setting/
+/// messaging mutation against a read-only mount, which the v0.6.2 deploy
+/// confirmed produces hundreds of `Read-only file system (os error 30)`
+/// log lines per minute under steady load.
+///
+/// On a writable mount, behavior is unchanged: any I/O error maps to
+/// `INTERNAL_SERVER_ERROR` after a `tracing::warn!` with the error.
+pub(crate) async fn try_persist_config(
+    state: &Arc<ApiState>,
+    path: &std::path::Path,
+    contents: impl AsRef<[u8]>,
+) -> Result<(), axum::http::StatusCode> {
+    if !state.is_config_writable() {
+        tracing::debug!(
+            path = %path.display(),
+            "config.toml read-only; in-memory change applied without persistence"
+        );
+        return Ok(());
+    }
+    tokio::fs::write(path, contents).await.map_err(|error| {
+        tracing::warn!(%error, path = %path.display(), "failed to write config.toml");
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+#[cfg(test)]
+mod try_persist_config_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn writes_when_config_is_writable() {
+        let (state, _pool) = ApiState::new_test_state_with_mock_entra().await;
+        let tmp = tempfile::NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+
+        // Default writable=true established by `new` constructor.
+        assert!(state.is_config_writable());
+
+        try_persist_config(&state, &path, b"hello".as_slice())
+            .await
+            .expect("write should succeed on writable mount");
+
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(written, "hello");
+    }
+
+    #[tokio::test]
+    async fn skips_write_when_config_is_read_only() {
+        let (state, _pool) = ApiState::new_test_state_with_mock_entra().await;
+        let tmp = tempfile::NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+
+        std::fs::write(&path, b"original").expect("seed");
+        state.set_config_writable(false);
+
+        try_persist_config(&state, &path, b"new contents".as_slice())
+            .await
+            .expect("read-only path returns Ok without writing");
+
+        // File contents must remain untouched: the helper short-circuits
+        // before reaching tokio::fs::write.
+        let after = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(after, "original");
+    }
+
+    #[tokio::test]
+    async fn returns_500_when_write_fails_on_writable_mount() {
+        let (state, _pool) = ApiState::new_test_state_with_mock_entra().await;
+        // Path that cannot be created (parent directory does not exist).
+        let bogus = std::path::PathBuf::from("/this/path/does/not/exist/config.toml");
+
+        let result = try_persist_config(&state, &bogus, b"x".as_slice()).await;
+        assert_eq!(result, Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR));
     }
 }
