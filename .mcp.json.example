@@ -60,9 +60,10 @@
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
     },
 
-    "_disabled_postgres": {
-      "_purpose": "Direct query/schema tools for PostgreSQL. Spacebot does NOT use Postgres (SQLite via sqlx). Kept here as a reference if a future deployment adds a Postgres-backed component (e.g., LiteLLM's key-rotation DB).",
-      "_enable_by": "Rename the key to `postgres`, set DATABASE_URL, and commit.",
+    "postgres": {
+      "_purpose": "Direct query/schema tools for PostgreSQL. Phase 11.1 (PR #121, merged 2026-04-26) shipped the dual-backend foundation: SQLite remains the daemon default, Postgres opt-in via `[database] url = \"postgres://...\"` in config.toml. PR 11.2 lands the instance-tier per-store dispatch + `migrations/postgres/global/` (14 files dialect-translated); PR 11.3 lands per-agent stores + `agent_id` row-level tenancy; PR 11.4 lands the K8s CloudNativePG deployment.",
+      "_why_team_shared": "Anyone working on PR 11.2/11.3/11.4 needs to inspect Postgres schemas (esp. comparing the auto-generated `migrations/postgres/` against the existing SQLite tree at `migrations/`), validate FromRow derives against actual Postgres column types, and verify `agent_id` tenancy filter behavior on real query plans. Per-user install drifts; team-shared keeps PR-review consistent across contributors and agent runs.",
+      "_prerequisites": "Set DATABASE_URL to a local Postgres instance OR a testcontainers-spawned one. Quickest fixture for PR 11.2 work: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16-alpine`, then `export DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres`. The MCP server gracefully no-ops if DATABASE_URL is unset, so leaving this entry committed is safe even for contributors not actively working on Phase 11.",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-postgres"],
       "env": {

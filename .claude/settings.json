@@ -80,6 +80,16 @@
             "statusMessage": "Doc-code severity sync check"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "F=$(echo \"$CLAUDE_TOOL_INPUT\" | sed -nE 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\\1/p' | head -1); case \"$F\" in */package.json) bash scripts/claude-hooks/manifest-lockfile-drift.sh \"$F\" ;; esac",
+            "statusMessage": "Manifest-lockfile drift check"
+          }
+        ]
       }
     ],
     "PreToolUse": [
