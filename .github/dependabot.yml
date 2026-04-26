@@ -58,6 +58,14 @@ updates:
     commit-message:
       prefix: "deps(interface)"
     open-pull-requests-limit: 5
+    # jsdom 27.x ships ESM-only `require(esm)` semantics that break
+    # vitest 4 (see https://github.com/vitest-dev/vitest/issues/9279
+    # and https://github.com/vitest-dev/vitest/issues/9281). Pin at
+    # ^25 until either the upstream fix lands OR we migrate to
+    # happy-dom. Re-evaluate after vitest 4.2+ ships.
+    ignore:
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/packages/api-client"
@@ -66,6 +74,10 @@ updates:
     commit-message:
       prefix: "deps(api-client)"
     open-pull-requests-limit: 5
+    # Same jsdom-vs-vitest-4 incompatibility as /interface above.
+    ignore:
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/spaceui"
