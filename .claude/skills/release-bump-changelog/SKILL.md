@@ -16,11 +16,16 @@ Create a version bump commit where each release section includes both:
 
 1. Ensure the working tree is clean (except allowed release files).
 2. Draft release story markdown from real changes (PR titles, release-note bullets, and diff themes).
-   - Target style: similar to the `v0.2.0` narrative (clear positioning + concrete highlights).
+   - Target style: similar to the `v0.5.0` narrative (clear positioning + concrete highlights).
    - Keep it factual and specific to the release.
-   - Write to a temp file (outside repo is preferred):
-     - `marketing_file="$(mktemp)"`
+   - Write to a markdown file **inside repo root** under the gitignored `.scratchpad/release/` directory. `scripts/release-tag.sh` enforces inside-repo paths — `$(mktemp)` produces `/var/folders/...` (or `/tmp/...`) on macOS/Linux which fails the path check. Use:
+     - `mkdir -p .scratchpad/release`
+     - `marketing_file=".scratchpad/release/v<X.Y.Z>-marketing.md"`
      - write markdown content to `$marketing_file`
+     - `.scratchpad/` is gitignored (see `.gitignore` line 52), so the file won't appear in the release commit.
+   - Writing-guide compliance is mandatory before invoking cargo bump. The release-tag.sh script writes the file's content verbatim into `CHANGELOG.md`, which then triggers the writing-guide PostToolUse hook on the resulting Edit. Self-check before bumping:
+     - `grep -nE '[a-z)"0-9]\s*—\s*[a-z]' "$marketing_file" | grep -v '^[0-9]*:- \*\*'` — should return zero (em-dashes inside prose are violations; bullet labels using ` — ` after `**Foo**` are exempt).
+     - `grep -nE ';' "$marketing_file"` — should return zero in prose lines (writing-guide replaces all prose semicolons with periods).
 3. Run `cargo bump <patch|minor|major|X.Y.Z>` with marketing copy input:
    - `SPACEBOT_RELEASE_MARKETING_COPY_FILE="$marketing_file" cargo bump <...>`
    - This invokes `scripts/release-tag.sh`.
