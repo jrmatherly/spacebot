@@ -82,6 +82,65 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.6.0
+
+### Release Story
+
+### Release Story
+
+v0.6.0 is the multi-user, multi-platform, multi-database release. Three architectural arcs converge: the Entra ID rollout closes ten phases of work and turns Spacebot into a real authenticated multi-user system with SOC 2-ready audit and access controls, the Tauri desktop app and CLI auth flow extend that identity model across native clients, and the Phase 11.1 Postgres backend foundation opens the door to running the daemon against a managed database instead of the per-agent SQLite default.
+
+The biggest user-facing shift is that Spacebot now knows who you are. Phase 1's daemon-side JWT validator (with JWKS rotation, leeway tuning, and a dual static-token fallback) is wired through Phase 2's typed users/teams/principal-type data model, Phase 3's Microsoft Graph client (group resolution with `@odata.nextLink` pagination and `/me/photo/$value` integration), Phase 4's per-handler authz helpers, Phase 5's hash-chained audit log with three WORM export modes (Filesystem dev-only, S3 with Object Lock COMPLIANCE retention, and HttpSiem), Phase 6's MSAL.js v5 SPA bootstrap with `cacheLocation: "memoryStorage"` defaults plus opt-in localStorage, Phase 7's visibility chips and scope-filter UI across every list surface, Phase 8's Tauri desktop loopback OAuth + keychain credential storage, Phase 9's `spacebot entra login/logout` CLI plus admin `claim-resource`, and Phase 10's complete SOC 2 evidence package (orphan sweep, access review CSV exporter, JWKS-refresh observability, separation-of-duties enforcement). Two-app-registration pattern, A-13 hash-chain singleton, A-15 dual-WORM export, A-18 consolidated `/api/me` endpoint. All the Entra rollout's amendment register decisions are shipped, validated, and documented.
+
+The biggest architectural shift is `enum DbPool { Sqlite, Postgres }`. Phase 11.1 (PR #121) lands the dual-backend foundation as native typed sqlx pools (`SqlitePool` + `PgPool`), companion `DialectAdapter` trait, validated `DatabaseUrl` newtype with private payload structs (variant tag and content cannot disagree by construction), credential-redacting `Debug` impls (no `Serialize` derive: typed URL must not flow into HTTP responses), `MigrationsTree` dispatch, and a runtime-loaded `Migrator` that selects between `migrations/` (SQLite) and the future `migrations/postgres/` (PR 11.2/11.3). SQLite remains the daemon default. Postgres opt-in via `[database] url = "postgres://..."`. Per-store dispatch + the K8s CloudNativePG cluster ship in PR 11.2/11.3/11.4.
+
+Release highlights:
+
+- **Entra ID Phases 1-10 complete** — JWT validation, users/teams data model, Graph client, per-handler authz, hash-chained audit log, MSAL.js SPA, multi-user UI surfaces, Tauri desktop auth, CLI auth, SOC 2 evidence. All ten phase plans shipped and merged via PRs #100-#120.
+- **Spacebot Desktop** (Tauri 2) — native app for macOS/Linux/Windows wrapping the daemon + interface. Loopback OAuth with system keychain credential storage. Sidecar named `spacebot-daemon-<triple>` to avoid APFS case-collision with the `Spacebot` host binary.
+- **CLI authentication** — `spacebot entra login` (device code flow), `spacebot entra logout`, `spacebot admin claim-resource`. AuthedClient transparently refreshes 401s. Full operator runbook in `docs/content/docs/(configuration)/cli-auth.mdx`.
+- **Phase 11.1 Postgres backend foundation** (PR #121) — `enum DbPool` over native typed sqlx pools, `DialectAdapter` companion trait, `[database]` config block, `DatabaseUrl` newtype validated at TOML deserialize. Stores still take `&SqlitePool` in this release. Per-store dispatch lands in PR 11.2.
+- **vitest 4 + reqwest 0.13 + sha2 0.11 + tokio 1.52** — ten major-version dependency migrations completed, twelve patch/minor bumps absorbed. vitest 4 required a custom `reactSingletonPlugin` for workspace-symlink React deduplication. reqwest 0.13 needed the `native-tls` + `form` features explicit. Three remaining majors (jsonwebtoken 10, nom 8, jsdom 29) deferred via documented `dependabot.yml` ignore rules with re-evaluation triggers.
+- **`just fetch-fastembed`** — pre-stages the BGESmallENV15 ONNX model cache so the four `memory::search` integration tests don't depend on live HuggingFace LFS downloads. Idempotent re-runs return in <1 s.
+- **Manifest-lockfile-drift PostToolUse hook** — catches the bug class where `bun update` (without `--latest`) bumps a lockfile but leaves the `package.json` spec range stale, opening dependabot loops. Fires on every `Edit|Write` to a `package.json`.
+- **`dep-spec-auditor` subagent** — read-only auditor that walks all seven workspaces (root + desktop Cargo, interface + docs + api-client + spaceui + spaceui packages bun) and reports manifest-vs-lockfile-vs-latest drift across three classes (spec-doesn't-allow-resolution, spec-excludes-latest, lockfile-only ghosts).
+- **`bun-deps-bump` skill** — encodes the `--latest` semantics gotcha (bun's three behaviors for `^`, exact, and `~` specs), the four-workspace test matrix, and the `bun install --force` workflow needed after major-version bumps to evict stale `node_modules/.bun/<pkg>@<oldver>/` type-def directories.
+- **README + CLAUDE.md + AGENTS.md + PROJECT_INDEX.md drift sweep** — full Phase 1-11 rollout reflected across architecture surfaces. SQLite-only framing replaced with `enum DbPool { Sqlite, Postgres }` everywhere.
+- **Two inert skills retired** — `phase-5-audit-log-scaffolder` and `entra-phase-wrap` deleted now that Phases 5 and 1-10 respectively have shipped.
+
+## What's Changed
+* fix(daemon): give OTLP exporter tests a multi-thread Tokio runtime by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/79
+* feat(litellm): Phase 0 + Phase 1 — secrets reload + [providers.litellm] wiring by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/78
+* fix(providers): complete LiteLLM UI + normalize TOML shape by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/80
+* fix(security): Phase 0 auth-middleware hardening by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/81
+* feat(auth): Phase 1 — Entra JWT validation middleware by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/82
+* feat(auth): Phase 2 — authz data model (users/teams/ownership) by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/101
+* feat(auth): Phase 3 — Microsoft Graph client + group resolution + A-19 photo by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/103
+* feat(auth): Phase 4 PR 1 — authz helpers + AuthContext plumbing + memories proof-of-pattern by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/104
+* feat(auth): Phase 4 PR 2 — handler rollout + cross-agent link enforcement + TOML reconciliation by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/105
+* feat(audit): Phase 5 — hash-chained audit log with WORM export by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/106
+* feat(auth): Phase 6 PR A — /api/auth/config + MSAL.js v5 + AuthGate by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/107
+* feat(spa): Phase 6 PR B — authedFetch + 88-call-site migration + token-provider wiring by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/108
+* feat(spa): Phase 6 PR C — SSE polyfill + /api/me + user menu + mock mode by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/109
+* feat(spa): Phase 7 PR 1 — visibility primitives + auth batch helpers by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/110
+* feat(api): Phase 7 PR 1.5 — resource-visibility endpoint + list-handler chip enrichment by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/111
+* Phase 7 PR 2 — memories chip + filter + share modal + teams endpoint by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/112
+* Phase 7 PR 3 — Tasks + Wiki visibility chip rollout by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/113
+* Phase 7 PR 4 — Cron + Portal visibility chip rollout by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/114
+* Phase 7 PR 5 — admin teams + Projects rollout + sidebar My/Team/Org nav by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/115
+* Phase 7 polish — flatten guards, RESOURCE_TYPE consts, pool-None observability + docs by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/116
+* Phase 8 PR A — Tauri desktop auth: loopback listener + token-store endpoint by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/117
+* feat(desktop): Phase 8 PR B — Tauri SPA bridge + AuthGate sign-in by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/118
+* feat(cli): Phase 9 — Entra login/logout + admin claim-resource by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/119
+* feat(security): Phase 10 — SOC 2 evidence package (FINAL) by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/120
+* feat(db): Phase 11.1 — DbPool enum + dialect adapter foundation by @jrmatherly in https://github.com/jrmatherly/spacebot/pull/121
+* deps: bump fastembed from 5.13.2 to 5.13.3 by @dependabot[bot] in https://github.com/jrmatherly/spacebot/pull/102
+* ci: bump taiki-e/install-action from 2.75.18 to 2.75.22 by @dependabot[bot] in https://github.com/jrmatherly/spacebot/pull/122
+
+## New Contributors
+* @dependabot[bot] made their first contribution in https://github.com/jrmatherly/spacebot/pull/102
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.5.1...v0.6.0
 ## v0.5.1
 
 ### Release Story
