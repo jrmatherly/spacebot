@@ -1,6 +1,6 @@
 # Spacebot - Project Overview
 
-**Version:** 0.6.0  (released 2026-04-26 from `ef548b7`; tag `v0.6.0`. Marketing copy at `.scratchpad/release/v0.6.0-marketing.md`. The v0.5.1 → v0.6.0 release shipped Phases 1-10 Entra ID rollout + Phase 11.1 Postgres backend foundation + 12-commit deps/automation cycle + Tauri desktop + CLI auth.)
+**Version:** 0.6.2  (released 2026-04-26 from `2dd0083`; tag `v0.6.2`. Marketing copy at `.scratchpad/release/v0.6.2-marketing.md`. v0.5.1 → v0.6.0 shipped Phases 1-10 Entra ID rollout + Phase 11.1 Postgres backend foundation + 12-commit deps/automation cycle + Tauri desktop + CLI auth. v0.6.1 was a release-pipeline hotfix (`a517b23`, bash-3.2 + Docker no-`.git` + release.yml &&-chain decomposition). v0.6.2 was a runtime-deploy hotfix: Dockerfile copies `migrations/` to `/app/migrations/` + sets `WORKDIR /app` (PR 11.1 made the migrator runtime-load; the runtime stage was never updated until v0.6.2), gains `--features otlp-grpc` for in-cluster Alloy OTLP/gRPC, plus a follow-up `4ffb120` that flips the GitHub release-check repo from `spacedriveapp/spacebot` → `jrmatherly/spacebot` in `src/update.rs` + `interface/src/components/settings/UpdatesSection.tsx` + 2 OpenRouter `HTTP-Referer` headers, and restyles the `VisibilityFilter` segmented-button group on Tasks/Wiki/Portal/Memories.)
 **Language:** Rust (edition 2024), ~130K lines of code
 **Purpose:** An agentic system where every LLM process has a dedicated role. Replaces the monolithic session model with specialized processes (Channel, Branch, Worker, Compactor, Cortex).
 
