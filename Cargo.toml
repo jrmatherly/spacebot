@@ -236,6 +236,18 @@ http-body-util = "0.1"
 # separate `rand_core = "0.6"` dep (the project's `rand = "0.10"` uses
 # rand_core 0.9 which is incompatible with rsa 0.9's RsaPrivateKey::new).
 rsa = { version = "0.9", features = ["sha2", "getrandom"] }
+# Postgres integration tests (Phase 11.2). Spins up `postgres:16-alpine` in
+# Docker for `tests/instance_postgres.rs`. Requires Docker daemon at runtime;
+# tests are gated behind `#[ignore]` or runtime-skip when Docker is absent so
+# `cargo test --lib` continues to pass in environments without Docker.
+#
+# testcontainers 0.27 selected (vs the plan's stated 0.23) because it shares
+# `bollard = 0.20` with the project's existing self-update direct-dep. The
+# 0.23 line wants bollard 0.18 and cargo refuses to coexist two semver-major
+# bollard branches in this dep graph. testcontainers 0.27's MSRV (1.88) is
+# satisfied by our 1.94 toolchain.
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 
 # OS keystore (macOS Keychain for master key storage)
 [target.'cfg(target_os = "macos")'.dependencies]
