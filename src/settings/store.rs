@@ -58,6 +58,7 @@ impl SettingsStore {
     /// Create a new settings store at the given path.
     /// The database will be created if it doesn't exist.
     pub fn new(path: &Path) -> Result<Self> {
+        tracing::info!(path = %path.display(), "opening settings.redb");
         let db = Database::create(path)
             .map_err(|e| SettingsError::Other(format!("failed to open settings db: {e}")))?;
 
