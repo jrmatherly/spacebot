@@ -87,6 +87,27 @@ sweep-target:
     cargo sweep --time 30
     @echo "Deeper recovery (slower next build): rm -rf target/debug/incremental"
 
+# Pre-stage the fastembed model cache for the 4 memory::search integration
+# tests so they hit a local cache instead of downloading the BGESmallENV15
+# ONNX model (~127 MB) from HuggingFace at test time. The download path
+# can fail intermittently inside Rust's `ureq` + `native-tls` stack on
+# macOS even when curl works against the same host (LFS CDN cert chain
+# issue). Idempotent — re-runs return in <1s if cache is fresh.
+#
+# After running, set HF_HOME so cargo test picks up the cache:
+#   export HF_HOME=$(just fetch-fastembed-cache-dir)
+#   cargo test --lib
+#
+# Override cache location with FASTEMBED_CACHE=/path/to/dir.
+fetch-fastembed:
+    ./scripts/fetch-fastembed.sh
+
+# Print the cache directory the fastembed pre-stage uses. Lets shells do
+# `export HF_HOME=$(just fetch-fastembed-cache-dir)` without parsing
+# fetch-fastembed's stdout.
+fetch-fastembed-cache-dir:
+    @./scripts/fetch-fastembed.sh --print-cache-dir
+
 # Nuclear cleanup — removes all workspace build state. Use after long absences,
 # heavy branch-switching, or when reproducing a build issue from scratch.
 clean-all:

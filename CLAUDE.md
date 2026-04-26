@@ -20,6 +20,7 @@ cargo run -- start       # Start the daemon (port 19898)
 - `cargo audit --ignore RUSTSEC-2023-0071` for security audit
 - `just check-typegen` mandatory after any `src/api/**/*.rs` edit (utoipa annotations regenerate `packages/api-client/src/schema.d.ts`)
 - If a unit test hangs for >60s on code that spawns background tasks (OTLP, LanceDB indexers, etc.), it is the current-thread-runtime deadlock — use `#[tokio::test(flavor = "multi_thread")]`. See `.claude/skills/test-runtime-patterns/SKILL.md`.
+- The 4 `memory::search::tests::test_metadata_search_*` tests download the fastembed BGESmallENV15 ONNX model (~127 MB) at runtime. On macOS the download path can fail intermittently inside `ureq + native-tls`. Run `just fetch-fastembed` once to pre-stage the cache, then `export HF_HOME=$(just fetch-fastembed-cache-dir)` before `cargo test --lib`. Idempotent — re-runs return in <1s. See `scripts/fetch-fastembed.sh` for the trailing-newline gotcha that broke an earlier manual attempt.
 
 ## Architecture
 
