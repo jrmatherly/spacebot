@@ -273,9 +273,9 @@ async fn connect_instance_pool(data_dir: &Path, db_url: Option<&DatabaseUrl>) ->
 async fn open_pool_and_migrate(url: &DatabaseUrl, tree: MigrationsTree) -> Result<DbPool> {
     match url {
         DatabaseUrl::Sqlite(s) => {
-            let pool = SqlitePool::connect(s).await.with_context(|| {
-                format!("failed to connect to SQLite: {}", redact_url(s))
-            })?;
+            let pool = SqlitePool::connect(s)
+                .await
+                .with_context(|| format!("failed to connect to SQLite: {}", redact_url(s)))?;
             let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(tree.sqlite_path()))
                 .await
                 .with_context(|| {
@@ -490,5 +490,150 @@ mod tests {
             msg.contains("PR 11.2") || msg.contains("PR 11.3"),
             "expected fail-fast message to point at later PR, got: {msg}"
         );
+    }
+
+    // R5: Legacy DB rename coverage. resolve_per_agent_url and
+    // resolve_instance_url run std::fs::rename against user data on every
+    // upgrade. If the precondition logic ever inverts, users lose data on
+    // upgrade. These tests pin the four branches of each rename helper.
+
+    #[test]
+    fn resolve_per_agent_url_renames_legacy_when_target_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("spacebot.db");
+        std::fs::write(&legacy, b"legacy-marker").unwrap();
+        let resolved = resolve_per_agent_url(tmp.path(), None).unwrap();
+        assert_eq!(resolved.dialect(), Dialect::Sqlite);
+        assert!(resolved.as_str().contains("agent.db"));
+        assert!(!legacy.exists(), "legacy file must be moved");
+        let target = tmp.path().join("agent.db");
+        assert!(target.exists(), "renamed target must exist");
+        assert_eq!(std::fs::read(&target).unwrap(), b"legacy-marker");
+    }
+
+    #[test]
+    fn resolve_per_agent_url_skips_rename_when_both_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("spacebot.db");
+        let target = tmp.path().join("agent.db");
+        std::fs::write(&legacy, b"legacy").unwrap();
+        std::fs::write(&target, b"current").unwrap();
+        let _ = resolve_per_agent_url(tmp.path(), None).unwrap();
+        // Both must remain untouched: rename runs only when target is absent.
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"legacy");
+        assert_eq!(std::fs::read(&target).unwrap(), b"current");
+    }
+
+    #[test]
+    fn resolve_per_agent_url_no_op_when_legacy_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No legacy, no target — fresh install case.
+        let resolved = resolve_per_agent_url(tmp.path(), None).unwrap();
+        assert!(resolved.as_str().contains("agent.db"));
+        // No file should have been created by the resolve step itself
+        // (Db::connect creates it during SqlitePool::connect, not here).
+        assert!(!tmp.path().join("spacebot.db").exists());
+    }
+
+    #[test]
+    fn resolve_per_agent_url_skips_rename_when_url_supplied() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("spacebot.db");
+        std::fs::write(&legacy, b"legacy-must-not-move").unwrap();
+        let supplied: DatabaseUrl = "sqlite:/somewhere/else.db".parse().unwrap();
+        let resolved = resolve_per_agent_url(tmp.path(), Some(&supplied)).unwrap();
+        assert_eq!(resolved.as_str(), "sqlite:/somewhere/else.db");
+        // Operator-supplied URL bypasses the rename logic entirely.
+        assert!(legacy.exists(), "legacy must not be touched when url supplied");
+    }
+
+    #[test]
+    fn resolve_instance_url_renames_legacy_tasks_db_when_target_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("tasks.db");
+        std::fs::write(&legacy, b"legacy-tasks").unwrap();
+        let resolved = resolve_instance_url(tmp.path(), None).unwrap();
+        assert!(resolved.as_str().contains("spacebot.db"));
+        assert!(!legacy.exists(), "legacy tasks.db must be moved");
+        let target = tmp.path().join("spacebot.db");
+        assert!(target.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"legacy-tasks");
+    }
+
+    #[test]
+    fn resolve_instance_url_skips_rename_when_both_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("tasks.db");
+        let target = tmp.path().join("spacebot.db");
+        std::fs::write(&legacy, b"legacy").unwrap();
+        std::fs::write(&target, b"current").unwrap();
+        let _ = resolve_instance_url(tmp.path(), None).unwrap();
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"legacy");
+        assert_eq!(std::fs::read(&target).unwrap(), b"current");
+    }
+
+    #[test]
+    fn resolve_instance_url_no_op_when_legacy_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let resolved = resolve_instance_url(tmp.path(), None).unwrap();
+        assert!(resolved.as_str().contains("spacebot.db"));
+        assert!(!tmp.path().join("tasks.db").exists());
+    }
+
+    #[test]
+    fn resolve_instance_url_skips_rename_when_url_supplied() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("tasks.db");
+        std::fs::write(&legacy, b"legacy-must-not-move").unwrap();
+        let supplied: DatabaseUrl = "sqlite:/elsewhere.db".parse().unwrap();
+        let resolved = resolve_instance_url(tmp.path(), Some(&supplied)).unwrap();
+        assert_eq!(resolved.as_str(), "sqlite:/elsewhere.db");
+        assert!(legacy.exists(), "legacy must not be touched when url supplied");
+    }
+
+    // R5: connect_instance_db has distinct behavior from Db::connect
+    // (uses MigrationsTree::Instance → migrations/global/, returns bare
+    // Arc<DbPool>). Cover the SQLite happy path.
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_instance_db_with_sqlite_url_runs_global_migrations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let url: DatabaseUrl = format!("sqlite:{}/spacebot.db?mode=rwc", tmp.path().display())
+            .parse()
+            .unwrap();
+        let pool = connect_instance_db(tmp.path(), Some(&url)).await.unwrap();
+        let sqlite = pool.as_sqlite().unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT count(*) FROM _sqlx_migrations")
+            .fetch_one(sqlite)
+            .await
+            .unwrap();
+        assert!(
+            row.0 > 0,
+            "expected at least one migrations/global migration applied"
+        );
+    }
+
+    // R5: Close paths. Db::close consumes self and awaits pool.close.
+    // Verify the pool reports closed afterward.
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dbpool_sqlite_close_marks_pool_closed() {
+        let inner = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool_handle = inner.clone();
+        let pool = DbPool::Sqlite(inner);
+        pool.close().await;
+        assert!(pool_handle.is_closed(), "pool must report closed after close()");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn db_close_marks_underlying_pool_closed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let url: DatabaseUrl = format!("sqlite:{}/agent.db?mode=rwc", tmp.path().display())
+            .parse()
+            .unwrap();
+        let db = Db::connect(tmp.path(), Some(&url)).await.unwrap();
+        let pool_handle = db.sqlite_pool().unwrap().clone();
+        db.close().await;
+        assert!(pool_handle.is_closed(), "underlying pool must close");
     }
 }
