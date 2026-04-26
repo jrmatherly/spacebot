@@ -23,8 +23,8 @@ This skill covers documentation **outside** session-sync's scope. Several hundre
 | SpaceUI changesets | `spaceui/.changeset/README.md` + `config.json` |
 | SpaceUI packages | `spaceui/packages/{ai,explorer,forms,icons,primitives,tokens}/README.md` + all 6 `CHANGELOG.md` |
 | Docs top-level | `docs/README.md`, `docs/docker.md`, `docs/mattermost.md`, `docs/metrics.md` |
-| Published MDX content | `docs/content/docs/**/*.mdx` — **38 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
-| Design docs | `docs/design-docs/*.md` — 54 files at root + `docs/design-docs/archive/` (1 file: `api-client-package-followup.md`, archived by PR #75). Historical record, append-only; archive subdir is immutable. |
+| Published MDX content | `docs/content/docs/**/*.mdx` — **42 files** across 6 route groups: `(core)`, `(features)`, `(configuration)`, `(deployment)`, `(getting-started)`, `(messaging)` |
+| Design docs | `docs/design-docs/*.md` — 62 files at root + `docs/design-docs/archive/` (currently holds the API-client follow-up archived by PR #75 plus `postgres-migration-anypool-attempt-2026-04-25.md` archived by PR 11.1's design phase). Historical record, append-only; archive subdir is immutable. |
 | Security policy | `docs/security/*.md` (tracked per project_overview memory) |
 | Transient plans | `docs/superpowers/plans/*.md` (currently empty; completed plans move to `.scratchpad/completed/` which is gitignored) |
 | Deployment values | `deploy/helm/spacebot/{values.yaml,values.local.yaml,README.md}` — Kubernetes/Helm values for the Talos cluster. Consumes `bjw-s-labs/app-template` (not a wrapper chart). Drift risk: image tag vs actual release, port/env mismatches against `src/config/`, probe paths against API handlers. |
@@ -38,7 +38,7 @@ These are lower-visibility but affect agent behavior, coding conventions, and in
 | Nested CLAUDE.md | `spaceui/CLAUDE.md`, `interface/CLAUDE.md`, `desktop/CLAUDE.md`, `openspec/CLAUDE.md` — subtree-scoped instructions loaded on-demand when agents edit those subtrees. Distinct from the root `CLAUDE.md` (which is owned by `/session-sync`). |
 | Agent personas | `presets/*/{IDENTITY,ROLE,SOUL}.md` — 33 files across 11 presets. Changes here shape runtime agent behavior. |
 | Coding rules | `.claude/rules/*.md` — 10 files (`rust-essentials`, `rust-iteration-loop`, `rust-patterns`, `writing-guide`, `coding-discipline`, `async-state-safety`, `messaging-adapter-parity`, `provider-integration`, `tool-authoring`, `api-handler`). Referenced by CLAUDE.md; drift propagates into every code change. |
-| Custom agents | `.claude/agents/*.md` — 2 files (migration-writer, security-reviewer). |
+| Custom agents | `.claude/agents/*.md` — 13 files (migration-writer, security-reviewer, plus 11 Phase-rollout auditors: authz-gate-conformance, code-doc-sync-auditor, dependabot-triager, fmt-drift-detector, integration-test-coverage-auditor, openapi-typegen-verifier, phase-plan-auditor, skill-drift-auditor, spaceui-token-conformance, tracing-log-contract, write-path-sweep-verifier). |
 | Project skills | `.claude/skills/*/SKILL.md` + nested references — 43 tracked files (22 top-level skills + 21 nested under `archon/`, `session-primer/`, `cluster-context/`). **Special attention:** `session-primer/references/skills-catalog.md` must list every skill, including new additions. |
 | Runtime skills | `skills/builtin/*/SKILL.md` — 3 files (memory-writing, task-triage, wiki-writing). Skills the daemon ships to agents. |
 | Canonical specs | `openspec/specs/*/spec.md` — 9 files. Source-of-truth for Spacebot capabilities (deps, integrations, security, frontend api-client). **Gap:** no other skill audits these for drift; this is the docs-audit-owned slice. |

@@ -10,14 +10,15 @@ A Rust single-binary agentic system with process-level concurrency, structured m
 
 ```
 spacebot/
-├── src/                           (232 .rs files)
+├── src/                           (249 .rs files)
 │   ├── agent/                     (15 files) - Channel, worker, branch, cortex orchestration
-│   ├── api/                       (33 files) - REST endpoints (axum + utoipa OpenAPI)
+│   ├── api/                       (41 files) - REST endpoints (axum + utoipa OpenAPI)
 │   ├── audit/                     (3 files)  - Phase 5: types (AuditAction/AuditEvent/AuditRow/canonical_bytes), appender (A-13 singleton, tokio-Mutex-serialized insert, verify_chain), export (3 ExportMode variants per A-15; Filesystem dev-only + S3/HttpSiem Phase-10 stubs)
-│   ├── auth/                      (11 files) - Entra ID (Phases 1-5): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1), PrincipalType::as_canonical_str + audit-emission helpers (Phase 5)
-│   ├── config/                    (8 files)  - TOML loading, permissions, provider routing
-│   ├── llm/                       (7 files)  - Rig-core orchestration, model routing, pricing
-│   ├── memory/                    (7 files)  - Graph store, working memory, search, maintenance
+│   ├── auth/                      (12 files) - Entra ID (Phases 1-5): config/context/errors/jwks/middleware, principals/repository (Phase 2), graph (Phase 3), roles/policy/testing (Phase 4 PR 1), PrincipalType::as_canonical_str + audit-emission helpers (Phase 5)
+│   ├── cli/                       (5 files)  - Phase 9: device-code login, CliTokenStore, AuthedClient 401-refresh, admin claim-resource (`spacebot entra ...`)
+│   ├── config/                    (8 files)  - TOML loading, permissions, provider routing, Phase 11 [database] block
+│   ├── llm/                       (11 files) - Rig-core orchestration, model routing, pricing
+│   ├── memory/                    (9 files)  - Graph store, working memory, search, maintenance
 │   ├── messaging/                 (12 files) - Discord, Slack, Telegram, Twitch, Email, Cron
 │   ├── tools/                     (49 files) - LLM-callable tools (multiple per file in some cases)
 │   ├── conversation/              (8 files)  - Channel history, settings, context, portal
@@ -25,7 +26,8 @@ spacebot/
 │   ├── tasks/                     (2 files)  - Goal/task state machine
 │   ├── skills/                    (2 files)  - Skill installation, bundling, discovery
 │   ├── opencode/                  (3 files)  - Worker transcript UI embedding
-│   ├── db.rs                      - SQLite + LanceDB + redb initialization
+│   ├── db.rs, dialect.rs          - Phase 11.1: enum DbPool { Sqlite(SqlitePool), Postgres(PgPool) } over native typed sqlx pools, DialectAdapter trait, MigrationsTree dispatch, runtime-loaded Migrator. SQLite default; Postgres opt-in via [database] url
+│   ├── admin.rs                   - Phase 10 SOC 2: orphan-sweep with is_safe_agent_id validator + path-traversal guard (cross-agent enumeration, race-tolerant)
 │   ├── cron.rs, config.rs, factory.rs, error.rs
 │   ├── prompts/, identity/, secrets/, settings/, hooks/, telemetry/, projects/, sandbox/, wiki/, links/
 │   └── main.rs, lib.rs            - CLI daemon + module exports
@@ -34,7 +36,7 @@ spacebot/
 │   └── package.json               - React 19, Tailwind 4, React Router
 ├── packages/                       (Workspace packages under the @spacebot/* scope)
 │   └── api-client/                - OpenAPI TypeScript client (code-gen from Rust spec; consumed by interface/)
-├── docs/                           (40 .mdx files, Fumadocs + Next.js)
+├── docs/                           (42 .mdx files, Fumadocs + Next.js)
 ├── desktop/                        (Tauri 2 app)
 ├── migrations/                     (55 SQL migrations: 41 flat per-agent + 14 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
