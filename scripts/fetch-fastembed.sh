@@ -58,7 +58,7 @@ REPO_DIR="${CACHE_DIR}/${REPO_DIR_NAME}"
 
 # Resolve the commit hash for `main` from the HF API. Pinning to a commit
 # hash (rather than the literal "main" branch ref) is what hf-hub does
-# internally — its `refs/main` file holds a commit hash, and snapshots
+# internally. Its `refs/main` file holds a commit hash, and snapshots
 # are looked up by that hash. Any tool with `python3 -m json.tool` works
 # here; using `python3 -c` keeps the dep surface zero (no `jq` required).
 resolve_commit() {

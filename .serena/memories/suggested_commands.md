@@ -39,6 +39,8 @@
 | `just graphify-rebuild <path> [--clean] [--snapshot]` | Opt-in — rebuild directed knowledge graph via scripts/graphify-rebuild.sh. Wraps graphify's Python API with `directed=True` (the built-in `graphify update` CLI rebuilds undirected). Requires `pipx install graphifyy`. Added 2026-04-21. |
 | `just graphify-query "<question>"` | Query the existing graph (BFS traversal). Fails with a helpful error if no graph exists. Added 2026-04-21. |
 | `just graphify-clean` | Nuclear reset — drops graphify-out/ entirely. Added 2026-04-21. |
+| `just fetch-fastembed` | Pre-stage the fastembed BGESmallENV15 ONNX model cache (~127 MB) so the 4 memory::search integration tests can hit a local cache instead of downloading at test time. Idempotent — re-runs return in <1s. Added 2026-04-26 (commit `a1b245f`). On macOS, fastembed's HuggingFace download path intermittently fails inside Rust's `ureq + native-tls` stack; this recipe is the practical workaround. |
+| `just fetch-fastembed-cache-dir` | Echo the cache path for shell-export use: `export HF_HOME=$(just fetch-fastembed-cache-dir)`. Added 2026-04-26. |
 
 ## Docker Compose Recipes (deploy/docker/)
 
@@ -79,6 +81,7 @@
 | Command | Purpose |
 |---------|---------|
 | `bun install` | Install dependencies |
+| `bun install --force` | Rebuild node_modules from lockfile, evicting stale `.bun/<pkg>@<oldver>/` directories. Required after major-version dep bumps so `bunx tsc --noEmit` validates against the NEW type defs. Otherwise local tsc may resolve stale-cached defs and pass while CI (clean install) fails. Lesson learned 2026-04-26 commit `104ee69`; documented in `.claude/skills/bun-deps-bump/SKILL.md`. |
 | `bun run dev` | Start dev server |
 | `bun run build` | Production build |
 | `bun run test` | Run tests |

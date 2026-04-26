@@ -41,7 +41,7 @@ spacebot/
 ├── migrations/                     (55 SQL migrations: 41 flat per-agent + 14 instance-wide under global/, 2026-02 → 2026-04)
 ├── presets/                        (11 agent persona presets)
 ├── prompts/                        (91 Jinja2 templates: top-level, tools/, adapters/, schedulers/, fragments/)
-├── scripts/                        (10 active shell scripts + scripts/_disabled/check-migration-safety.sh)
+├── scripts/                        (13 active shell scripts + claude-hooks/ subdirectory + scripts/_disabled/check-migration-safety.sh)
 ├── vendor/                         (imap-proto vendored crate)
 ├── spacedrive/                     (vendored Spacedrive platform, ~50MB, independent Cargo workspace, own toolchain `stable`)
 └── tests/                          (39 integration test files)

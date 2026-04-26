@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Detect drift between a `package.json` spec range and the resolved version
 # in the sibling `bun.lock`. Surfaces the class of bug that opened PRs
-# #124, #125, #130, #131 on 2026-04-26 — where `bun update` (without
+# #124, #125, #130, #131 on 2026-04-26. The pattern: `bun update` (without
 # --latest) bumped the lockfile but left the manifest spec at an older
 # semver range, so dependabot kept reopening PRs forever.
 #

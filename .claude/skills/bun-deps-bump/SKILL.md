@@ -5,7 +5,7 @@ description: Use when bumping a bun-managed dependency in interface/, docs/, pac
 
 # bun-deps-bump
 
-Bump a bun-managed dependency so that **both** `package.json` (the spec range) **and** `bun.lock` (the resolved version) move. The lockfile alone is not enough — dependabot scans `package.json` and will reopen PRs forever if the spec range still allows the old version.
+Bump a bun-managed dependency so that **both** `package.json` (the spec range) **and** `bun.lock` (the resolved version) move. The lockfile alone is not enough. Dependabot scans `package.json` and will reopen PRs forever if the spec range still allows the old version.
 
 ## The semantics gotcha
 
@@ -28,7 +28,7 @@ Bump a bun-managed dependency so that **both** `package.json` (the spec range) *
 | `packages/api-client/` | `cd packages/api-client && bun update <pkg> --latest` | `bun run test` |
 | `spaceui/` | `cd spaceui && bun update <pkg> --latest` (then `just spaceui-build`) | `just spaceui-gate` |
 
-Note: spaceui has its own `bun.lock` and its own root manifest. `interface/` declares `../spaceui/packages/*` and `../packages/*` as workspace members — bun resolves `@spacedrive/*` and `@spacebot/*` via local symlink. Do not bump packages from inside `interface/` if they belong to spaceui or packages/api-client.
+Note: spaceui has its own `bun.lock` and its own root manifest. `interface/` declares `../spaceui/packages/*` and `../packages/*` as workspace members, so bun resolves `@spacedrive/*` and `@spacebot/*` via local symlink. Do not bump packages from inside `interface/` if they belong to spaceui or packages/api-client.
 
 ## Procedure
 
