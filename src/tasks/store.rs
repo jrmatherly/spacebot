@@ -1,15 +1,22 @@
-//! Global task CRUD storage (SQLite).
+//! Global task CRUD storage.
 //!
-//! Operates against the instance-level `tasks.db` database with globally
-//! unique task numbers and explicit owner/assigned agent relationships.
+//! Operates against the instance-level database (SQLite by default, Postgres
+//! when `[database] url = "postgres://..."` is set in config.toml). Each
+//! method matches on the `DbPool` variant and runs the appropriate SQL
+//! against the underlying typed pool. See `docs/design-docs/postgres-migration.md`
+//! for the per-method dispatch patterns (A: identical SQL, B: placeholder
+//! divergence `?` vs `$N`, C: semantic divergence INSERT OR / FTS / etc).
 
+use crate::db::DbPool;
 use crate::error::Result;
 
 use anyhow::Context as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{Row as _, SqlitePool};
+use sqlx::Row as _;
+
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -175,11 +182,11 @@ pub struct TaskListFilter {
 
 #[derive(Debug, Clone)]
 pub struct TaskStore {
-    pool: SqlitePool,
+    pool: Arc<DbPool>,
 }
 
 impl TaskStore {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: Arc<DbPool>) -> Self {
         Self { pool }
     }
 
@@ -193,71 +200,137 @@ impl TaskStore {
         let metadata_json = input.metadata.to_string();
 
         for attempt in 0..Self::MAX_CREATE_RETRIES {
-            let mut tx = self
-                .pool
-                .begin()
-                .await
-                .context("failed to open task create transaction")?;
-
-            // Atomically allocate the next task number from the high-water-mark
-            // sequence. This avoids number reuse after hard deletes.
-            let task_number: i64 = sqlx::query_scalar(
-                "UPDATE task_number_seq SET next_number = next_number + 1 \
-                 WHERE id = 1 RETURNING next_number - 1",
-            )
-            .fetch_one(&mut *tx)
-            .await
-            .context("failed to allocate next task number")?;
-
             let task_id = uuid::Uuid::new_v4().to_string();
 
-            let insert_result = sqlx::query(
-                r#"
-                INSERT INTO tasks (
-                    id, task_number, title, description, status, priority,
-                    owner_agent_id, assigned_agent_id,
-                    subtasks, metadata, source_memory_id, created_by
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&task_id)
-            .bind(task_number)
-            .bind(&input.title)
-            .bind(&input.description)
-            .bind(input.status.as_str())
-            .bind(input.priority.as_str())
-            .bind(&input.owner_agent_id)
-            .bind(&input.assigned_agent_id)
-            .bind(&subtasks_json)
-            .bind(&metadata_json)
-            .bind(&input.source_memory_id)
-            .bind(&input.created_by)
-            .execute(&mut *tx)
-            .await;
-
-            match insert_result {
-                Ok(_) => {
-                    tx.commit()
+            // Per-backend transaction. The retry-on-UNIQUE-collision contract
+            // is identical across backends but the SQLSTATE / driver error
+            // codes diverge: SQLite reports "2067" (extended SQLITE_CONSTRAINT_UNIQUE);
+            // Postgres reports "23505" (unique_violation). The two arms also
+            // use different placeholder syntax (`?` vs `$N`).
+            let outcome = match &*self.pool {
+                DbPool::Sqlite(p) => {
+                    let mut tx = p
+                        .begin()
                         .await
-                        .context("failed to commit task create transaction")?;
+                        .context("failed to open task create transaction")?;
 
+                    let task_number: i64 = sqlx::query_scalar(
+                        "UPDATE task_number_seq SET next_number = next_number + 1 \
+                         WHERE id = 1 RETURNING next_number - 1",
+                    )
+                    .fetch_one(&mut *tx)
+                    .await
+                    .context("failed to allocate next task number")?;
+
+                    let insert_result = sqlx::query(
+                        r#"
+                        INSERT INTO tasks (
+                            id, task_number, title, description, status, priority,
+                            owner_agent_id, assigned_agent_id,
+                            subtasks, metadata, source_memory_id, created_by
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#,
+                    )
+                    .bind(&task_id)
+                    .bind(task_number)
+                    .bind(&input.title)
+                    .bind(&input.description)
+                    .bind(input.status.as_str())
+                    .bind(input.priority.as_str())
+                    .bind(&input.owner_agent_id)
+                    .bind(&input.assigned_agent_id)
+                    .bind(&subtasks_json)
+                    .bind(&metadata_json)
+                    .bind(&input.source_memory_id)
+                    .bind(&input.created_by)
+                    .execute(&mut *tx)
+                    .await;
+
+                    match insert_result {
+                        Ok(_) => {
+                            tx.commit()
+                                .await
+                                .context("failed to commit task create transaction")?;
+                            CreateOutcome::Success(task_number)
+                        }
+                        Err(sqlx::Error::Database(ref db_error))
+                            if db_error.code().as_deref() == Some("2067") =>
+                        {
+                            CreateOutcome::Collision(task_number)
+                        }
+                        Err(error) => CreateOutcome::Other(error),
+                    }
+                }
+                DbPool::Postgres(p) => {
+                    let mut tx = p
+                        .begin()
+                        .await
+                        .context("failed to open task create transaction")?;
+
+                    let task_number: i64 = sqlx::query_scalar(
+                        "UPDATE task_number_seq SET next_number = next_number + 1 \
+                         WHERE id = 1 RETURNING next_number - 1",
+                    )
+                    .fetch_one(&mut *tx)
+                    .await
+                    .context("failed to allocate next task number")?;
+
+                    let insert_result = sqlx::query(
+                        r#"
+                        INSERT INTO tasks (
+                            id, task_number, title, description, status, priority,
+                            owner_agent_id, assigned_agent_id,
+                            subtasks, metadata, source_memory_id, created_by
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        "#,
+                    )
+                    .bind(&task_id)
+                    .bind(task_number)
+                    .bind(&input.title)
+                    .bind(&input.description)
+                    .bind(input.status.as_str())
+                    .bind(input.priority.as_str())
+                    .bind(&input.owner_agent_id)
+                    .bind(&input.assigned_agent_id)
+                    .bind(&subtasks_json)
+                    .bind(&metadata_json)
+                    .bind(&input.source_memory_id)
+                    .bind(&input.created_by)
+                    .execute(&mut *tx)
+                    .await;
+
+                    match insert_result {
+                        Ok(_) => {
+                            tx.commit()
+                                .await
+                                .context("failed to commit task create transaction")?;
+                            CreateOutcome::Success(task_number)
+                        }
+                        Err(sqlx::Error::Database(ref db_error))
+                            if db_error.code().as_deref() == Some("23505") =>
+                        {
+                            CreateOutcome::Collision(task_number)
+                        }
+                        Err(error) => CreateOutcome::Other(error),
+                    }
+                }
+            };
+
+            match outcome {
+                CreateOutcome::Success(task_number) => {
                     return self
                         .get_by_number(task_number)
                         .await?
                         .context("task inserted but not found")
                         .map_err(Into::into);
                 }
-                Err(sqlx::Error::Database(ref db_error))
-                    if db_error.code().as_deref() == Some("2067") =>
-                {
-                    // UNIQUE constraint violation — another concurrent create won the
-                    // race for this task_number. Roll back and retry.
+                CreateOutcome::Collision(task_number) => {
                     tracing::debug!(attempt, task_number, "task_number collision, retrying");
-                    // tx is dropped here which rolls back automatically.
                     continue;
                 }
-                Err(error) => {
+                CreateOutcome::Other(error) => {
                     return Err(anyhow::anyhow!("failed to insert task: {error}").into());
                 }
             }
@@ -273,56 +346,114 @@ impl TaskStore {
     /// List tasks with optional filters. Uses the global store — no agent_id
     /// is required, but callers can filter by owner or assigned agent.
     pub async fn list(&self, filter: TaskListFilter) -> Result<Vec<Task>> {
+        // Build the dynamic WHERE clause with backend-appropriate placeholders.
+        // SQLite uses `?`; Postgres uses `$N` where N is the 1-based bind index.
+        // Placeholder generation is centralized so the same filter logic emits
+        // both forms.
+        let dialect = self.pool.dialect();
         let mut query = String::from(SELECT_COLUMNS);
         query.push_str(" FROM tasks WHERE 1=1");
+        let mut bind_index: usize = 0;
+        let mut next_placeholder = || -> String {
+            bind_index += 1;
+            match dialect {
+                crate::db::Dialect::Sqlite => "?".to_string(),
+                crate::db::Dialect::Postgres => format!("${bind_index}"),
+            }
+        };
 
         if filter.agent_id.is_some() {
-            query.push_str(" AND (owner_agent_id = ? OR assigned_agent_id = ?)");
+            let p1 = next_placeholder();
+            let p2 = next_placeholder();
+            query.push_str(&format!(
+                " AND (owner_agent_id = {p1} OR assigned_agent_id = {p2})"
+            ));
         }
         if filter.owner_agent_id.is_some() {
-            query.push_str(" AND owner_agent_id = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND owner_agent_id = {p}"));
         }
         if filter.assigned_agent_id.is_some() {
-            query.push_str(" AND assigned_agent_id = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND assigned_agent_id = {p}"));
         }
         if filter.status.is_some() {
-            query.push_str(" AND status = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND status = {p}"));
         }
         if filter.priority.is_some() {
-            query.push_str(" AND priority = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND priority = {p}"));
         }
         if filter.created_by.is_some() {
-            query.push_str(" AND created_by = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND created_by = {p}"));
         }
-        query.push_str(" ORDER BY task_number DESC LIMIT ?");
+        let limit_placeholder = next_placeholder();
+        query.push_str(&format!(
+            " ORDER BY task_number DESC LIMIT {limit_placeholder}"
+        ));
 
-        let mut sql = sqlx::query(&query);
-        if let Some(ref agent) = filter.agent_id {
-            sql = sql.bind(agent).bind(agent);
-        }
-        if let Some(ref owner) = filter.owner_agent_id {
-            sql = sql.bind(owner);
-        }
-        if let Some(ref assigned) = filter.assigned_agent_id {
-            sql = sql.bind(assigned);
-        }
-        if let Some(status) = filter.status {
-            sql = sql.bind(status.as_str());
-        }
-        if let Some(priority) = filter.priority {
-            sql = sql.bind(priority.as_str());
-        }
-        if let Some(ref created_by) = filter.created_by {
-            sql = sql.bind(created_by);
-        }
-        sql = sql.bind(filter.limit.unwrap_or(100).clamp(1, 500));
+        let limit = filter.limit.unwrap_or(100).clamp(1, 500);
 
-        let rows = sql
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to list tasks")?;
-
-        rows.into_iter().map(task_from_row).collect()
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut sql = sqlx::query(&query);
+                if let Some(ref agent) = filter.agent_id {
+                    sql = sql.bind(agent).bind(agent);
+                }
+                if let Some(ref owner) = filter.owner_agent_id {
+                    sql = sql.bind(owner);
+                }
+                if let Some(ref assigned) = filter.assigned_agent_id {
+                    sql = sql.bind(assigned);
+                }
+                if let Some(status) = filter.status {
+                    sql = sql.bind(status.as_str());
+                }
+                if let Some(priority) = filter.priority {
+                    sql = sql.bind(priority.as_str());
+                }
+                if let Some(ref created_by) = filter.created_by {
+                    sql = sql.bind(created_by);
+                }
+                sql.bind(limit)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list tasks")?
+                    .into_iter()
+                    .map(task_from_sqlite_row)
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                let mut sql = sqlx::query(&query);
+                if let Some(ref agent) = filter.agent_id {
+                    sql = sql.bind(agent).bind(agent);
+                }
+                if let Some(ref owner) = filter.owner_agent_id {
+                    sql = sql.bind(owner);
+                }
+                if let Some(ref assigned) = filter.assigned_agent_id {
+                    sql = sql.bind(assigned);
+                }
+                if let Some(status) = filter.status {
+                    sql = sql.bind(status.as_str());
+                }
+                if let Some(priority) = filter.priority {
+                    sql = sql.bind(priority.as_str());
+                }
+                if let Some(ref created_by) = filter.created_by {
+                    sql = sql.bind(created_by);
+                }
+                sql.bind(limit)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list tasks")?
+                    .into_iter()
+                    .map(task_from_pg_row)
+                    .collect()
+            }
+        }
     }
 
     /// List ready tasks assigned to the given agent.
@@ -338,15 +469,26 @@ impl TaskStore {
 
     /// Fetch a single task by its globally unique number.
     pub async fn get_by_number(&self, task_number: i64) -> Result<Option<Task>> {
-        let row = sqlx::query(&format!(
-            "{SELECT_COLUMNS} FROM tasks WHERE task_number = ?"
-        ))
-        .bind(task_number)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to fetch task by number")?;
-
-        row.map(task_from_row).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(&format!(
+                "{SELECT_COLUMNS} FROM tasks WHERE task_number = ?"
+            ))
+            .bind(task_number)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch task by number")?
+            .map(task_from_sqlite_row)
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(&format!(
+                "{SELECT_COLUMNS} FROM tasks WHERE task_number = $1"
+            ))
+            .bind(task_number)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch task by number")?
+            .map(task_from_pg_row)
+            .transpose(),
+        }
     }
 
     pub async fn update(&self, task_number: i64, input: UpdateTaskInput) -> Result<Option<Task>> {
@@ -416,53 +558,126 @@ impl TaskStore {
             None
         };
 
-        let mut query = String::from(
-            "UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, \
-             assigned_agent_id = ?, subtasks = ?, metadata = ?, ",
+        // Per-backend SQL builder. Placeholders diverge (`?` vs `$N`); the
+        // ISO-8601 `now()` expression diverges (strftime vs to_char). Bind
+        // order is identical between arms so the bind sequence is shared.
+        let dialect = self.pool.dialect();
+        let now_expr = match dialect {
+            crate::db::Dialect::Sqlite => "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+            crate::db::Dialect::Postgres => {
+                "to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')"
+            }
+        };
+        let mut bind_index: usize = 0;
+        let mut next_placeholder = || -> String {
+            bind_index += 1;
+            match dialect {
+                crate::db::Dialect::Sqlite => "?".to_string(),
+                crate::db::Dialect::Postgres => format!("${bind_index}"),
+            }
+        };
+
+        let p_title = next_placeholder();
+        let p_desc = next_placeholder();
+        let p_status = next_placeholder();
+        let p_priority = next_placeholder();
+        let p_assigned = next_placeholder();
+        let p_subtasks = next_placeholder();
+        let p_metadata = next_placeholder();
+        let mut query = format!(
+            "UPDATE tasks SET title = {p_title}, description = {p_desc}, status = {p_status}, \
+             priority = {p_priority}, assigned_agent_id = {p_assigned}, subtasks = {p_subtasks}, \
+             metadata = {p_metadata}, ",
         );
 
-        if clear_worker {
+        let p_worker_id = if clear_worker {
             query.push_str("worker_id = NULL, ");
+            None
         } else {
-            query.push_str("worker_id = ?, ");
-        }
+            let p = next_placeholder();
+            query.push_str(&format!("worker_id = {p}, "));
+            Some(p)
+        };
 
-        query.push_str(
-            "approved_by = COALESCE(?, approved_by), \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
-        );
+        let p_approved_by = next_placeholder();
+        query.push_str(&format!(
+            "approved_by = COALESCE({p_approved_by}, approved_by), updated_at = {now_expr}",
+        ));
 
         if approved_at.is_some() {
-            query.push_str(", approved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
+            query.push_str(&format!(", approved_at = {now_expr}"));
         }
         if let Some(value) = completed_at {
             if value == "SET" {
-                query.push_str(", completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
+                query.push_str(&format!(", completed_at = {now_expr}"));
             } else {
                 query.push_str(", completed_at = NULL");
             }
         }
 
-        query.push_str(" WHERE task_number = ?");
+        let p_task_number = next_placeholder();
+        query.push_str(&format!(" WHERE task_number = {p_task_number}"));
 
-        let mut sql = sqlx::query(&query)
-            .bind(input.title.unwrap_or(current.title))
-            .bind(input.description.or(current.description))
-            .bind(next_status.as_str())
-            .bind(next_priority.as_str())
-            .bind(&next_assigned)
-            .bind(serde_json::to_string(&subtasks).context("failed to serialize subtasks")?)
-            .bind(next_metadata.to_string());
+        // Suppress unused-binding warnings; the placeholder-name vars exist
+        // so the SQL above stays readable. Rustc doesn't flag these because
+        // they're consumed by `format!` calls, but mark them out for clarity.
+        let _ = (
+            &p_title,
+            &p_desc,
+            &p_status,
+            &p_priority,
+            &p_assigned,
+            &p_subtasks,
+            &p_metadata,
+            &p_worker_id,
+            &p_approved_by,
+            &p_task_number,
+        );
 
-        if !clear_worker {
-            sql = sql.bind(next_worker_id);
+        let title = input.title.unwrap_or(current.title);
+        let description = input.description.or(current.description);
+        let subtasks_json =
+            serde_json::to_string(&subtasks).context("failed to serialize subtasks")?;
+        let metadata_str = next_metadata.to_string();
+
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut sql = sqlx::query(&query)
+                    .bind(&title)
+                    .bind(&description)
+                    .bind(next_status.as_str())
+                    .bind(next_priority.as_str())
+                    .bind(&next_assigned)
+                    .bind(&subtasks_json)
+                    .bind(&metadata_str);
+                if !clear_worker {
+                    sql = sql.bind(&next_worker_id);
+                }
+                sql.bind(&input.approved_by)
+                    .bind(task_number)
+                    .execute(p)
+                    .await
+                    .context("failed to update task")?;
+            }
+            DbPool::Postgres(p) => {
+                let mut sql = sqlx::query(&query)
+                    .bind(&title)
+                    .bind(&description)
+                    .bind(next_status.as_str())
+                    .bind(next_priority.as_str())
+                    .bind(&next_assigned)
+                    .bind(&subtasks_json)
+                    .bind(&metadata_str);
+                if !clear_worker {
+                    sql = sql.bind(&next_worker_id);
+                }
+                sql.bind(&input.approved_by)
+                    .bind(task_number)
+                    .execute(p)
+                    .await
+                    .context("failed to update task")?;
+            }
         }
-
-        sql.bind(input.approved_by)
-            .bind(task_number)
-            .execute(&self.pool)
-            .await
-            .context("failed to update task")?;
 
         // The row existed at the top of this function (caller supplied it)
         // and the UPDATE above matches `WHERE task_number = ?`, so a fresh
@@ -477,52 +692,88 @@ impl TaskStore {
     }
 
     pub async fn delete(&self, task_number: i64) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM tasks WHERE task_number = ?")
-            .bind(task_number)
-            .execute(&self.pool)
-            .await
-            .context("failed to delete task")?;
+        let rows_affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query("DELETE FROM tasks WHERE task_number = ?")
+                .bind(task_number)
+                .execute(p)
+                .await
+                .context("failed to delete task")?
+                .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query("DELETE FROM tasks WHERE task_number = $1")
+                .bind(task_number)
+                .execute(p)
+                .await
+                .context("failed to delete task")?
+                .rows_affected(),
+        };
 
-        Ok(result.rows_affected() > 0)
+        Ok(rows_affected > 0)
     }
 
     /// Atomically claim the highest-priority ready task assigned to the given
     /// agent. Moves it to `in_progress` and returns it.
     pub async fn claim_next_ready(&self, assigned_agent_id: &str) -> Result<Option<Task>> {
-        let row = sqlx::query(
-            "SELECT task_number FROM tasks WHERE assigned_agent_id = ? AND status = 'ready' \
-             ORDER BY CASE priority \
-               WHEN 'critical' THEN 0 \
-               WHEN 'high' THEN 1 \
-               WHEN 'medium' THEN 2 \
-               WHEN 'low' THEN 3 \
-               ELSE 4 END ASC, \
-             task_number ASC \
-             LIMIT 1",
-        )
-        .bind(assigned_agent_id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to find ready task")?;
+        let task_number: Option<i64> = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query_scalar(
+                "SELECT task_number FROM tasks WHERE assigned_agent_id = ? AND status = 'ready' \
+                 ORDER BY CASE priority \
+                   WHEN 'critical' THEN 0 \
+                   WHEN 'high' THEN 1 \
+                   WHEN 'medium' THEN 2 \
+                   WHEN 'low' THEN 3 \
+                   ELSE 4 END ASC, \
+                 task_number ASC \
+                 LIMIT 1",
+            )
+            .bind(assigned_agent_id)
+            .fetch_optional(p)
+            .await
+            .context("failed to find ready task")?,
+            DbPool::Postgres(p) => sqlx::query_scalar(
+                "SELECT task_number FROM tasks WHERE assigned_agent_id = $1 AND status = 'ready' \
+                 ORDER BY CASE priority \
+                   WHEN 'critical' THEN 0 \
+                   WHEN 'high' THEN 1 \
+                   WHEN 'medium' THEN 2 \
+                   WHEN 'low' THEN 3 \
+                   ELSE 4 END ASC, \
+                 task_number ASC \
+                 LIMIT 1",
+            )
+            .bind(assigned_agent_id)
+            .fetch_optional(p)
+            .await
+            .context("failed to find ready task")?,
+        };
 
-        let Some(row) = row else {
+        let Some(task_number) = task_number else {
             return Ok(None);
         };
 
-        let task_number: i64 = row
-            .try_get("task_number")
-            .context("failed to read task_number from ready task row")?;
-        let result = sqlx::query(
-            "UPDATE tasks SET status = 'in_progress', \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE task_number = ? AND status = 'ready'",
-        )
-        .bind(task_number)
-        .execute(&self.pool)
-        .await
-        .context("failed to claim ready task")?;
+        let rows_affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE tasks SET status = 'in_progress', \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+                 WHERE task_number = ? AND status = 'ready'",
+            )
+            .bind(task_number)
+            .execute(p)
+            .await
+            .context("failed to claim ready task")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE tasks SET status = 'in_progress', \
+                 updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') \
+                 WHERE task_number = $1 AND status = 'ready'",
+            )
+            .bind(task_number)
+            .execute(p)
+            .await
+            .context("failed to claim ready task")?
+            .rows_affected(),
+        };
 
-        if result.rows_affected() == 0 {
+        if rows_affected == 0 {
             return Ok(None);
         }
 
@@ -530,15 +781,26 @@ impl TaskStore {
     }
 
     pub async fn get_by_worker_id(&self, worker_id: &str) -> Result<Option<Task>> {
-        let row = sqlx::query(&format!(
-            "{SELECT_COLUMNS} FROM tasks WHERE worker_id = ? ORDER BY updated_at DESC LIMIT 1"
-        ))
-        .bind(worker_id)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to fetch task by worker id")?;
-
-        row.map(task_from_row).transpose()
+        match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(&format!(
+                "{SELECT_COLUMNS} FROM tasks WHERE worker_id = ? ORDER BY updated_at DESC LIMIT 1"
+            ))
+            .bind(worker_id)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch task by worker id")?
+            .map(task_from_sqlite_row)
+            .transpose(),
+            DbPool::Postgres(p) => sqlx::query(&format!(
+                "{SELECT_COLUMNS} FROM tasks WHERE worker_id = $1 ORDER BY updated_at DESC LIMIT 1"
+            ))
+            .bind(worker_id)
+            .fetch_optional(p)
+            .await
+            .context("failed to fetch task by worker id")?
+            .map(task_from_pg_row)
+            .transpose(),
+        }
     }
 }
 
@@ -611,7 +873,16 @@ fn parse_metadata(value: &str) -> Value {
     serde_json::from_str(value).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
 }
 
-fn task_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Task> {
+/// Internal control-flow tag for `create()`'s per-backend dispatch — keeps
+/// the retry-on-collision contract identical across SQLite and Postgres
+/// while letting each arm match on its native error code.
+enum CreateOutcome {
+    Success(i64),
+    Collision(i64),
+    Other(sqlx::Error),
+}
+
+fn task_from_sqlite_row(row: sqlx::sqlite::SqliteRow) -> Result<Task> {
     let status_value: String = row
         .try_get("status")
         .context("failed to read task status")?;
@@ -626,11 +897,8 @@ fn task_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Task> {
     let priority = TaskPriority::parse(&priority_value)
         .with_context(|| format!("invalid task priority in database: {priority_value}"))?;
 
-    // The global schema uses TEXT columns with ISO 8601 defaults. Read as
-    // strings directly; fall back to NaiveDateTime parsing for compatibility
-    // with rows that may still use SQLite TIMESTAMP format.
-    let created_at = read_timestamp(&row, "created_at")?;
-    let updated_at = read_timestamp(&row, "updated_at")?;
+    let created_at = read_sqlite_timestamp(&row, "created_at")?;
+    let updated_at = read_sqlite_timestamp(&row, "updated_at")?;
 
     Ok(Task {
         id: row.try_get("id").context("failed to read task id")?,
@@ -658,17 +926,82 @@ fn task_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Task> {
         created_by: row
             .try_get("created_by")
             .context("failed to read task created_by")?,
-        approved_at: read_optional_timestamp(&row, "approved_at"),
+        approved_at: read_sqlite_optional_timestamp(&row, "approved_at"),
         approved_by: row.try_get("approved_by").ok(),
         created_at,
         updated_at,
-        completed_at: read_optional_timestamp(&row, "completed_at"),
+        completed_at: read_sqlite_optional_timestamp(&row, "completed_at"),
     })
 }
 
-/// Read a required timestamp column, trying TEXT first (ISO 8601) then falling
-/// back to NaiveDateTime for legacy TIMESTAMP columns.
-fn read_timestamp(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<String> {
+fn task_from_pg_row(row: sqlx::postgres::PgRow) -> Result<Task> {
+    let status_value: String = row
+        .try_get("status")
+        .context("failed to read task status")?;
+    let priority_value: String = row
+        .try_get("priority")
+        .context("failed to read task priority")?;
+    let subtasks_value: String = row.try_get("subtasks").unwrap_or_else(|_| "[]".to_string());
+    let metadata_value: String = row.try_get("metadata").unwrap_or_else(|_| "{}".to_string());
+
+    let status = TaskStatus::parse(&status_value)
+        .with_context(|| format!("invalid task status in database: {status_value}"))?;
+    let priority = TaskPriority::parse(&priority_value)
+        .with_context(|| format!("invalid task priority in database: {priority_value}"))?;
+
+    let created_at: String = row
+        .try_get("created_at")
+        .context("failed to read task created_at")?;
+    let updated_at: String = row
+        .try_get("updated_at")
+        .context("failed to read task updated_at")?;
+
+    Ok(Task {
+        id: row.try_get("id").context("failed to read task id")?,
+        task_number: row
+            .try_get("task_number")
+            .context("failed to read task_number")?,
+        title: row.try_get("title").context("failed to read task title")?,
+        description: row.try_get("description").ok(),
+        status,
+        priority,
+        owner_agent_id: row
+            .try_get("owner_agent_id")
+            .context("failed to read owner_agent_id")?,
+        assigned_agent_id: row
+            .try_get("assigned_agent_id")
+            .context("failed to read assigned_agent_id")?,
+        subtasks: parse_subtasks(&subtasks_value),
+        metadata: parse_metadata(&metadata_value),
+        source_memory_id: row.try_get("source_memory_id").ok(),
+        worker_id: row
+            .try_get::<Option<String>, _>("worker_id")
+            .ok()
+            .flatten()
+            .and_then(|value| if value.is_empty() { None } else { Some(value) }),
+        created_by: row
+            .try_get("created_by")
+            .context("failed to read task created_by")?,
+        approved_at: row
+            .try_get::<Option<String>, _>("approved_at")
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty()),
+        approved_by: row.try_get("approved_by").ok(),
+        created_at,
+        updated_at,
+        completed_at: row
+            .try_get::<Option<String>, _>("completed_at")
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty()),
+    })
+}
+
+/// SQLite-side: read a required timestamp column. The global schema uses TEXT
+/// columns with ISO 8601 defaults, but we fall back to NaiveDateTime parsing
+/// for compatibility with rows that may still use SQLite TIMESTAMP format.
+fn read_sqlite_timestamp(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<String> {
     if let Ok(value) = row.try_get::<String, _>(column) {
         return Ok(value);
     }
@@ -678,8 +1011,9 @@ fn read_timestamp(row: &sqlx::sqlite::SqliteRow, column: &str) -> Result<String>
         .map_err(Into::into)
 }
 
-/// Read an optional timestamp column, trying TEXT first then NaiveDateTime.
-fn read_optional_timestamp(row: &sqlx::sqlite::SqliteRow, column: &str) -> Option<String> {
+/// SQLite-side: read an optional timestamp column with the same TEXT-then-NaiveDateTime
+/// fallback. Empty strings are treated as None.
+fn read_sqlite_optional_timestamp(row: &sqlx::sqlite::SqliteRow, column: &str) -> Option<String> {
     if let Ok(Some(value)) = row.try_get::<Option<String>, _>(column)
         && !value.is_empty()
     {
@@ -746,7 +1080,7 @@ mod tests {
             .await
             .expect("sequence seed should be inserted");
 
-        TaskStore::new(pool)
+        TaskStore::new(Arc::new(crate::db::DbPool::Sqlite(pool)))
     }
 
     fn self_assigned_input(title: &str, status: TaskStatus) -> CreateTaskInput {

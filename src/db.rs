@@ -145,6 +145,12 @@ impl TryFrom<String> for DatabaseUrl {
 
 /// Backend-typed connection pool. Each variant holds the native sqlx pool
 /// so chrono types, query_as! macros, and FromRow derives work per variant.
+///
+/// `Debug` is derived (both `SqlitePool` and `PgPool` already implement it)
+/// so any store struct holding `Arc<DbPool>` can keep its own derived
+/// `Debug`. The pool's Debug output may include connection metadata; do not
+/// log it at info level on hot paths.
+#[derive(Debug)]
 pub enum DbPool {
     Sqlite(SqlitePool),
     Postgres(PgPool),
