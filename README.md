@@ -37,9 +37,9 @@
 
 ---
 
-Spacebot is opinionated agent infrastructure, built for teams and usable by anyone. **State belongs in structured storage, not markdown files the LLM manages.** Memory lives in a typed graph in SQLite. Autonomy runs on a task state machine linked to goals, not a heartbeat.json. The LLM reasons. The system holds state.
+Spacebot is opinionated agent infrastructure, built for teams and usable by anyone. **State belongs in structured storage, not markdown files the LLM manages.** Memory lives in a typed graph in your relational store (SQLite or Postgres). Autonomy runs on a task state machine linked to goals, not a heartbeat.json. The LLM reasons. The system holds state.
 
-**It gets smarter the more you use it.** After complex tasks, the agent captures what it learned as reusable skills. After conversations go idle, a background process silently saves skills and memories worth keeping. Every session builds on the last — without any user action.
+**It gets smarter the more you use it.** After complex tasks, the agent captures what it learned as reusable skills. After conversations go idle, a background process silently saves skills and memories worth keeping. Every session builds on the last. No user action required.
 
 It works out of the box and scales from one person to a whole community.
 
@@ -79,7 +79,7 @@ Five process types. Each does one job.
 
 **The Compactor** is a programmatic monitor (not an LLM) that watches context size per channel and triggers compaction before the channel fills up. Compaction workers run alongside without blocking.
 
-**The Cortex** sees across all channels, workers, and branches simultaneously. It maintains the agent's working memory — a layered context assembly system that gives every conversation structured awareness of what's happening across the agent. Events are recorded as they happen; intra-day synthesis compresses them into narrative; daily summaries roll up at midnight; knowledge synthesis regenerates when the memory graph changes. The cortex supervises processes and maintains the memory graph.
+**The Cortex** sees across all channels, workers, and branches simultaneously. It maintains the agent's working memory: a layered context assembly system that gives every conversation structured awareness of what's happening across the agent. Events are recorded as they happen. Intra-day synthesis compresses them into narrative. Daily summaries roll up at midnight. Knowledge synthesis regenerates when the memory graph changes. The cortex supervises processes and maintains the memory graph.
 
 ```
 User sends message
@@ -119,17 +119,17 @@ State lives in tasks. Progress notes go on the task itself. After a crash, the n
 
 ### Memory
 
-Spacebot's memory is a typed, graph-connected knowledge system in SQLite and LanceDB. Every memory has a type, an importance score, and graph edges to related memories. The agent distinguishes facts from decisions, preferences from goals.
+Spacebot's memory is a typed, graph-connected knowledge system in your relational store (SQLite or Postgres) and LanceDB. Every memory has a type, an importance score, and graph edges to related memories. The agent distinguishes facts from decisions, preferences from goals.
 
 - **Eight memory types** — Fact, Preference, Decision, Identity, Event, Observation, Goal, Todo
 - **Graph edges** — RelatedTo, Updates, Contradicts, CausedBy, PartOf
 - **Hybrid recall** — vector similarity + full-text search merged via Reciprocal Rank Fusion
 - **Memory import** — drop files into `ingest/` and Spacebot extracts structured memories automatically. Supports text, markdown, and PDF.
-- **Working memory** — a five-layer context assembly system. Identity context, a structured event log, cross-channel activity map, participant awareness, and change-driven knowledge synthesis. Most layers are programmatic — no LLM calls to stay current
+- **Working memory** — a five-layer context assembly system. Identity context, a structured event log, cross-channel activity map, participant awareness, and change-driven knowledge synthesis. Most layers are programmatic, with no LLM calls to stay current.
 
 ### Skills
 
-Skills are reusable procedures injected into worker system prompts. The agent writes them from experience — and they accumulate automatically over time.
+Skills are reusable procedures injected into worker system prompts. The agent writes them from experience, and they accumulate automatically over time.
 
 - **Autonomous skill capture** — when a channel identifies a workflow that required multiple steps or problem-solving, it delegates to a branch to write it as a skill. The skill loads into the next session and every session after
 - **Post-conversation reflection** — after a conversation goes idle, a background branch silently reviews the history and saves skills and memories worth keeping. No user action required
@@ -223,7 +223,7 @@ Everything goes through typed tools into structured storage. Nothing drifts.
 
 Spacebot pairs with [Spacedrive](https://github.com/spacedriveapp/spacedrive), an open-source cross-platform file manager built on a virtual distributed filesystem. Neither requires the other. When paired, Spacebot is the only agent harness with direct integration into a cross-device filesystem.
 
-The Spacedrive source is co-located in this repo at `spacedrive/` for single-clone development. It remains an independent Cargo workspace with its own toolchain. Runtime integration lives at `src/spacedrive/` (config, outbound HTTP client with `{"Query":...}` envelope, prompt-injection defense wrapper, first agent tool `spacedrive_list_files`). Runtime-gated behind `[spacedrive] enabled = true`; operators who don't opt in see no change in behavior. See `CONTRIBUTING.md` for working with the in-tree copy.
+The Spacedrive source is co-located in this repo at `spacedrive/` for single-clone development. It remains an independent Cargo workspace with its own toolchain. Runtime integration lives at `src/spacedrive/` (config, outbound HTTP client with `{"Query":...}` envelope, prompt-injection defense wrapper, first agent tool `spacedrive_list_files`). Runtime-gated behind `[spacedrive] enabled = true`. Operators who don't opt in see no change in behavior. See `CONTRIBUTING.md` for working with the in-tree copy.
 
 ### What Pairing Enables Today
 
@@ -311,7 +311,7 @@ OAuth tokens are stored in `anthropic_oauth.json` and auto-refresh before each A
 | Language        | **Rust** (edition 2024) — single binary, no runtime dependencies, no GC pauses                                  |
 | Async runtime   | **Tokio**                                                                                                       |
 | LLM framework   | **[Rig](https://github.com/0xPlaygrounds/rig)** v0.35 — agentic loop, tool execution, hooks                     |
-| Relational data | **SQLite** (sqlx) — conversations, memory graph, tasks, goals, cron jobs                                        |
+| Relational data | **SQLite or Postgres** (sqlx; dual backend via `enum DbPool`. SQLite default, Postgres opt-in via `[database] url`) — conversations, memory graph, tasks, goals, cron jobs |
 | Vector + FTS    | **[LanceDB](https://lancedb.github.io/lancedb/)** — embeddings (HNSW), full-text (Tantivy), hybrid search (RRF) |
 | Key-value       | **[redb](https://github.com/cberner/redb)** — settings, encrypted secrets                                       |
 | Embeddings      | **FastEmbed** — local embedding generation                                                                      |
@@ -343,6 +343,9 @@ Single binary, no server dependencies. All data lives in embedded databases in a
 | [MCP](<docs/content/docs/(features)/mcp.mdx>)                       | External tool servers via Model Context Protocol          |
 | [OpenCode](<docs/content/docs/(features)/opencode.mdx>)             | OpenCode as a worker backend                              |
 | [Messaging](<docs/content/docs/(messaging)/messaging.mdx>)          | Adapter architecture and platform setup                   |
+| [Entra ID Auth](<docs/content/docs/(configuration)/entra-auth.mdx>) | Two-app-registration setup, MSAL.js v5 SPA flow, audit log, SOC 2 controls |
+| [CLI Auth](<docs/content/docs/(configuration)/cli-auth.mdx>)        | `spacebot entra login/logout`, `admin claim-resource`, AuthedClient 401-refresh |
+| [Desktop App](<docs/content/docs/(getting-started)/desktop.mdx>)    | Tauri 2 desktop app with loopback OAuth + keychain credential storage |
 
 ---
 
