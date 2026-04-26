@@ -82,6 +82,23 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.6.1
+
+### Release Story
+
+v0.6.1 is a release-pipeline hotfix on top of v0.6.0. No code changes ship to the daemon, the desktop app, or the frontend. The v0.6.0 release attempt failed across all three build platforms because the workspace-protocol guard hit two unrelated portability problems at the same time.
+
+The first problem is Apple's stock bash. macOS-15 GitHub runners ship bash 3.2 as `/bin/bash`, frozen at GPLv2 since 2007. The guard script used a `cmd | { while; do case ...) ;; esac; done; }` inline pipeline group. Bash 5.x parses this fine. Bash 3.2 rejects it with a parse error pointing at the `case` arm. The fix restructures the filter into a top-level while+case loop staged through a `mktemp` file. No inline brace-grouped pipeline, no `grep -z` (BSD grep on macOS reads `-z` as `--decompress`, not `--null-data`).
+
+The second problem is the Docker build context. `.dockerignore` excludes `.git/`, which is correct for image hygiene. The guard script's defensive `git rev-parse` check fired and exited 1 inside the container. The fix adds a documented `SKIP_WORKSPACE_PROTOCOL_CHECK=1` escape hatch. The host CI workflow runs the same guard against a real worktree before any image build, so suppressing the in-container hook is safe and intentional.
+
+A third change goes into the release workflow itself. The `Build frontend` step used `cd dir && bun install --frozen-lockfile && cd ..` chains. POSIX explicitly suppresses errexit for failed commands inside `&&` lists, so when the preinstall guard failed, the script kept running with the wrong working directory and surfaced a confusing secondary "No such file" error. The step now decomposes into five discrete steps using `working-directory:`, matching the convention already established in `interface-ci.yml` and `spaceui.yml`. GitHub Actions' default fail-fast semantics propagate the real failure cleanly.
+
+Verification covers Apple bash 3.2 parse and run, bash 5.x parse and run, the escape-hatch path, the no-`.git` path with and without the env var, `actionlint`, `shellcheck`, and `just spaceui-check-workspace`. The next release run goes through the same workflow as v0.6.0 with all three failure paths closed.
+
+The Phase 11 PostgreSQL backend roadmap is unchanged. PR 11.1 (`enum DbPool` + `DialectAdapter` foundation) is on `main` and shipped in v0.6.0. PR 11.2 (instance-tier Postgres dispatch + 14 migrations + FTS5→tsvector wiki port + testcontainers harness) is the next planned PR and is unaffected by this hotfix.
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.6.0...v0.6.1
 ## v0.6.0
 
 ### Release Story
