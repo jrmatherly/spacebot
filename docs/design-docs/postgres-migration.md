@@ -263,7 +263,7 @@ The Phase 10 evidence package (PR #120) shipped against the SQLite-on-PVC postur
 - `migrations/postgres/` mirrors `migrations/` (41 files, dialect-translated, with `agent_id` columns)
 - New `agents` parent table in `migrations/postgres/global/`
 - Migrate the **per-agent stores** to take `Arc<DbPool>`:
-  - `MemoryStore`, `WorkingMemory`, `CronStore`, `ConversationLogger`, `ProcessRunLogger`, `ChannelStore`, `ChannelSettingsStore`, `PortalConversationStore`, `CortexLogger`, `CortexChatStore`, `AttachmentRecallTool`, plus `agent/cortex.rs::load_profile`, `agent/ingestion.rs::load_completed_chunks/delete_progress`, `agent/channel_attachments.rs` helpers
+  - `MemoryStore`, `WorkingMemoryStore`, `CronStore`, `ConversationLogger`, `ProcessRunLogger`, `ChannelStore`, `ChannelSettingsStore`, `PortalConversationStore`, `CortexLogger`, `CortexChatStore`, `AttachmentRecallTool`, plus `agent/cortex.rs::load_profile`, `agent/ingestion.rs::load_completed_chunks/delete_progress`, `agent/channel_attachments.rs` helpers
 - Per-agent query rewrites: every site that touches `memories`, `channels`, etc. plumbs `agent_id` in Postgres mode
 - `Db::connect` Postgres path doesn't touch the file system for the SQL tier (LanceDB + redb still per-agent file paths)
 - Test fixtures use transaction-rollback isolation against a shared testcontainers Postgres instance

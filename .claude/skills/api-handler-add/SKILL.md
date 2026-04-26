@@ -82,11 +82,22 @@ pub(super) async fn create_foo(
     // Phase 4 authz placeholder:
     // state.check_write(&auth_context, "foo", &resource_id).await?;
 
+    // `state.instance_pool` is an `ArcSwap<Option<sqlx::SqlitePool>>` field.
+    // The double `.as_ref()` strips the ArcSwap Guard, then unwraps the Option.
+    // Pattern verified against src/api/audit.rs:73 production usage.
+    let pool = state
+        .instance_pool
+        .load()
+        .as_ref()
+        .as_ref()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?
+        .clone();
+
     let row = sqlx::query!(
         "INSERT INTO foo (id, name) VALUES (?, ?) RETURNING *",
         resource_id, body.foo,
     )
-    .fetch_one(state.instance_pool().as_ref())
+    .fetch_one(&pool)
     .await
     .map_err(|e| {
         tracing::warn!(?e, "create_foo failed");
@@ -190,7 +201,7 @@ Commit handler + router registration + schema.d.ts in the same commit. NOT separ
 
 ## Quick reference
 
-- 32 existing handler files live under `src/api/`. Browse for patterns: `ls src/api/*.rs | head -20`.
+- 39 route handler files live under `src/api/` (excludes `server.rs` + `state.rs` scaffolding; total file count is 41). Browse for patterns: `ls src/api/*.rs | head -20`.
 - All handlers follow the same shape. Deviation needs justification in the PR summary.
 - `ApiState` exposes shared handles. Grep `pub fn.*Arc<` in `src/api/state.rs` for what's available.
 - For Phase 4 authz enforcement, the `AuthContext` extractor is already set up per Phase 1. The `require_read_access` / `require_write_access` helpers will be added in Phase 4.

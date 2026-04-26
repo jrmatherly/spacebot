@@ -125,8 +125,10 @@ Do NOT stage code changes, only documentation and memory drift fixes.
 # Current version (should match memories)
 grep '^version' Cargo.toml
 
-# Migration count (should match memories)
-ls migrations/ | wc -l
+# Per-agent migration count (should match memories)
+ls migrations/*.sql | wc -l
+# Total migrations across both tiers (per-agent + global)
+find migrations -name '*.sql' | wc -l
 
 # Integration test count
 ls tests/*.rs | wc -l

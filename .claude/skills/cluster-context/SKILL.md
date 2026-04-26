@@ -111,7 +111,7 @@ Spacebot depends on these cluster-provided services:
 | Service | Purpose | Connection |
 |---------|---------|-----------|
 | LiteLLM | LLM routing proxy | HTTP API in `ai` namespace |
-| PostgreSQL (CNPG) | Relational data (if migrated from SQLite) | TCP 5432 in `database` namespace |
+| PostgreSQL (CNPG) | Relational data backend (Phase 11.1+; SQLite default, Postgres opt-in via `[database] url`. Per-store dispatch lands in PR 11.2/11.3; cluster manifest ships in PR 11.4) | TCP 5432 in `database` namespace |
 | Envoy Gateway | External HTTPS ingress | Gateway API HTTPRoute |
 | cert-manager | TLS certificates | ClusterIssuer reference |
 | ExternalDNS | DNS record automation | Annotation-driven |

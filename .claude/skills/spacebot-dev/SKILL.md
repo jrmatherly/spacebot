@@ -9,7 +9,7 @@ You are working on Spacebot, a multi-process agentic AI system built in Rust. Th
 
 ## Architecture Overview
 
-Single binary crate (`src/lib.rs` + `src/main.rs`). No workspace. 35 public modules. Three embedded databases. Five process types. 60+ LLM tools. 9 messaging platform adapters (including Portal).
+Single binary crate (`src/lib.rs` + `src/main.rs`). No workspace. 40 public modules. Three database backends (relational SQL via `enum DbPool { Sqlite, Postgres }`, LanceDB for vectors, redb for key-value). Five process types. 60+ LLM tools. 9 messaging platform adapters (including Portal).
 
 The core abstraction: every LLM process is a Rig `Agent<SpacebotModel, SpacebotHook>` with an isolated `ToolServer`, independent history, and typed `ProcessEvent` communication.
 
@@ -311,14 +311,35 @@ Needs restart: LLM API keys, messaging tokens, agent topology, database paths
 
 ## Database Layer (`src/db.rs`)
 
-### Triple-Database Bundle
+### Triple-Database Bundle (post-PR-11.1, dual SQLite/Postgres backend)
 ```rust
 pub struct Db {
-    pub sqlite: SqlitePool,           // Per-agent relational data
+    /// Backend-typed SQL pool. SQLite default; Postgres opt-in via
+    /// `[database] url = "postgres://..."` in config.toml. Postgres
+    /// hard-errors at connect until PR 11.3 lands `migrations/postgres/`.
+    pub pool: Arc<DbPool>,
     pub lance: lancedb::Connection,   // Vector embeddings
     pub redb: Arc<redb::Database>,    // Key-value config
 }
+
+/// Backend-typed sqlx pool. Each variant holds the native typed pool so
+/// chrono types, query_as!, and FromRow derives work per variant.
+pub enum DbPool {
+    Sqlite(SqlitePool),
+    Postgres(PgPool),
+}
+
+impl Db {
+    /// Transitional accessor returning the underlying SqlitePool for the
+    /// SQLite variant; Err for Postgres. PR 11.1 stores still take
+    /// `&SqlitePool`. PR 11.2/11.3 migrate them to take `Arc<DbPool>`.
+    pub fn sqlite_pool(&self) -> Result<&SqlitePool> {
+        self.pool.as_sqlite()
+    }
+}
 ```
+
+`DialectAdapter` (`src/dialect.rs`) is the companion trait for cross-backend DDL string differences (`now_expr()`, `autoincrement_pk()`, `json_type()`). `SqliteDialect` and `PostgresDialect` are zero-state unit structs. Per-query placeholder syntax (`?` vs `$1`) and JSON operators live in per-variant store dispatch (PR 11.2/11.3), not in this trait.
 
 ### SQLite Tables (per-agent `spacebot.db`)
 memories, associations, conversation_messages, channels, cron_jobs, cron_executions, worker_runs, branch_runs, cortex_events, cortex_chat_messages, tasks, ingestion_progress, ingestion_files, agent_profile, portal_conversations, channel_settings, token_usage, working_memory
@@ -413,7 +434,7 @@ Five dimensions: file_read/file_write ("deny"|"workspace"|"allow"|globs), shell,
 
 Axum-based REST API on port 19898. Embedded frontend via rust-embed. OpenAPI docs via utoipa.
 
-30 route modules: agents, channels, workers, memories, tasks, wiki, skills, config, secrets, messaging, attachments, projects, cron, notifications, links, factory, cortex, mcp, models, providers, activity, usage, ingest, system, portal, ssh, bindings, opencode_proxy, settings, tools
+39 route modules (excludes `server.rs` + `state.rs` scaffolding): activity, admin_access_review, admin_claim, admin_orphans, admin_teams, agents, attachments, audit, auth_config, bindings, channels, config, cortex, cron, desktop, factory, ingest, links, mcp, me, memories, messaging, models, notifications, opencode_proxy, portal, projects, providers, resources, secrets, settings, skills, ssh, system, tasks, tools, usage, wiki, workers
 
 Special endpoints: `events_sse()` (real-time SSE), `health()`, `backup_export()`/`backup_restore()`
 
