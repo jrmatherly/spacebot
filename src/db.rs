@@ -13,7 +13,7 @@ use crate::dialect::{DialectAdapter, PostgresDialect, SqliteDialect};
 use crate::error::{DbError, Result};
 
 use anyhow::Context as _;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::{PgPool, SqlitePool};
 
 use std::path::Path;
@@ -24,23 +24,74 @@ use std::sync::Arc;
 /// selection and accompanies the pool for handlers that need to branch on
 /// backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Dialect {
     Sqlite,
     Postgres,
 }
 
+/// SQLite connection string. Constructed only by `DatabaseUrl::from_str`,
+/// which guarantees the wrapped string starts with `sqlite:`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SqliteUrl(String);
+
+impl SqliteUrl {
+    /// Borrow the underlying connection string for sqlx.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SqliteUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SqliteUrl")
+            .field(&redact_url(&self.0))
+            .finish()
+    }
+}
+
+/// Postgres connection string. Constructed only by `DatabaseUrl::from_str`,
+/// which guarantees the wrapped string starts with `postgres:` or
+/// `postgresql:`. Debug formatting redacts `user:pass@` credentials so
+/// stray `tracing::debug!(?url, ...)` calls cannot leak operator secrets.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PostgresUrl(String);
+
+impl PostgresUrl {
+    /// Borrow the underlying connection string for sqlx.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for PostgresUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PostgresUrl")
+            .field(&redact_url(&self.0))
+            .finish()
+    }
+}
+
 /// Validated database connection URL with backend dialect encoded in the
 /// type. Constructed via `FromStr` (or `serde::Deserialize`), which
 /// classifies the scheme prefix at parse time. Operator typos surface
-/// at config load, not at connect time.
+/// during TOML deserialization, not at connect time.
 ///
 /// Use `dialect()` to extract the matching `Dialect` tag, `as_str()` to
-/// borrow the inner connection string for sqlx.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(try_from = "String", into = "String")]
+/// borrow the inner connection string for sqlx. Variant payloads
+/// (`SqliteUrl`, `PostgresUrl`) wrap the raw string in private fields so
+/// downstream code cannot construct a variant whose tag and content
+/// disagree (e.g., `Sqlite` holding a `postgres://` string).
+///
+/// `Debug` formatting redacts `user:pass@` credentials per variant.
+/// `Serialize` is intentionally NOT implemented: the typed URL must not
+/// flow into HTTP responses or JSON dumps where credentials would leak.
+#[derive(Clone, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "String")]
+#[non_exhaustive]
 pub enum DatabaseUrl {
-    Sqlite(String),
-    Postgres(String),
+    Sqlite(SqliteUrl),
+    Postgres(PostgresUrl),
 }
 
 impl DatabaseUrl {
@@ -55,7 +106,17 @@ impl DatabaseUrl {
     /// Borrow the underlying connection string for sqlx.
     pub fn as_str(&self) -> &str {
         match self {
-            DatabaseUrl::Sqlite(s) | DatabaseUrl::Postgres(s) => s.as_str(),
+            DatabaseUrl::Sqlite(u) => u.as_str(),
+            DatabaseUrl::Postgres(u) => u.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Debug for DatabaseUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatabaseUrl::Sqlite(u) => f.debug_tuple("Sqlite").field(u).finish(),
+            DatabaseUrl::Postgres(u) => f.debug_tuple("Postgres").field(u).finish(),
         }
     }
 }
@@ -65,9 +126,9 @@ impl FromStr for DatabaseUrl {
 
     fn from_str(url: &str) -> std::result::Result<Self, Self::Err> {
         if url.starts_with("sqlite:") {
-            Ok(DatabaseUrl::Sqlite(url.to_string()))
+            Ok(DatabaseUrl::Sqlite(SqliteUrl(url.to_string())))
         } else if url.starts_with("postgres:") || url.starts_with("postgresql:") {
-            Ok(DatabaseUrl::Postgres(url.to_string()))
+            Ok(DatabaseUrl::Postgres(PostgresUrl(url.to_string())))
         } else {
             Err(DbError::UnsupportedScheme(redact_url(url)))
         }
@@ -79,24 +140,6 @@ impl TryFrom<String> for DatabaseUrl {
 
     fn try_from(url: String) -> std::result::Result<Self, Self::Error> {
         url.parse()
-    }
-}
-
-impl<'de> Deserialize<'de> for DatabaseUrl {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        s.parse().map_err(serde::de::Error::custom)
-    }
-}
-
-impl From<DatabaseUrl> for String {
-    fn from(url: DatabaseUrl) -> String {
-        match url {
-            DatabaseUrl::Sqlite(s) | DatabaseUrl::Postgres(s) => s,
-        }
     }
 }
 
@@ -234,6 +277,7 @@ pub async fn connect_instance_db(
 /// Which migration tree to run on connect. PR 11.1 only knows the SQLite
 /// trees; PR 11.2 + PR 11.3 add Postgres-side variants.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum MigrationsTree {
     /// Per-agent SQLite migrations at `migrations/`.
     PerAgent,
@@ -273,9 +317,9 @@ async fn connect_instance_pool(data_dir: &Path, db_url: Option<&DatabaseUrl>) ->
 async fn open_pool_and_migrate(url: &DatabaseUrl, tree: MigrationsTree) -> Result<DbPool> {
     match url {
         DatabaseUrl::Sqlite(s) => {
-            let pool = SqlitePool::connect(s)
-                .await
-                .with_context(|| format!("failed to connect to SQLite: {}", redact_url(s)))?;
+            let pool = SqlitePool::connect(s.as_str()).await.with_context(|| {
+                format!("failed to connect to SQLite: {}", redact_url(s.as_str()))
+            })?;
             let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(tree.sqlite_path()))
                 .await
                 .with_context(|| {
@@ -317,10 +361,8 @@ fn resolve_per_agent_url(data_dir: &Path, db_url: Option<&DatabaseUrl>) -> Resul
             )
         })?;
     }
-    Ok(DatabaseUrl::Sqlite(format!(
-        "sqlite:{}?mode=rwc",
-        agent_db.display()
-    )))
+    let url = format!("sqlite:{}?mode=rwc", agent_db.display());
+    DatabaseUrl::from_str(&url).map_err(Into::into)
 }
 
 /// Resolve an instance-pool database URL into a `DatabaseUrl`.
@@ -339,10 +381,8 @@ fn resolve_instance_url(data_dir: &Path, db_url: Option<&DatabaseUrl>) -> Result
             )
         })?;
     }
-    Ok(DatabaseUrl::Sqlite(format!(
-        "sqlite:{}?mode=rwc",
-        db_path.display()
-    )))
+    let url = format!("sqlite:{}?mode=rwc", db_path.display());
+    DatabaseUrl::from_str(&url).map_err(Into::into)
 }
 
 /// Strip user:pass credentials from a connection URL before embedding it in
@@ -527,7 +567,7 @@ mod tests {
     #[test]
     fn resolve_per_agent_url_no_op_when_legacy_absent() {
         let tmp = tempfile::tempdir().unwrap();
-        // No legacy, no target — fresh install case.
+        // No legacy, no target. Fresh install case.
         let resolved = resolve_per_agent_url(tmp.path(), None).unwrap();
         assert!(resolved.as_str().contains("agent.db"));
         // No file should have been created by the resolve step itself

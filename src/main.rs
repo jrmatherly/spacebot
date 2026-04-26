@@ -3906,19 +3906,16 @@ async fn initialize_agents(
         }
     }
 
-    let portal_agent_pools = agents
+    let portal_agent_pools: HashMap<String, sqlx::SqlitePool> = agents
         .iter()
         .map(|(agent_id, agent)| {
-            (
-                agent_id.to_string(),
-                agent
-                    .db
-                    .sqlite_pool()
-                    .expect("PR 11.1: pool is SQLite; Postgres URLs hard-error at connect")
-                    .clone(),
-            )
+            agent
+                .db
+                .sqlite_pool()
+                .map(|pool| (agent_id.to_string(), pool.clone()))
         })
-        .collect();
+        .collect::<spacebot::error::Result<_>>()
+        .context("portal adapter requires SQLite agent pools (PR 11.1 invariant)")?;
     let portal_adapter = Arc::new(spacebot::messaging::portal::PortalAdapter::new(
         portal_agent_pools,
     ));
