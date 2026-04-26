@@ -1840,7 +1840,7 @@ async fn run(
 
     // Instance-level notification store for the dashboard inbox.
     let global_notification_store = Arc::new(spacebot::notifications::NotificationStore::new(
-        instance_pool.clone(),
+        Arc::new(spacebot::db::DbPool::Sqlite(instance_pool.clone())),
     ));
 
     // Instance-level shared project store. Replaces per-agent project stores.

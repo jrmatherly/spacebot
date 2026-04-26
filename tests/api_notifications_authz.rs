@@ -48,7 +48,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// `ApiState::new_test_state_*` leaves `notification_store` unset
 /// (handlers return 503 without it).
 fn attach_notification_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_notification_store(Arc::new(NotificationStore::new(pool.clone())));
+    state.set_notification_store(Arc::new(NotificationStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_list_notifications_by_agent(agent_id: &str, bearer: &str) -> Request<Body> {
@@ -80,7 +82,7 @@ fn req_dismiss(id: &str, bearer: &str) -> Request<Body> {
 /// Seed a notification row via the store and register ownership against
 /// `owner`. Returns the new notification id.
 async fn seed_notification(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
-    let store = NotificationStore::new(pool.clone());
+    let store = NotificationStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let notification = store
         .insert(NewNotification {
             kind: NotificationKind::CortexObservation,
