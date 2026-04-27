@@ -9,16 +9,6 @@ use std::path::PathBuf;
 use crate::audit::types::AuditRow;
 use crate::db::DbPool;
 
-/// Postgres timestamp-column projection for `audit_events`. Casts
-/// `timestamp` (TIMESTAMPTZ) through `to_char(... AT TIME ZONE 'UTC', ...)`
-/// so the all-`String` `AuditRow` `FromRow` derive works uniformly across
-/// both backends. SQLite arms keep `SELECT *` because their TEXT columns
-/// already deserialize as `String`.
-pub(crate) const PG_AUDIT_EVENTS_COLUMNS: &str = "seq, id, \
-    to_char(\"timestamp\" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS \"timestamp\", \
-    principal_key, principal_type, action, resource_type, resource_id, \
-    result, source_ip, request_id, metadata_json, prev_hash, row_hash";
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExportMode {
@@ -114,12 +104,10 @@ pub async fn export_audit(pool: &DbPool, cfg: &ExportConfig) -> anyhow::Result<E
                 .await?
         }
         DbPool::Postgres(p) => {
-            sqlx::query_as(&format!(
-                "SELECT {PG_AUDIT_EVENTS_COLUMNS} FROM audit_events WHERE seq > $1 ORDER BY seq"
-            ))
-            .bind(last_exported_seq)
-            .fetch_all(p)
-            .await?
+            sqlx::query_as("SELECT * FROM audit_events WHERE seq > $1 ORDER BY seq")
+                .bind(last_exported_seq)
+                .fetch_all(p)
+                .await?
         }
     };
     if rows.is_empty() {

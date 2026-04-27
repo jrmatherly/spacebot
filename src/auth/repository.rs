@@ -18,10 +18,14 @@
 //! The shared `ON CONFLICT(col) DO UPDATE SET` syntax works on both
 //! backends (SQLite 3.24+ adopted it; Postgres has had it since 9.5).
 //!
-//! Postgres SELECTs cast TIMESTAMPTZ columns through `to_char(...)` so
-//! `sqlx::FromRow` derives on `UserRecord`/`TeamRecord`/
-//! `ResourceOwnershipRecord` (all-`String` shapes) work identically
-//! across both arms.
+//! Both backends store the timestamp columns as `TEXT` containing the
+//! canonical ISO-8601 form (Postgres migrations write `to_char(now() AT
+//! TIME ZONE 'UTC', ...)` into the column on insert; SQLite uses the
+//! `strftime(...)` equivalent), so `sqlx::FromRow` derives on
+//! `UserRecord` / `TeamRecord` / `ResourceOwnershipRecord` (all-`String`
+//! shapes) work identically across both arms without read-side
+//! projection. The `PG_*_COLUMNS` constants below are explicit column
+//! whitelists, not type casts.
 //!
 //! # Error taxonomy
 //!
@@ -44,24 +48,20 @@ use crate::auth::context::AuthContext;
 use crate::auth::principals::{ResourceOwnershipRecord, TeamRecord, UserRecord, Visibility};
 use crate::db::DbPool;
 
-/// Postgres timestamp-column projection used in every SELECT against the
-/// instance DB so `FromRow` derives that expect `String` columns work
-/// uniformly. SQLite arms keep `SELECT *` because their TEXT columns
-/// already deserialize as `String`.
+/// Postgres column lists for SELECTs against the instance DB. Both backends
+/// store these timestamps as `TEXT` containing the canonical ISO-8601 form
+/// (the migrations write `to_char(now() AT TIME ZONE 'UTC', ...)` into the
+/// column on insert), so the `FromRow` derives that expect `String` work on
+/// both arms without any read-side projection. SQLite arms still use
+/// `SELECT *`; Postgres uses these explicit lists only to guard against a
+/// future migration that adds columns of mismatched type.
 const PG_USERS_COLUMNS: &str = "principal_key, tenant_id, object_id, principal_type, \
-    display_name, display_email, status, \
-    to_char(last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS last_seen_at, \
-    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
-    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
+    display_name, display_email, status, last_seen_at, created_at, updated_at";
 
-const PG_TEAMS_COLUMNS: &str = "id, external_id, display_name, status, \
-    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
-    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
+const PG_TEAMS_COLUMNS: &str = "id, external_id, display_name, status, created_at, updated_at";
 
 const PG_RESOURCE_OWNERSHIP_COLUMNS: &str = "resource_type, resource_id, owner_agent_id, \
-    owner_principal_key, visibility, shared_with_team_id, \
-    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
-    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
+    owner_principal_key, visibility, shared_with_team_id, created_at, updated_at";
 
 /// Errors returned by this module. Wraps `sqlx::Error` but carries a distinct
 /// variant for the one domain-level invariant we enforce here: legacy-static

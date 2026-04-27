@@ -271,7 +271,7 @@ pub async fn entra_auth_middleware(
                 && (ctx.groups_overage || !ctx.groups.is_empty())
             {
                 let key = ctx.principal_key();
-                let has_memberships: Option<i64> = match match &*pool {
+                let memberships_query_result = match &*pool {
                     crate::db::DbPool::Sqlite(p) => {
                         sqlx::query_scalar(
                             "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
@@ -288,7 +288,8 @@ pub async fn entra_auth_middleware(
                         .fetch_optional(p)
                         .await
                     }
-                } {
+                };
+                let has_memberships: Option<i64> = match memberships_query_result {
                     Ok(v) => v,
                     Err(error) => {
                         // DB unavailable mid-request. Returning 202 here would
@@ -583,8 +584,7 @@ pub async fn sync_user_photo_for_principal(
         .await?
         .flatten(),
         DbPool::Postgres(p) => sqlx::query_scalar::<_, Option<String>>(
-            "SELECT to_char(photo_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
-             FROM users WHERE principal_key = $1",
+            "SELECT photo_updated_at FROM users WHERE principal_key = $1",
         )
         .bind(&principal_key)
         .fetch_optional(p)

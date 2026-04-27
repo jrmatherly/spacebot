@@ -2,9 +2,9 @@
 -- Append-only at the application layer (§12 S-C2). Tamper-evidence via
 -- prev_hash / row_hash chaining plus daily WORM-sink export.
 --
--- `seq` is monotonic but NOT auto-increment — explicit control needed for
--- chain verification and import from external sources. BIGINT (vs SQLite
--- INTEGER) handles the unbounded growth correctly on Postgres.
+-- `seq` is monotonic but NOT auto-increment: explicit control is needed
+-- for chain verification and import from external sources. BIGINT (vs
+-- SQLite INTEGER) handles the unbounded growth correctly on Postgres.
 
 CREATE TABLE audit_events (
     id TEXT PRIMARY KEY NOT NULL,

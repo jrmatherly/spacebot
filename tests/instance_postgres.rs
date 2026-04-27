@@ -1,4 +1,4 @@
-//! Integration test for PR 11.2 — instance-tier Postgres support.
+//! Integration test for PR 11.2 instance-tier Postgres support.
 //!
 //! Spins up `postgres:16-alpine` via testcontainers, applies the
 //! `migrations/postgres/global/` tree, exercises each instance-tier store
@@ -15,7 +15,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use spacebot::audit::AuditAppender;
+use spacebot::audit::export::{ExportConfig, ExportMode, export_audit};
 use spacebot::audit::types::{AuditAction, AuditEvent};
+use spacebot::auth::context::{AuthContext, PrincipalType};
+use spacebot::auth::repository::upsert_user_from_auth;
 use spacebot::db::{DatabaseUrl, DbPool};
 use spacebot::notifications::{
     NewNotification, NotificationKind, NotificationSeverity, NotificationStore,
@@ -239,4 +242,136 @@ async fn project_store_crud_against_postgres() {
         .expect("project row present");
     assert_eq!(fetched.id, project.id);
     assert_eq!(fetched.name, "test-project");
+}
+
+/// Build an `AuthContext` for the User principal type with the given
+/// `tid`/`oid`. Mirrors the helper used by the SQLite-side authz tests.
+fn user_ctx(tid: &str, oid: &str) -> AuthContext {
+    AuthContext {
+        principal_type: PrincipalType::User,
+        tid: Arc::from(tid),
+        oid: Arc::from(oid),
+        roles: vec![],
+        groups: vec![],
+        groups_overage: false,
+        display_email: Some(Arc::from(format!("{oid}@example.com").as_str())),
+        display_name: Some(Arc::from(format!("User {oid}").as_str())),
+    }
+}
+
+/// Exercises `auth/repository.rs::upsert_user_from_auth` on the Postgres
+/// arm. The R2 review found that the `PG_USERS_COLUMNS` constant
+/// previously projected `created_at`, `updated_at`, and `last_seen_at`
+/// through `to_char(... AT TIME ZONE 'UTC', ...)` even though the
+/// migration declared those columns as `TEXT`. The cast forced an
+/// implicit `text::timestamptz` coercion that worked-by-accident and
+/// would silently fail if a row contained a non-ISO-8601 string.
+///
+/// This test pins the corrected projection: a fresh upsert and an
+/// idempotent re-upsert both return a `UserRecord` whose `created_at`
+/// stays stable while `updated_at` does not regress. Without the C1 fix
+/// this test would still pass on the happy path, so the invariant being
+/// pinned here is "the SELECT projection compiles + executes cleanly
+/// against the TEXT columns the migration actually creates."
+#[tokio::test(flavor = "multi_thread")]
+async fn auth_repository_upsert_user_against_postgres() {
+    let (db_pool, _container) = setup_postgres().await;
+    let ctx = user_ctx("00000000-0000-0000-0000-000000000001", "alice");
+
+    let first = upsert_user_from_auth(&db_pool, &ctx)
+        .await
+        .expect("first upsert");
+    let second = upsert_user_from_auth(&db_pool, &ctx)
+        .await
+        .expect("second upsert");
+
+    assert_eq!(first.principal_key, second.principal_key);
+    assert_eq!(
+        first.created_at, second.created_at,
+        "created_at must be stable across upserts"
+    );
+    assert!(
+        second.updated_at >= first.updated_at,
+        "updated_at must not regress; got first={} second={}",
+        first.updated_at,
+        second.updated_at,
+    );
+}
+
+/// Exercises `audit::export::export_audit` on the Postgres arm. Validates:
+///   1. The first export reads `last_exported_seq = 0` and writes
+///      every appended row plus the `audit_export_state` cursor row.
+///   2. A second export with no new appends returns `rows_exported = 0`
+///      (the cursor advanced past the last seq).
+///   3. After a fourth event is appended, the third export emits exactly
+///      one row (the new one) and `first_seq = last_seq = 4`.
+///
+/// Mirrors `tests/audit_export.rs::incremental_cursor_skips_already_exported_rows`
+/// but against postgres:16-alpine. The pre-R2 projection bug
+/// (`PG_AUDIT_EVENTS_COLUMNS` casting `timestamp TEXT` through
+/// `to_char(... AT TIME ZONE 'UTC', ...)`) would have made the second
+/// export's `audit_export_state` UPSERT a runtime error; this test fails
+/// fast on regression of that class.
+#[tokio::test(flavor = "multi_thread")]
+async fn audit_export_against_postgres_advances_cursor() {
+    let (db_pool, _container) = setup_postgres().await;
+    let appender = AuditAppender::new_for_tests_pg(db_pool.clone());
+
+    for i in 0..3 {
+        appender
+            .append(AuditEvent {
+                principal_key: format!("00000000-0000-0000-0000-000000000000:user-{i}"),
+                principal_type: "user".to_string(),
+                action: AuditAction::AuthSuccess,
+                resource_type: None,
+                resource_id: None,
+                result: "allowed".to_string(),
+                source_ip: None,
+                request_id: None,
+                metadata: serde_json::json!({"i": i}),
+            })
+            .await
+            .expect("append failed");
+    }
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cfg = ExportConfig {
+        enabled: true,
+        mode: ExportMode::Filesystem {
+            dir: tmp.path().to_path_buf(),
+        },
+    };
+
+    let first = export_audit(&db_pool, &cfg).await.expect("first export");
+    assert_eq!(first.rows_exported, 3, "first run exports all seeded rows");
+    assert_eq!(first.first_seq, Some(1));
+    assert_eq!(first.last_seq, Some(3));
+
+    let second = export_audit(&db_pool, &cfg).await.expect("second export");
+    assert_eq!(
+        second.rows_exported, 0,
+        "second run must skip already-exported rows; cursor advance regression"
+    );
+    assert!(second.first_seq.is_none());
+    assert!(second.last_seq.is_none());
+
+    appender
+        .append(AuditEvent {
+            principal_key: "00000000-0000-0000-0000-000000000000:user-3".to_string(),
+            principal_type: "user".to_string(),
+            action: AuditAction::AuthSuccess,
+            resource_type: None,
+            resource_id: None,
+            result: "allowed".to_string(),
+            source_ip: None,
+            request_id: None,
+            metadata: serde_json::json!({"i": 3}),
+        })
+        .await
+        .expect("append fourth event");
+
+    let third = export_audit(&db_pool, &cfg).await.expect("third export");
+    assert_eq!(third.rows_exported, 1, "third run exports only the new row");
+    assert_eq!(third.first_seq, Some(4));
+    assert_eq!(third.last_seq, Some(4));
 }

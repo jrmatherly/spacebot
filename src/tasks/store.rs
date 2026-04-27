@@ -878,6 +878,10 @@ fn parse_metadata(value: &str) -> Value {
 /// while letting each arm match on its native error code.
 enum CreateOutcome {
     Success(i64),
+    /// The just-attempted `task_number` value (consumed from the sequence
+    /// row before INSERT). Carried for forensic logging only: the next
+    /// retry advances the sequence row and burns a fresh number. The
+    /// value is the colliding number, not the next one to try.
     Collision(i64),
     Other(sqlx::Error),
 }

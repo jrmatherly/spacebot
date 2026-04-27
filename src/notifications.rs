@@ -155,12 +155,20 @@ impl NotificationStore {
             .context("failed to insert notification")?
             .rows_affected(),
             DbPool::Postgres(p) => sqlx::query(
+                // Explicit target: only the partial unique index
+                // `idx_notifications_entity_active` should swallow this
+                // INSERT. A bare `ON CONFLICT DO NOTHING` would also
+                // swallow PK collisions (cosmically improbable on UUID v4
+                // but defensively distinct from "duplicate active
+                // notification for the same entity").
                 r#"
                 INSERT INTO notifications
                     (id, kind, severity, title, body, agent_id,
                      related_entity_type, related_entity_id, action_url, metadata)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (kind, related_entity_type, related_entity_id)
+                    WHERE dismissed_at IS NULL
+                    DO NOTHING
                 "#,
             )
             .bind(&id)

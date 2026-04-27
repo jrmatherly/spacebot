@@ -1,5 +1,5 @@
 -- Postgres port of migrations/global/20260405120000_notifications.sql.
--- The partial unique index translates 1:1 — Postgres supports WHERE clauses
+-- The partial unique index translates 1:1. Postgres supports WHERE clauses
 -- on UNIQUE INDEX and `ON CONFLICT DO NOTHING` honors them in the same way
 -- SQLite's INSERT OR IGNORE does for partial unique indexes.
 

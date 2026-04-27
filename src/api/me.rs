@@ -69,7 +69,7 @@ pub(super) async fn me(
         return Json(default_me(&ctx));
     };
 
-    let team_rows: Vec<(String,)> = match match &*pool {
+    let team_query_result = match &*pool {
         crate::db::DbPool::Sqlite(p) => {
             sqlx::query_as("SELECT team_id FROM team_memberships WHERE principal_key = ?")
                 .bind(ctx.principal_key())
@@ -82,7 +82,8 @@ pub(super) async fn me(
                 .fetch_all(p)
                 .await
         }
-    } {
+    };
+    let team_rows: Vec<(String,)> = match team_query_result {
         Ok(rows) => rows,
         Err(err) => {
             // Pool exhaustion, schema drift, or column rename leaves
@@ -103,22 +104,26 @@ pub(super) async fn me(
     // binding is discarded here. The middleware runs its own freshness
     // check at `sync_user_photo_for_principal` before re-fetching from
     // Graph; this handler does not re-validate.
-    let photo_row: Option<(Option<String>, Option<String>)> = match match &*pool {
-        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
-            "SELECT display_photo_b64, photo_updated_at FROM users WHERE principal_key = ?",
-        )
-        .bind(ctx.principal_key())
-        .fetch_optional(p)
-        .await,
-        crate::db::DbPool::Postgres(p) => sqlx::query_as(
-            "SELECT display_photo_b64, \
-                    to_char(photo_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
+    let photo_query_result = match &*pool {
+        crate::db::DbPool::Sqlite(p) => {
+            sqlx::query_as(
+                "SELECT display_photo_b64, photo_updated_at FROM users WHERE principal_key = ?",
+            )
+            .bind(ctx.principal_key())
+            .fetch_optional(p)
+            .await
+        }
+        crate::db::DbPool::Postgres(p) => {
+            sqlx::query_as(
+                "SELECT display_photo_b64, photo_updated_at \
              FROM users WHERE principal_key = $1",
-        )
-        .bind(ctx.principal_key())
-        .fetch_optional(p)
-        .await,
-    } {
+            )
+            .bind(ctx.principal_key())
+            .fetch_optional(p)
+            .await
+        }
+    };
+    let photo_row: Option<(Option<String>, Option<String>)> = match photo_query_result {
         Ok(row) => row,
         Err(err) => {
             tracing::warn!(

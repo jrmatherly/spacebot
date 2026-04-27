@@ -109,9 +109,9 @@ pub(super) async fn list_audit_events(
             .await
         }
         crate::db::DbPool::Postgres(p) => {
-            sqlx::query_as(&format!(
+            sqlx::query_as(
                 r#"
-            SELECT {cols} FROM audit_events
+            SELECT * FROM audit_events
             WHERE ($1 IS NULL OR "timestamp" >= $2)
               AND ($3 IS NULL OR "timestamp" <= $4)
               AND ($5 IS NULL OR principal_key = $6)
@@ -119,8 +119,7 @@ pub(super) async fn list_audit_events(
             ORDER BY seq DESC
             LIMIT $9 OFFSET $10
             "#,
-                cols = crate::audit::export::PG_AUDIT_EVENTS_COLUMNS,
-            ))
+            )
             .bind(&q.from)
             .bind(&q.from)
             .bind(&q.to)
