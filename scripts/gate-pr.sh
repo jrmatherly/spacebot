@@ -130,7 +130,13 @@ else
 fi
 
 if ! $fast_mode; then
-	run_step "cargo test --tests --no-run" cargo test --tests --no-run
+	# Multi-team WS-1.4: integration tests under tests/*.rs use the
+	# `auth-overrides` feature (gated behind cfg(feature = ...) in
+	# src/auth/config.rs). Production builds exclude these fields; the
+	# gate-pr integration step opts in so tests/entra_jwt_middleware.rs and
+	# tests/jwks_rotation.rs compile against the override surface.
+	run_step "cargo test --tests --no-run --features auth-overrides" \
+		cargo test --tests --no-run --features auth-overrides
 fi
 
 log "all gate checks passed"

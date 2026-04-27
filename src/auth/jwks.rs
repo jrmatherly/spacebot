@@ -108,7 +108,13 @@ impl EntraValidator {
         // `jwt_authorizer`) because jwt_authorizer does not re-export it.
         // Both crates are in [dependencies] for this reason.
         let aud_refs: Vec<&str> = vec![cfg.audience.as_ref()];
+        // Multi-team WS-1.4: the override fields exist only when
+        // `auth-overrides` feature is enabled. Production builds always use
+        // the computed issuer; the override path compiles in for tests only.
+        #[cfg(feature = "auth-overrides")]
         let iss_string = cfg.issuer_override.clone().unwrap_or_else(|| cfg.issuer());
+        #[cfg(not(feature = "auth-overrides"))]
+        let iss_string = cfg.issuer();
         let iss_refs: Vec<&str> = vec![iss_string.as_str()];
         // `nbf` validation is off by default in jwt-authorizer 0.15. Enable
         // it so not-yet-valid tokens are rejected (prevents tokens minted
@@ -122,10 +128,14 @@ impl EntraValidator {
 
         // Test override wins over computed URL so Wiremock-backed
         // integration tests can point the validator at a fake tenant.
+        // Multi-team WS-1.4: feature-gated; production uses the computed URL only.
+        #[cfg(feature = "auth-overrides")]
         let jwks_url = cfg
             .jwks_url_override
             .clone()
             .unwrap_or_else(|| cfg.jwks_url());
+        #[cfg(not(feature = "auth-overrides"))]
+        let jwks_url = cfg.jwks_url();
         // SOC 2 / key-rotation correctness.
         //
         // jwt-authorizer's default Refresh (refresh_interval = 600s,

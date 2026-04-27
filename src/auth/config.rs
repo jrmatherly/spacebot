@@ -65,9 +65,18 @@ pub struct EntraAuthConfig {
     /// the `auth` module by construction. Integration tests use
     /// [`Self::new_for_test`] plus [`Self::with_test_overrides`] below.
     /// The production loader always leaves this `None`.
+    ///
+    /// Multi-team plan WS-1.4 (Hermes audit P1-1): the field is gated
+    /// behind `feature = "auth-overrides"` so production builds (`cargo
+    /// build --release` with default features) do NOT carry it at all.
+    /// Integration tests under `tests/*.rs` and emergency cutover builds
+    /// opt in via `--features auth-overrides`. CI's gate-pr passes the
+    /// flag so the existing test surface is preserved.
+    #[cfg(feature = "auth-overrides")]
     pub(crate) jwks_url_override: Option<String>,
     /// Test-only override for the issuer claim validator. Paired with
-    /// `jwks_url_override`.
+    /// `jwks_url_override`. Same `feature = "auth-overrides"` gate.
+    #[cfg(feature = "auth-overrides")]
     pub(crate) issuer_override: Option<String>,
 }
 
@@ -128,14 +137,18 @@ impl EntraAuthConfig {
             spa_client_id,
             spa_scopes,
             mock_mode: false,
+            #[cfg(feature = "auth-overrides")]
             jwks_url_override: None,
+            #[cfg(feature = "auth-overrides")]
             issuer_override: None,
         }
     }
 
     /// Integration-test helper that injects Wiremock-backed JWKS and issuer
     /// URLs. The override fields are `pub(crate)` so no other code path can
-    /// set them.
+    /// set them. Gated behind `feature = "auth-overrides"` so production
+    /// builds do not carry this method at all (Multi-team WS-1.4).
+    #[cfg(feature = "auth-overrides")]
     #[doc(hidden)]
     pub fn with_test_overrides(mut self, jwks_url: String, issuer: String) -> Self {
         self.jwks_url_override = Some(jwks_url);
@@ -159,7 +172,9 @@ mod tests {
             spa_client_id: Arc::from("22222222-2222-2222-2222-222222222222"),
             spa_scopes: vec![Arc::from("api://test/api.access")],
             mock_mode: false,
+            #[cfg(feature = "auth-overrides")]
             jwks_url_override: None,
+            #[cfg(feature = "auth-overrides")]
             issuer_override: None,
         }
     }

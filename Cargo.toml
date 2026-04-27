@@ -202,6 +202,15 @@ metrics = ["dep:prometheus"]
 # - OTEL_EXPORTER_OTLP_HEADERS are not propagated to the gRPC exporter.
 otlp-grpc = ["opentelemetry-otlp/grpc-tonic"]
 
+# Multi-team plan WS-1.4 (Hermes audit P1-1). Compile-gate the JWKS URL +
+# issuer override fields on EntraAuthConfig. The fields are useful for tests
+# and emergency cutover scenarios but reachable only via TOML edit today;
+# gating prevents production binaries from carrying them at all so a future
+# admin-config-write API cannot accidentally expose them. Tests opt in
+# implicitly via cfg(test); emergency builds opt in via
+# `cargo build --features auth-overrides`. Production MUST NOT enable this.
+auth-overrides = []
+
 [patch.crates-io]
 imap-proto = { path = "vendor/imap-proto-0.10.2" }
 
