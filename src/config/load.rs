@@ -2671,7 +2671,11 @@ impl Config {
                         .map(|s| std::sync::Arc::from(s.as_str()))
                         .collect(),
                     mock_mode: e.mock_mode,
+                    // Multi-team WS-1.4: gated behind feature = "auth-overrides".
+                    // Production builds (default features) skip these fields entirely.
+                    #[cfg(feature = "auth-overrides")]
                     jwks_url_override: None,
+                    #[cfg(feature = "auth-overrides")]
                     issuer_override: None,
                 })
             }
