@@ -86,6 +86,19 @@ controllers:
           # Entra ID auth — the multi-tenancy uses the typed users/teams
           # data model wired up by Phases 1-4. Configure [api.auth.entra]
           # in spacebot-config before flipping this to hosted.
+          #
+          # Multi-team plan WS-1.2 (Hermes audit P0-2): the daemon defaults
+          # to DEFAULT-DENY when neither [api].auth_token nor [api.auth.entra]
+          # is configured. The cluster-repo spacebot-config ConfigMap MUST
+          # provide one of:
+          #   1. [api.auth.entra] block (recommended for hosted mode)
+          #   2. [api].auth_token (single-tenant)
+          #   3. [api].allow_unauthenticated = true (Envoy-SSO seam — ONLY
+          #      when the cluster gateway guarantees no unauthenticated
+          #      request reaches the pod; see
+          #      docs/design-docs/k8s-cluster-deployment.md)
+          # Without one of these, the daemon comes up healthy but every
+          # request returns 401. The fail-closed default is intentional.
           SPACEBOT_DEPLOYMENT: docker
           RUST_LOG: info
           # Persist the fastembed BGESmallENV15 ONNX model (~127 MB) on

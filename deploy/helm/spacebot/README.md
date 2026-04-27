@@ -91,6 +91,18 @@ helm template ... | kubeconform -strict -summary
 - **`CiliumNetworkPolicy`.** Egress rules for outbound LLM provider calls belong in `ciliumnetworkpolicy.yaml.j2` alongside the other cluster-networking policies.
 - **Active `imagePullSecrets`.** The `ghcr-pull-secret` already exists in the `ai` namespace; uncomment the block in `values.yaml` only if the GHCR image becomes private.
 
+## Authentication modes
+
+The daemon defaults to **default-deny** (multi-team plan WS-1.2, Hermes audit P0-2). When neither `[api].auth_token` nor `[api.auth.entra]` is configured, every request returns 401. The cluster-repo `spacebot-config` ConfigMap MUST provide one of three auth modes:
+
+1. **Hosted with Entra ID** (recommended for K8s). Configure `[api.auth.entra]` in `spacebot-config` via SOPS-encrypted secret. Set `SPACEBOT_DEPLOYMENT: hosted` (overriding the default `docker` in `values.yaml`). The Entra JWT middleware replaces the static-token middleware. See `docs/content/docs/(configuration)/entra-auth.mdx` and `docs/design-docs/entra-app-registrations.md` for the app-registration setup.
+
+2. **Single-tenant bearer token.** Set `[api].auth_token` in `spacebot-config`. The static-token middleware checks bearer tokens against this value (constant-time comparison). Suitable for one-instance-per-team deployments.
+
+3. **Edge SSO (Envoy / cluster gateway).** Set `[api].allow_unauthenticated = true` in `spacebot-config`. The daemon's static-token middleware falls through with `AuthContext::legacy_static()`, deferring JWT validation to the cluster gateway. **Only safe** when the gateway is provably configured to reject every unauthenticated request before it reaches the pod. This is the bearer-auth-disable seam documented in `docs/design-docs/k8s-cluster-deployment.md`.
+
+If the ConfigMap does NOT set one of the three, the deployment comes up healthy and every API call returns 401. The fail-closed default is intentional: a misconfigured Helm rollout used to silently produce an unaudited admin-equivalent surface. WS-1.1's middleware change closes that path.
+
 ## Handoff to the cluster repo
 
 When ready to deploy into the Talos cluster, invoke `/cluster-deploy scaffold` from `ai-k8s/talos-ai-cluster`. The skill emits the Flux app directory skeleton:
