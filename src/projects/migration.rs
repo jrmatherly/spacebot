@@ -11,13 +11,25 @@ use sqlx::{Row as _, SqlitePool};
 
 use std::path::{Path, PathBuf};
 
+use crate::db::DbPool;
+
 const MIGRATION_MARKER: &str = ".projects_migrated";
 
 /// Migrate all per-agent projects/repos/worktrees to the instance database.
 pub async fn migrate_legacy_projects(
     instance_dir: &Path,
-    instance_pool: &SqlitePool,
+    instance_pool: &DbPool,
 ) -> anyhow::Result<()> {
+    // Legacy per-agent project data lives in SQLite agent.db files.
+    // Postgres backends are greenfield with no legacy data; no-op there.
+    let instance_pool = match instance_pool {
+        DbPool::Sqlite(p) => p,
+        DbPool::Postgres(_) => {
+            tracing::debug!("legacy project migration skipped (Postgres backend has no legacy data)");
+            return Ok(());
+        }
+    };
+
     let data_dir = instance_dir.join("data");
     let marker_path = data_dir.join(MIGRATION_MARKER);
 

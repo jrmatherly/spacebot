@@ -12,6 +12,8 @@ use sqlx::{Row as _, SqlitePool};
 
 use std::path::Path;
 
+use crate::db::DbPool;
+
 /// Marker file written to `{instance_dir}/data/` after successful migration.
 const MIGRATION_MARKER: &str = ".tasks_migrated";
 
@@ -26,8 +28,21 @@ const MIGRATION_MARKER: &str = ".tasks_migrated";
 /// immediately. On success, the marker file is written.
 pub async fn migrate_legacy_tasks(
     instance_dir: &Path,
-    global_pool: &SqlitePool,
+    global_pool: &DbPool,
 ) -> anyhow::Result<()> {
+    // Legacy per-agent tasks live in SQLite agent.db files. Postgres
+    // deployments are greenfield (PR 11.4 ships them with no legacy data),
+    // so the migration is a no-op there. Required for type-correctness;
+    // this preserves the SQLite-only path until a future legacy backport
+    // is needed (which it never is for Postgres).
+    let global_pool = match global_pool {
+        DbPool::Sqlite(p) => p,
+        DbPool::Postgres(_) => {
+            tracing::debug!("legacy task migration skipped (Postgres backend has no legacy data)");
+            return Ok(());
+        }
+    };
+
     let data_dir = instance_dir.join("data");
     let marker_path = data_dir.join(MIGRATION_MARKER);
 
