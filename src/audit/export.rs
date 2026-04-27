@@ -4,10 +4,20 @@
 //! are fully-serializable enum variants whose implementations land in Phase 10 SOC 2 hardening.
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::path::PathBuf;
 
 use crate::audit::types::AuditRow;
+use crate::db::DbPool;
+
+/// Postgres timestamp-column projection for `audit_events`. Casts
+/// `timestamp` (TIMESTAMPTZ) through `to_char(... AT TIME ZONE 'UTC', ...)`
+/// so the all-`String` `AuditRow` `FromRow` derive works uniformly across
+/// both backends. SQLite arms keep `SELECT *` because their TEXT columns
+/// already deserialize as `String`.
+const PG_AUDIT_EVENTS_COLUMNS: &str = "seq, id, \
+    to_char(\"timestamp\" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS \"timestamp\", \
+    principal_key, principal_type, action, resource_type, resource_id, \
+    result, source_ip, request_id, metadata_json, prev_hash, row_hash";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -66,7 +76,7 @@ pub struct ExportResult {
     pub chain_head_hash: Option<String>,
 }
 
-pub async fn export_audit(pool: &SqlitePool, cfg: &ExportConfig) -> anyhow::Result<ExportResult> {
+pub async fn export_audit(pool: &DbPool, cfg: &ExportConfig) -> anyhow::Result<ExportResult> {
     if !cfg.enabled {
         return Ok(ExportResult {
             rows_exported: 0,
@@ -79,19 +89,37 @@ pub async fn export_audit(pool: &SqlitePool, cfg: &ExportConfig) -> anyhow::Resu
     // A-14: incremental export. Read `last_exported_seq` for this export
     // mode; fetch only newer rows.
     let mode_kind = cfg.mode.kind_str();
-    let last_exported_seq: i64 = sqlx::query_scalar(
-        "SELECT last_exported_seq FROM audit_export_state WHERE export_mode = ?",
-    )
-    .bind(mode_kind)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or(0);
+    let last_exported_seq: i64 = match pool {
+        DbPool::Sqlite(p) => sqlx::query_scalar(
+            "SELECT last_exported_seq FROM audit_export_state WHERE export_mode = ?",
+        )
+        .bind(mode_kind)
+        .fetch_optional(p)
+        .await?
+        .unwrap_or(0),
+        DbPool::Postgres(p) => sqlx::query_scalar(
+            "SELECT last_exported_seq FROM audit_export_state WHERE export_mode = $1",
+        )
+        .bind(mode_kind)
+        .fetch_optional(p)
+        .await?
+        .unwrap_or(0),
+    };
 
-    let rows: Vec<AuditRow> =
-        sqlx::query_as("SELECT * FROM audit_events WHERE seq > ? ORDER BY seq")
-            .bind(last_exported_seq)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<AuditRow> = match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query_as("SELECT * FROM audit_events WHERE seq > ? ORDER BY seq")
+                .bind(last_exported_seq)
+                .fetch_all(p)
+                .await?
+        }
+        DbPool::Postgres(p) => sqlx::query_as(&format!(
+            "SELECT {PG_AUDIT_EVENTS_COLUMNS} FROM audit_events WHERE seq > $1 ORDER BY seq"
+        ))
+        .bind(last_exported_seq)
+        .fetch_all(p)
+        .await?,
+    };
     if rows.is_empty() {
         return Ok(ExportResult {
             rows_exported: 0,
@@ -196,22 +224,44 @@ pub async fn export_audit(pool: &SqlitePool, cfg: &ExportConfig) -> anyhow::Resu
 
     // A-14: advance `last_exported_seq` for this mode after successful export.
     if let Some(last) = last_seq {
-        sqlx::query(
-            r#"
-            INSERT INTO audit_export_state (export_mode, last_exported_seq, last_exported_at, last_exported_row_hash)
-            VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
-            ON CONFLICT(export_mode) DO UPDATE SET
-                last_exported_seq = excluded.last_exported_seq,
-                last_exported_at = excluded.last_exported_at,
-                last_exported_row_hash = excluded.last_exported_row_hash,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            "#,
-        )
-        .bind(mode_kind)
-        .bind(last)
-        .bind(&chain_head)
-        .execute(pool)
-        .await?;
+        match pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO audit_export_state (export_mode, last_exported_seq, last_exported_at, last_exported_row_hash)
+                    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+                    ON CONFLICT(export_mode) DO UPDATE SET
+                        last_exported_seq = excluded.last_exported_seq,
+                        last_exported_at = excluded.last_exported_at,
+                        last_exported_row_hash = excluded.last_exported_row_hash,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    "#,
+                )
+                .bind(mode_kind)
+                .bind(last)
+                .bind(&chain_head)
+                .execute(p)
+                .await?;
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO audit_export_state (export_mode, last_exported_seq, last_exported_at, last_exported_row_hash)
+                    VALUES ($1, $2, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), $3)
+                    ON CONFLICT(export_mode) DO UPDATE SET
+                        last_exported_seq = excluded.last_exported_seq,
+                        last_exported_at = excluded.last_exported_at,
+                        last_exported_row_hash = excluded.last_exported_row_hash,
+                        updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                    "#,
+                )
+                .bind(mode_kind)
+                .bind(last)
+                .bind(&chain_head)
+                .execute(p)
+                .await?;
+            }
+        }
     }
 
     Ok(ExportResult {

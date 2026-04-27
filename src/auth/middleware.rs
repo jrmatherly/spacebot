@@ -416,13 +416,14 @@ pub async fn entra_auth_middleware(
 /// are younger than the configured TTL (default 300s).
 #[doc(hidden)]
 pub async fn sync_groups_for_principal(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     graph: &crate::auth::graph::GraphClient,
     ctx: &crate::auth::AuthContext,
     user_token: &str,
     ttl_secs: u64,
 ) -> anyhow::Result<()> {
     use crate::auth::repository::upsert_team;
+    use crate::db::DbPool;
 
     let principal_key = ctx.principal_key();
 
@@ -430,12 +431,22 @@ pub async fn sync_groups_for_principal(
     // configured TTL, treat the cached set as authoritative and don't
     // hammer Graph on every request. MIN(observed_at) is the oldest of
     // the persisted rows; if it is fresh, all of them are.
-    let oldest: Option<String> =
-        sqlx::query_scalar("SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = ?")
-            .bind(&principal_key)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
+    let oldest: Option<String> = match pool {
+        DbPool::Sqlite(p) => sqlx::query_scalar(
+            "SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = ?",
+        )
+        .bind(&principal_key)
+        .fetch_optional(p)
+        .await?
+        .flatten(),
+        DbPool::Postgres(p) => sqlx::query_scalar(
+            "SELECT MIN(observed_at) FROM team_memberships WHERE principal_key = $1",
+        )
+        .bind(&principal_key)
+        .fetch_optional(p)
+        .await?
+        .flatten(),
+    };
 
     if let Some(ts) = oldest
         && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts)
@@ -479,28 +490,56 @@ pub async fn sync_groups_for_principal(
     // principal with a PARTIAL set of memberships, causing Phase 4 to
     // silently 403 resources the user actually has access to. Commit only
     // succeeds when the full new set is persisted.
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM team_memberships WHERE principal_key = ?")
-        .bind(&principal_key)
-        .execute(&mut *tx)
-        .await?;
-    for team_id in &team_ids {
-        sqlx::query(
-            r#"
-            INSERT INTO team_memberships (principal_key, team_id, source)
-            VALUES (?, ?, ?)
-            ON CONFLICT(principal_key, team_id) DO UPDATE SET
-                observed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-                source = excluded.source
-            "#,
-        )
-        .bind(&principal_key)
-        .bind(team_id)
-        .bind(source)
-        .execute(&mut *tx)
-        .await?;
+    match pool {
+        DbPool::Sqlite(p) => {
+            let mut tx = p.begin().await?;
+            sqlx::query("DELETE FROM team_memberships WHERE principal_key = ?")
+                .bind(&principal_key)
+                .execute(&mut *tx)
+                .await?;
+            for team_id in &team_ids {
+                sqlx::query(
+                    r#"
+                    INSERT INTO team_memberships (principal_key, team_id, source)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(principal_key, team_id) DO UPDATE SET
+                        observed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        source = excluded.source
+                    "#,
+                )
+                .bind(&principal_key)
+                .bind(team_id)
+                .bind(source)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+        }
+        DbPool::Postgres(p) => {
+            let mut tx = p.begin().await?;
+            sqlx::query("DELETE FROM team_memberships WHERE principal_key = $1")
+                .bind(&principal_key)
+                .execute(&mut *tx)
+                .await?;
+            for team_id in &team_ids {
+                sqlx::query(
+                    r#"
+                    INSERT INTO team_memberships (principal_key, team_id, source)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT(principal_key, team_id) DO UPDATE SET
+                        observed_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+                        source = excluded.source
+                    "#,
+                )
+                .bind(&principal_key)
+                .bind(team_id)
+                .bind(source)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+        }
     }
-    tx.commit().await?;
     Ok(())
 }
 
@@ -514,22 +553,33 @@ pub async fn sync_groups_for_principal(
 /// Phase 3 integration tests live in a separate crate.
 #[doc(hidden)]
 pub async fn sync_user_photo_for_principal(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     graph: &crate::auth::graph::GraphClient,
     ctx: &crate::auth::AuthContext,
     user_token: &str,
 ) -> anyhow::Result<()> {
+    use crate::db::DbPool;
     use base64::Engine as _;
 
     let principal_key = ctx.principal_key();
 
-    let last: Option<String> = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT photo_updated_at FROM users WHERE principal_key = ?",
-    )
-    .bind(&principal_key)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let last: Option<String> = match pool {
+        DbPool::Sqlite(p) => sqlx::query_scalar::<_, Option<String>>(
+            "SELECT photo_updated_at FROM users WHERE principal_key = ?",
+        )
+        .bind(&principal_key)
+        .fetch_optional(p)
+        .await?
+        .flatten(),
+        DbPool::Postgres(p) => sqlx::query_scalar::<_, Option<String>>(
+            "SELECT to_char(photo_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') \
+             FROM users WHERE principal_key = $1",
+        )
+        .bind(&principal_key)
+        .fetch_optional(p)
+        .await?
+        .flatten(),
+    };
 
     if let Some(ts) = last
         && let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&ts)

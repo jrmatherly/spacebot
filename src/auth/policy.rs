@@ -14,15 +14,17 @@
 //!
 //! The `check_read` / `check_write` functions are async because they read
 //! the `resource_ownership` + `team_memberships` tables. Callers should
-//! pass the instance-level `SqlitePool` (the one `ApiState.instance_pool`
-//! holds). These tables do NOT live in the per-agent databases.
-
-use sqlx::SqlitePool;
+//! pass the instance-level pool (the one `ApiState.instance_pool` holds).
+//! These tables do NOT live in the per-agent databases.
+//!
+//! As of Phase 11.2 the pool is `&DbPool` so each helper dispatches
+//! per-backend between SQLite and Postgres.
 
 use crate::auth::context::{AuthContext, PrincipalType};
 use crate::auth::principals::{ResourceOwnershipRecord, Visibility};
 use crate::auth::repository::get_ownership;
 use crate::auth::roles::is_admin;
+use crate::db::DbPool;
 
 /// Access decision returned by [`check_read`] / [`check_write`].
 ///
@@ -88,7 +90,7 @@ impl Access {
 /// either own the resource directly or reach it via visibility (team
 /// membership for `Visibility::Team`, anyone for `Visibility::Org`).
 pub async fn check_read(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
     resource_type: &str,
     resource_id: &str,
@@ -111,7 +113,7 @@ pub async fn check_read(
 }
 
 async fn decide_user_read(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
     own: &ResourceOwnershipRecord,
 ) -> anyhow::Result<Access> {
@@ -149,16 +151,28 @@ async fn decide_user_read(
                     own.resource_id,
                 ));
             };
-            let found: Option<i64> = sqlx::query_scalar(
-                r#"
-                SELECT 1 FROM team_memberships
-                WHERE principal_key = ? AND team_id = ?
-                "#,
-            )
-            .bind(ctx.principal_key())
-            .bind(team_id)
-            .fetch_optional(pool)
-            .await?;
+            let found: Option<i64> = match pool {
+                DbPool::Sqlite(p) => sqlx::query_scalar(
+                    r#"
+                    SELECT 1 FROM team_memberships
+                    WHERE principal_key = ? AND team_id = ?
+                    "#,
+                )
+                .bind(ctx.principal_key())
+                .bind(team_id)
+                .fetch_optional(p)
+                .await?,
+                DbPool::Postgres(p) => sqlx::query_scalar(
+                    r#"
+                    SELECT 1 FROM team_memberships
+                    WHERE principal_key = $1 AND team_id = $2
+                    "#,
+                )
+                .bind(ctx.principal_key())
+                .bind(team_id)
+                .fetch_optional(p)
+                .await?,
+            };
             if found.is_some() {
                 Ok(Access::Allowed)
             } else {
@@ -186,7 +200,7 @@ async fn decide_user_read(
 /// Phase 4 stubs the audit side at `tracing::info!`. Phase 5 replaces
 /// that with an `AuditAppender` call against the hash-chained audit log.
 pub async fn check_read_with_audit(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
     resource_type: &str,
     resource_id: &str,
@@ -224,7 +238,7 @@ pub async fn check_read_with_audit(
 /// guard makes "forgot to enforce" a compile error in that future wiring.
 #[must_use = "can_link_channel returns a boolean that MUST gate cross-agent dispatch"]
 pub async fn can_link_channel(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
     self_agent_id: &str,
     peer_agent_id: &str,
@@ -237,7 +251,7 @@ pub async fn can_link_channel(
 /// Decide write access to a resource. Stricter than read: team-visibility
 /// resources are read-shared but writable only by the owner (and admins).
 pub async fn check_write(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
     resource_type: &str,
     resource_id: &str,
