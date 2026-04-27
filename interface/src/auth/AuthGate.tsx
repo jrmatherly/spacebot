@@ -27,6 +27,7 @@ import {
 	type PublicClientApplication,
 } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
+import { Button, CheckBox } from "@spacedrive/primitives";
 import {
 	setAuthTokenProvider,
 	type AuthExhaustedDetail,
@@ -151,20 +152,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	if (state.kind === "waiting_for_server") {
 		return (
-			<div
-				data-testid="auth-gate-waiting-server"
-				role="status"
-				aria-live="polite"
-			>
+			<AuthGateStatus testid="auth-gate-waiting-server">
 				Connecting to Spacebot…
-			</div>
+			</AuthGateStatus>
 		);
 	}
 	if (state.kind === "loading") {
 		return (
-			<div data-testid="auth-gate-loading" role="status" aria-live="polite">
+			<AuthGateStatus testid="auth-gate-loading">
 				Signing in…
-			</div>
+			</AuthGateStatus>
 		);
 	}
 	if (state.kind === "error") {
@@ -173,20 +170,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				data-testid="auth-gate-error"
 				role="alert"
 				aria-live="assertive"
-				style={{
-					padding: "1.5rem",
-					margin: "2rem auto",
-					maxWidth: "600px",
-					border: "1px solid var(--color-danger, #dc2626)",
-					borderRadius: "0.5rem",
-					background: "var(--color-danger-bg, #fef2f2)",
-					color: "var(--color-danger-fg, #991b1b)",
-				}}
+				className="flex h-screen w-full flex-col items-center justify-center bg-app overflow-hidden"
 			>
-				<h2 style={{ margin: "0 0 0.75rem 0" }}>
-					Sign-in is unavailable
-				</h2>
-				<p style={{ margin: 0 }}>{state.message}</p>
+				<div className="flex w-full max-w-lg flex-col gap-4 rounded-lg border border-red-500/40 bg-red-950/40 p-6 mx-6">
+					<h2 className="font-plex text-lg font-semibold text-red-200 m-0">
+						Sign-in is unavailable
+					</h2>
+					<p className="text-sm text-red-100/90 m-0">
+						{state.message}
+					</p>
+				</div>
 			</div>
 		);
 	}
@@ -300,33 +293,114 @@ function SignInPrompt({ msal }: { msal: PublicClientApplication }) {
 		: "Sign in with Microsoft Entra ID";
 
 	return (
-		<div data-testid="auth-gate-signin" role="status">
-			<button type="button" onClick={onSignIn} aria-label={ariaLabel}>
-				{buttonLabel}
-			</button>
-			{!IS_DESKTOP && (
-				<label style={{ display: "block", marginTop: "0.75rem" }}>
-					<input
-						type="checkbox"
-						checked={trust}
-						onChange={(e) => onTrustToggle(e.target.checked)}
-					/>
-					Stay signed in on this device (uses encrypted local storage)
-				</label>
-			)}
-			{IS_DESKTOP && (
-				<p
-					style={{
-						display: "block",
-						marginTop: "0.75rem",
-						fontSize: "0.875rem",
-						color: "var(--color-text-muted, #6b7280)",
-					}}
-				>
-					Sign-in completes in your default browser. Tokens are stored
-					in the daemon's encrypted secret store, not in this window.
+		<div
+			data-testid="auth-gate-signin"
+			role="status"
+			className="flex h-screen w-full flex-col items-center justify-center bg-app overflow-hidden"
+		>
+			<div className="flex w-full max-w-md flex-col items-center gap-8 px-6">
+				<div className="flex flex-col items-center gap-3">
+					<div className="relative h-[160px] w-[160px]">
+						<img
+							src="/ball.png"
+							alt="Spacebot"
+							className="h-full w-full object-contain"
+						/>
+					</div>
+					<h1 className="font-plex text-xl font-semibold text-ink">
+						Sign in to Spacebot
+					</h1>
+					<p className="text-center text-sm text-ink-dull">
+						This Spacebot instance is protected by Microsoft Entra
+						ID. Sign in with your work or school account to
+						continue.
+					</p>
+				</div>
+
+				<div className="flex w-full flex-col gap-4">
+					<Button
+						type="button"
+						onClick={onSignIn}
+						aria-label={ariaLabel}
+						data-testid="auth-gate-signin-button"
+						size="lg"
+						variant="accent"
+						className="w-full bg-[hsl(282,70%,57%)] text-white shadow hover:bg-[hsl(282,70%,50%)] hover:text-white border-transparent"
+					>
+						{buttonLabel}
+					</Button>
+
+					{!IS_DESKTOP && (
+						<label className="flex items-start gap-2 text-sm text-ink-dull cursor-pointer select-none">
+							<CheckBox
+								checked={trust}
+								onChange={(e) =>
+									onTrustToggle(e.target.checked)
+								}
+								className="mt-0.5 mr-0! float-none!"
+							/>
+							<span>
+								Stay signed in on this device
+								<span className="block text-xs text-ink-faint">
+									Uses encrypted local storage. Leave
+									unchecked on shared devices.
+								</span>
+							</span>
+						</label>
+					)}
+
+					{IS_DESKTOP && (
+						<p className="text-sm text-ink-faint">
+							Sign-in completes in your default browser. Tokens
+							are stored in the daemon's encrypted secret store,
+							not in this window.
+						</p>
+					)}
+				</div>
+
+				<p className="text-center text-xs text-ink-faint">
+					Tokens are issued by your tenant and scoped to this Spacebot
+					instance only.
 				</p>
-			)}
+			</div>
+		</div>
+	);
+}
+
+/// Centered full-screen status card for the transitional auth states
+/// (waiting_for_server, loading). Mirrors the visual frame of
+/// `SignInPrompt` so users see one continuous gate surface across
+/// state transitions, not a flash of unstyled text.
+function AuthGateStatus({
+	children,
+	testid,
+}: {
+	children: ReactNode;
+	testid: string;
+}) {
+	return (
+		<div
+			data-testid={testid}
+			role="status"
+			aria-live="polite"
+			className="flex h-screen w-full flex-col items-center justify-center bg-app overflow-hidden"
+		>
+			<div className="flex w-full max-w-md flex-col items-center gap-6 px-6">
+				<div className="relative h-[120px] w-[120px]">
+					<img
+						src="/ball.png"
+						alt="Spacebot"
+						className="h-full w-full object-contain opacity-80"
+					/>
+				</div>
+				<div className="flex items-center gap-3 text-ink-dull">
+					<span
+						aria-hidden="true"
+						className="size-3 rounded-full bg-accent animate-pulse"
+					/>
+					<span className="text-sm">{children}</span>
+				</div>
+			</div>
 		</div>
 	);
 }
