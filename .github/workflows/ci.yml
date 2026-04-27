@@ -245,6 +245,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # This job only reads source and runs cargo test against a
+          # testcontainers-provisioned Postgres. It does not push commits,
+          # so do not persist the GITHUB_TOKEN into `.git/config`. Closes
+          # the `zizmor/artipacked` alert on this job (#135).
+          persist-credentials: false
 
       # Free disk space — same rationale as the `test` job: integration test
       # binaries plus the postgres:16-alpine image (~250 MB) plus
