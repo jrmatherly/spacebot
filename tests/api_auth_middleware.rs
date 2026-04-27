@@ -147,14 +147,40 @@ async fn desktop_tokens_bypasses_token_check() {
     );
 }
 
+/// Multi-team plan WS-1.1 (Hermes audit P0-2): default-deny when neither
+/// `auth_token` nor Entra is configured. Replaces the prior
+/// `pass_through_when_no_token_configured` test, which asserted the now-stale
+/// pre-WS-1.1 fallthrough. The fallthrough is preserved behind the explicit
+/// `allow_unauthenticated = true` opt-in and is exercised by
+/// `falls_through_legacy_static_when_allow_unauthenticated_true` below.
 #[tokio::test]
-async fn pass_through_when_no_token_configured() {
+async fn returns_401_when_no_auth_configured_and_allow_unauthenticated_false() {
+    // ApiState::new_for_tests defaults allow_unauthenticated to false (the
+    // ApiState struct's Default), reflecting the production Helm posture.
     let state = Arc::new(ApiState::new_for_tests(None));
     let app = build_test_router(state);
     let res = app
         .oneshot(req_with_auth("/api/status", None))
         .await
         .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Companion: with explicit operator opt-in, the LegacyStatic fallthrough
+/// is preserved. This is the Envoy-SSO seam documented in
+/// `docs/design-docs/k8s-cluster-deployment.md` (bearer-auth-disable path).
+#[tokio::test]
+async fn falls_through_legacy_static_when_allow_unauthenticated_true() {
+    let mut state = ApiState::new_for_tests(None);
+    state.allow_unauthenticated = true;
+    let state = Arc::new(state);
+    let app = build_test_router(state);
+    let res = app
+        .oneshot(req_with_auth("/api/status", None))
+        .await
+        .unwrap();
+    // /api/status returns Json<StatusResponse> when AuthContext is present;
+    // the LegacyStatic injection on the opt-in path satisfies that contract.
     assert_eq!(res.status(), StatusCode::OK);
 }
 

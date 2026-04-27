@@ -184,6 +184,13 @@ pub struct ApiConfig {
     /// Address to bind the HTTP server on.
     pub bind: String,
     pub auth_token: Option<String>,
+    /// When `true`, requests without a configured `auth_token` and without
+    /// Entra auth fall through with `AuthContext::legacy_static()`. Default
+    /// `false` is hard default-deny. The opt-in exists for the Envoy-SSO
+    /// seam documented in `docs/design-docs/k8s-cluster-deployment.md`
+    /// (bearer-auth-disable path) where JWT validation happens at the
+    /// cluster gateway, not in-process.
+    pub allow_unauthenticated: bool,
     /// When populated, the Entra-JWT middleware replaces the static-token
     /// middleware at server start. Resolved from `[api.auth.entra]` TOML.
     pub entra_auth: Option<crate::auth::EntraAuthConfig>,
@@ -196,6 +203,7 @@ impl Default for ApiConfig {
             port: 19898,
             bind: "127.0.0.1".into(),
             auth_token: None,
+            allow_unauthenticated: false,
             entra_auth: None,
         }
     }

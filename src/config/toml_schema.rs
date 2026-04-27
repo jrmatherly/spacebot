@@ -146,6 +146,14 @@ pub(super) struct TomlApiConfig {
     pub(super) bind: String,
     #[serde(default)]
     pub(super) auth_token: Option<String>,
+    /// Multi-team plan WS-1.1 (Hermes audit P0-2). Default-deny opt-out.
+    /// `None` (absent) and `Some(false)` mean default-deny: requests with no
+    /// `auth_token` and no Entra auth return 401. `Some(true)` opts into the
+    /// LegacyStatic fallthrough — appropriate ONLY for local dev or for
+    /// Envoy-SSO deployments where the cluster gateway guarantees no
+    /// unauthenticated request reaches the pod.
+    #[serde(default)]
+    pub(super) allow_unauthenticated: Option<bool>,
     /// Nested block: `[api.auth.entra]`. When present with `enabled = true`,
     /// the Entra JWT middleware replaces the static-token branch.
     #[serde(default)]
@@ -159,6 +167,7 @@ impl Default for TomlApiConfig {
             port: default_api_port(),
             bind: default_api_bind(),
             auth_token: None,
+            allow_unauthenticated: None,
             auth: TomlApiAuthConfig::default(),
         }
     }
