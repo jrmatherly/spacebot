@@ -1311,9 +1311,9 @@ pub(crate) async fn try_persist_config(
     contents: impl AsRef<[u8]>,
 ) -> Result<(), axum::http::StatusCode> {
     if !state.is_config_writable() {
-        tracing::debug!(
+        tracing::info!(
             path = %path.display(),
-            "config.toml read-only; in-memory change applied without persistence"
+            "config.toml read-only; in-memory change applied without persistence (will be lost on daemon restart)"
         );
         return Ok(());
     }

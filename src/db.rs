@@ -283,9 +283,31 @@ async fn open_config_redb_with_retry(path: &Path) -> Result<redb::Database> {
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 attempt += 1;
             }
+            Err(redb::DatabaseError::DatabaseAlreadyOpen) => {
+                let attempts = attempt + 1;
+                tracing::error!(
+                    path = %path.display(),
+                    attempts,
+                    "config.redb still locked after retry budget exhausted; another process likely holds the flock"
+                );
+                return Err(anyhow::anyhow!(
+                    "config.redb at {} still locked after {} attempts (DatabaseAlreadyOpen); another process likely holds the flock",
+                    path.display(),
+                    attempts
+                )
+                .into());
+            }
             Err(error) => {
+                tracing::error!(
+                    path = %path.display(),
+                    %error,
+                    "non-retryable error opening config.redb"
+                );
                 return Err(anyhow::Error::from(error)
-                    .context(format!("failed to create redb at: {}", path.display()))
+                    .context(format!(
+                        "failed to create redb at: {} (non-retryable error)",
+                        path.display()
+                    ))
                     .into());
             }
         }

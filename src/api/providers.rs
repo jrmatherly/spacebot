@@ -389,9 +389,9 @@ async fn finalize_openai_oauth(
             .await
             .context("failed to write config.toml")?;
     } else {
-        tracing::debug!(
+        tracing::info!(
             path = %config_path.display(),
-            "config.toml read-only; in-memory routing change applied without persistence"
+            "config.toml read-only; in-memory routing change applied without persistence (will be lost on daemon restart)"
         );
     }
 

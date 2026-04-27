@@ -1454,8 +1454,8 @@ const KEYSTORE_INSTANCE_ID: &str = "instance";
 ///
 /// Tracing is not yet initialized at the daemon's first call site
 /// (`tracing` init runs inside `block_on`), so boot-phase visibility uses
-/// `eprintln!` which lands on stderr alongside the existing line-1469
-/// warning.
+/// `eprintln!` for the entry log, the data-directory create failure, and
+/// the store-open failure. All three land on stderr.
 fn bootstrap_secrets_store(
     config_path: &Option<std::path::PathBuf>,
 ) -> Option<Arc<spacebot::secrets::store::SecretsStore>> {
@@ -1613,6 +1613,51 @@ fn bootstrap_secrets_store(
 static BOOTSTRAPPED_STORE: std::sync::OnceLock<
     Option<Arc<spacebot::secrets::store::SecretsStore>>,
 > = std::sync::OnceLock::new();
+
+/// Probe whether `config.toml` is on a writable mount.
+///
+/// Returns `true` only when the daemon can confidently write to the file.
+/// `OpenOptions::append(true).open(...)` is used (rather than
+/// `write(true).truncate(true)`) so the file content is never modified by
+/// the probe even on writable mounts where the open succeeds.
+///
+/// Error kinds are inspected to avoid false-negatives on cold-boot:
+///
+/// - `NotFound`: config.toml has not been written yet (fresh deploy, OAuth
+///   setup will create it). Probe parent directory writability instead. If
+///   the parent is writable, the OAuth flow will create config.toml there
+///   and subsequent writes will succeed.
+/// - `PermissionDenied` or `ReadOnlyFilesystem`: a real read-only mount.
+///   Returns false.
+/// - Anything else: unexpected (typed as a directory, ESTALE on NFS, etc.).
+///   Logs `error!` and returns false (conservative).
+fn probe_config_writable(config_path: &std::path::Path) -> bool {
+    use std::io::ErrorKind;
+
+    match std::fs::OpenOptions::new().append(true).open(config_path) {
+        Ok(_) => true,
+        Err(error) => match error.kind() {
+            ErrorKind::NotFound => {
+                // Cold boot before config.toml exists. Probe parent dir.
+                config_path
+                    .parent()
+                    .and_then(|parent| std::fs::metadata(parent).ok())
+                    .map(|meta| !meta.permissions().readonly())
+                    .unwrap_or(false)
+            }
+            ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem => false,
+            other => {
+                tracing::error!(
+                    kind = ?other,
+                    %error,
+                    path = %config_path.display(),
+                    "unexpected error probing config.toml writability; assuming read-only"
+                );
+                false
+            }
+        },
+    }
+}
 
 /// Migrate secrets from legacy per-agent redb stores into the new instance-level
 /// store. Only runs once when the instance-level store is first created.
@@ -2121,12 +2166,9 @@ async fn run(
     // Probe the config.toml mount once. Kubernetes ConfigMap subPath mounts
     // are read-only and produce per-request EROFS log spam in handlers that
     // persist mutations back to disk. When read-only, those handlers update
-    // in-memory state only; an operator-facing warn fires here at boot so
+    // in-memory state only. An operator-facing warn fires here at boot so
     // the disabled-persistence behavior is visible without log noise.
-    let config_writable = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&config_path)
-        .is_ok();
+    let config_writable = probe_config_writable(&config_path);
     api_state.set_config_writable(config_writable);
     if !config_writable {
         tracing::warn!(
