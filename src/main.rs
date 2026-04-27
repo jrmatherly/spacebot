@@ -1811,43 +1811,28 @@ async fn run(
     )
     .await
     .context("failed to initialize instance database")?;
-    let instance_pool = instance_db
-        .as_sqlite()
-        .context(
-            "PR 11.1 instance pool requires SQLite backend; Postgres support lands in PR 11.2",
-        )?
-        .clone();
+    // PR 11.2: instance_db is Arc<DbPool>; both backends supported. The four
+    // global stores and the audit appender all take Arc<DbPool> directly.
+    let instance_pool: Arc<spacebot::db::DbPool> = instance_db.clone();
 
     // Migrate legacy per-agent tasks to the global database on first run.
     spacebot::tasks::migration::migrate_legacy_tasks(&config.instance_dir, &instance_pool)
         .await
         .context("failed to migrate legacy tasks to global database")?;
 
-    // Wrap the SqlitePool into Arc<DbPool> for the per-store dispatch contract
-    // introduced in PR 11.2 (TaskStore takes Arc<DbPool>). The wider sweep that
-    // makes `instance_pool` itself Arc<DbPool> lands later in PR 11.2 alongside
-    // ApiState.instance_pool widening; until then, this construction site
-    // bridges. WikiStore + others still take SqlitePool until their per-store
-    // sweeps land.
-    let global_task_store = Arc::new(spacebot::tasks::TaskStore::new(Arc::new(
-        spacebot::db::DbPool::Sqlite(instance_pool.clone()),
-    )));
+    let global_task_store = Arc::new(spacebot::tasks::TaskStore::new(instance_pool.clone()));
 
     // Instance-wide wiki knowledge base.
-    let global_wiki_store = Arc::new(spacebot::wiki::WikiStore::new(Arc::new(
-        spacebot::db::DbPool::Sqlite(instance_pool.clone()),
-    )));
+    let global_wiki_store = Arc::new(spacebot::wiki::WikiStore::new(instance_pool.clone()));
 
     // Instance-level notification store for the dashboard inbox.
     let global_notification_store = Arc::new(spacebot::notifications::NotificationStore::new(
-        Arc::new(spacebot::db::DbPool::Sqlite(instance_pool.clone())),
+        instance_pool.clone(),
     ));
 
     // Instance-level shared project store. Replaces per-agent project stores.
     let global_project_store =
-        Arc::new(spacebot::projects::ProjectStore::new(Arc::new(
-            spacebot::db::DbPool::Sqlite(instance_pool.clone()),
-        )));
+        Arc::new(spacebot::projects::ProjectStore::new(instance_pool.clone()));
 
     // Migrate per-agent projects into the instance database on first run.
     spacebot::projects::migration::migrate_legacy_projects(&config.instance_dir, &instance_pool)
