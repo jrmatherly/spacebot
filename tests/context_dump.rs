@@ -70,9 +70,9 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         embedding_table,
         embedding_model,
     ));
-    let task_store = Arc::new(spacebot::tasks::TaskStore::new(
-        db.sqlite_pool().unwrap().clone(),
-    ));
+    let task_store = Arc::new(spacebot::tasks::TaskStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(db.sqlite_pool().unwrap().clone()),
+    )));
 
     let identity = spacebot::identity::Identity::load(&agent_config.workspace).await;
     let prompts =
@@ -114,9 +114,9 @@ async fn bootstrap_deps() -> anyhow::Result<(spacebot::AgentDeps, spacebot::conf
         llm_manager,
         mcp_manager,
         task_store,
-        project_store: Arc::new(spacebot::projects::ProjectStore::new(
-            db.sqlite_pool().unwrap().clone(),
-        )),
+        project_store: Arc::new(spacebot::projects::ProjectStore::new(Arc::new(
+            spacebot::db::DbPool::Sqlite(db.sqlite_pool().unwrap().clone()),
+        ))),
         cron_tool: None,
         runtime_config,
         event_tx,

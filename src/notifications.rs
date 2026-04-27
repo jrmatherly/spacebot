@@ -3,12 +3,21 @@
 //! Persists actionable events (task approvals, worker failures, cortex
 //! observations) to the global spacebot.db so the dashboard Inbox card always
 //! has up-to-date data, even after a page reload or reconnect.
+//!
+//! Per-method dispatch on `Arc<DbPool>` per Phase 11.2. Includes a Pattern C
+//! divergence in `insert()`: SQLite uses `INSERT OR IGNORE`; Postgres uses
+//! `INSERT ... ON CONFLICT DO NOTHING`. Both honor the partial unique index
+//! `idx_notifications_entity_active` so duplicate active notifications for
+//! the same entity are silently skipped.
 
+use crate::db::DbPool;
 use crate::error::Result;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
-use sqlx::{Row as _, SqlitePool};
+use sqlx::Row as _;
+
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,7 +112,7 @@ pub struct NotificationFilter {
 
 #[derive(Debug, Clone)]
 pub struct NotificationStore {
-    pool: SqlitePool,
+    pool: Arc<DbPool>,
 }
 
 const SELECT_COLUMNS: &str = "SELECT id, kind, severity, title, body, agent_id, \
@@ -111,38 +120,68 @@ const SELECT_COLUMNS: &str = "SELECT id, kind, severity, title, body, agent_id, 
     created_at, read_at, dismissed_at";
 
 impl NotificationStore {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: Arc<DbPool>) -> Self {
         Self { pool }
     }
 
     /// Insert a notification. Returns the new row, or `None` if a duplicate
     /// undismissed notification for the same entity already exists.
+    ///
+    /// Pattern C divergence: SQLite uses `INSERT OR IGNORE`; Postgres uses
+    /// `INSERT ... ON CONFLICT DO NOTHING`. Both interact correctly with the
+    /// partial unique index `idx_notifications_entity_active`, which only
+    /// covers rows where `dismissed_at IS NULL`.
     pub async fn insert(&self, n: NewNotification) -> Result<Option<Notification>> {
         let id = uuid::Uuid::new_v4().to_string();
         let metadata_json = n.metadata.as_ref().map(|m| m.to_string());
 
-        let affected = sqlx::query(
-            r#"
-            INSERT OR IGNORE INTO notifications
-                (id, kind, severity, title, body, agent_id,
-                 related_entity_type, related_entity_id, action_url, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(n.kind.as_str())
-        .bind(n.severity.as_str())
-        .bind(&n.title)
-        .bind(&n.body)
-        .bind(&n.agent_id)
-        .bind(&n.related_entity_type)
-        .bind(&n.related_entity_id)
-        .bind(&n.action_url)
-        .bind(&metadata_json)
-        .execute(&self.pool)
-        .await
-        .context("failed to insert notification")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO notifications
+                    (id, kind, severity, title, body, agent_id,
+                     related_entity_type, related_entity_id, action_url, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(n.kind.as_str())
+            .bind(n.severity.as_str())
+            .bind(&n.title)
+            .bind(&n.body)
+            .bind(&n.agent_id)
+            .bind(&n.related_entity_type)
+            .bind(&n.related_entity_id)
+            .bind(&n.action_url)
+            .bind(&metadata_json)
+            .execute(p)
+            .await
+            .context("failed to insert notification")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                r#"
+                INSERT INTO notifications
+                    (id, kind, severity, title, body, agent_id,
+                     related_entity_type, related_entity_id, action_url, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT DO NOTHING
+                "#,
+            )
+            .bind(&id)
+            .bind(n.kind.as_str())
+            .bind(n.severity.as_str())
+            .bind(&n.title)
+            .bind(&n.body)
+            .bind(&n.agent_id)
+            .bind(&n.related_entity_type)
+            .bind(&n.related_entity_id)
+            .bind(&n.action_url)
+            .bind(&metadata_json)
+            .execute(p)
+            .await
+            .context("failed to insert notification")?
+            .rows_affected(),
+        };
 
         if affected == 0 {
             return Ok(None);
@@ -152,17 +191,41 @@ impl NotificationStore {
     }
 
     pub async fn get_by_id(&self, id: &str) -> Result<Notification> {
-        let row = sqlx::query(&format!("{SELECT_COLUMNS} FROM notifications WHERE id = ?"))
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .context("failed to fetch notification by id")?;
-
-        notification_from_row(row)
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let row = sqlx::query(&format!("{SELECT_COLUMNS} FROM notifications WHERE id = ?"))
+                    .bind(id)
+                    .fetch_one(p)
+                    .await
+                    .context("failed to fetch notification by id")?;
+                notification_from_sqlite_row(row)
+            }
+            DbPool::Postgres(p) => {
+                let row = sqlx::query(&format!(
+                    "{SELECT_COLUMNS} FROM notifications WHERE id = $1"
+                ))
+                .bind(id)
+                .fetch_one(p)
+                .await
+                .context("failed to fetch notification by id")?;
+                notification_from_pg_row(row)
+            }
+        }
     }
 
     pub async fn list(&self, filter: NotificationFilter) -> Result<Vec<Notification>> {
+        // Build placeholder-aware dynamic SQL with the next_placeholder
+        // closure pattern established in TaskStore::list().
+        let dialect = self.pool.dialect();
         let mut query = format!("{SELECT_COLUMNS} FROM notifications WHERE 1=1");
+        let mut bind_index: usize = 0;
+        let mut next_placeholder = || -> String {
+            bind_index += 1;
+            match dialect {
+                crate::db::Dialect::Sqlite => "?".to_string(),
+                crate::db::Dialect::Postgres => format!("${bind_index}"),
+            }
+        };
 
         if filter.unread_only {
             query.push_str(" AND read_at IS NULL");
@@ -171,81 +234,151 @@ impl NotificationStore {
             query.push_str(" AND dismissed_at IS NULL");
         }
         if filter.agent_id.is_some() {
-            query.push_str(" AND agent_id = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND agent_id = {p}"));
         }
         if filter.kind.is_some() {
-            query.push_str(" AND kind = ?");
+            let p = next_placeholder();
+            query.push_str(&format!(" AND kind = {p}"));
         }
-        query.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+        let p_limit = next_placeholder();
+        let p_offset = next_placeholder();
+        query.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT {p_limit} OFFSET {p_offset}"
+        ));
 
-        let mut sql = sqlx::query(&query);
-        if let Some(ref agent_id) = filter.agent_id {
-            sql = sql.bind(agent_id);
+        let limit = filter.limit.unwrap_or(50).clamp(1, 500);
+        let offset = filter.offset.unwrap_or(0);
+
+        match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut sql = sqlx::query(&query);
+                if let Some(ref agent_id) = filter.agent_id {
+                    sql = sql.bind(agent_id);
+                }
+                if let Some(kind) = filter.kind {
+                    sql = sql.bind(kind.as_str());
+                }
+                sql.bind(limit)
+                    .bind(offset)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list notifications")?
+                    .into_iter()
+                    .map(notification_from_sqlite_row)
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                let mut sql = sqlx::query(&query);
+                if let Some(ref agent_id) = filter.agent_id {
+                    sql = sql.bind(agent_id);
+                }
+                if let Some(kind) = filter.kind {
+                    sql = sql.bind(kind.as_str());
+                }
+                sql.bind(limit)
+                    .bind(offset)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list notifications")?
+                    .into_iter()
+                    .map(notification_from_pg_row)
+                    .collect()
+            }
         }
-        if let Some(kind) = filter.kind {
-            sql = sql.bind(kind.as_str());
-        }
-        sql = sql.bind(filter.limit.unwrap_or(50).clamp(1, 500));
-        sql = sql.bind(filter.offset.unwrap_or(0));
-
-        let rows = sql
-            .fetch_all(&self.pool)
-            .await
-            .context("failed to list notifications")?;
-
-        rows.into_iter().map(notification_from_row).collect()
     }
 
     pub async fn unread_count(&self) -> Result<i64> {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL AND dismissed_at IS NULL",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .context("failed to count unread notifications")?;
+        // Pattern A: identical SQL on both backends.
+        let sql =
+            "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL AND dismissed_at IS NULL";
+        let count: i64 = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query_scalar(sql)
+                .fetch_one(p)
+                .await
+                .context("failed to count unread notifications")?,
+            DbPool::Postgres(p) => sqlx::query_scalar(sql)
+                .fetch_one(p)
+                .await
+                .context("failed to count unread notifications")?,
+        };
         Ok(count)
     }
 
     /// Mark a single notification as read. Returns true if it was updated.
     pub async fn mark_read(&self, id: &str) -> Result<bool> {
-        let affected = sqlx::query(
-            "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE id = ? AND read_at IS NULL",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .context("failed to mark notification read")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+                 WHERE id = ? AND read_at IS NULL",
+            )
+            .bind(id)
+            .execute(p)
+            .await
+            .context("failed to mark notification read")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE notifications SET read_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') \
+                 WHERE id = $1 AND read_at IS NULL",
+            )
+            .bind(id)
+            .execute(p)
+            .await
+            .context("failed to mark notification read")?
+            .rows_affected(),
+        };
         Ok(affected > 0)
     }
 
     /// Mark all undismissed notifications as read. Returns the count updated.
     pub async fn mark_all_read(&self) -> Result<u64> {
-        let affected = sqlx::query(
-            "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE read_at IS NULL AND dismissed_at IS NULL",
-        )
-        .execute(&self.pool)
-        .await
-        .context("failed to mark all notifications read")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE notifications SET read_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+                 WHERE read_at IS NULL AND dismissed_at IS NULL",
+            )
+            .execute(p)
+            .await
+            .context("failed to mark all notifications read")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE notifications SET read_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') \
+                 WHERE read_at IS NULL AND dismissed_at IS NULL",
+            )
+            .execute(p)
+            .await
+            .context("failed to mark all notifications read")?
+            .rows_affected(),
+        };
         Ok(affected)
     }
 
     /// Dismiss a single notification. Returns true if it was updated.
     pub async fn dismiss(&self, id: &str) -> Result<bool> {
-        let affected = sqlx::query(
-            "UPDATE notifications SET \
-             dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), \
-             read_at = COALESCE(read_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) \
-             WHERE id = ? AND dismissed_at IS NULL",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await
-        .context("failed to dismiss notification")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE notifications SET \
+                 dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), \
+                 read_at = COALESCE(read_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) \
+                 WHERE id = ? AND dismissed_at IS NULL",
+            )
+            .bind(id)
+            .execute(p)
+            .await
+            .context("failed to dismiss notification")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE notifications SET \
+                 dismissed_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), \
+                 read_at = COALESCE(read_at, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')) \
+                 WHERE id = $1 AND dismissed_at IS NULL",
+            )
+            .bind(id)
+            .execute(p)
+            .await
+            .context("failed to dismiss notification")?
+            .rows_affected(),
+        };
         Ok(affected > 0)
     }
 
@@ -257,33 +390,59 @@ impl NotificationStore {
         entity_type: &str,
         entity_id: &str,
     ) -> Result<u64> {
-        let affected = sqlx::query(
-            "UPDATE notifications SET \
-             dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), \
-             read_at = COALESCE(read_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) \
-             WHERE kind = ? AND related_entity_type = ? AND related_entity_id = ? \
-             AND dismissed_at IS NULL",
-        )
-        .bind(kind)
-        .bind(entity_type)
-        .bind(entity_id)
-        .execute(&self.pool)
-        .await
-        .context("failed to dismiss notifications by entity")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE notifications SET \
+                 dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), \
+                 read_at = COALESCE(read_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) \
+                 WHERE kind = ? AND related_entity_type = ? AND related_entity_id = ? \
+                 AND dismissed_at IS NULL",
+            )
+            .bind(kind)
+            .bind(entity_type)
+            .bind(entity_id)
+            .execute(p)
+            .await
+            .context("failed to dismiss notifications by entity")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE notifications SET \
+                 dismissed_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), \
+                 read_at = COALESCE(read_at, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')) \
+                 WHERE kind = $1 AND related_entity_type = $2 AND related_entity_id = $3 \
+                 AND dismissed_at IS NULL",
+            )
+            .bind(kind)
+            .bind(entity_type)
+            .bind(entity_id)
+            .execute(p)
+            .await
+            .context("failed to dismiss notifications by entity")?
+            .rows_affected(),
+        };
         Ok(affected)
     }
 
     /// Dismiss all already-read notifications. Returns the count updated.
     pub async fn dismiss_read(&self) -> Result<u64> {
-        let affected = sqlx::query(
-            "UPDATE notifications SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
-             WHERE read_at IS NOT NULL AND dismissed_at IS NULL",
-        )
-        .execute(&self.pool)
-        .await
-        .context("failed to dismiss read notifications")?
-        .rows_affected();
+        let affected = match &*self.pool {
+            DbPool::Sqlite(p) => sqlx::query(
+                "UPDATE notifications SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+                 WHERE read_at IS NOT NULL AND dismissed_at IS NULL",
+            )
+            .execute(p)
+            .await
+            .context("failed to dismiss read notifications")?
+            .rows_affected(),
+            DbPool::Postgres(p) => sqlx::query(
+                "UPDATE notifications SET dismissed_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') \
+                 WHERE read_at IS NOT NULL AND dismissed_at IS NULL",
+            )
+            .execute(p)
+            .await
+            .context("failed to dismiss read notifications")?
+            .rows_affected(),
+        };
         Ok(affected)
     }
 }
@@ -292,7 +451,35 @@ impl NotificationStore {
 // Row mapping
 // ---------------------------------------------------------------------------
 
-fn notification_from_row(row: sqlx::sqlite::SqliteRow) -> Result<Notification> {
+fn notification_from_sqlite_row(row: sqlx::sqlite::SqliteRow) -> Result<Notification> {
+    Ok(Notification {
+        id: row
+            .try_get("id")
+            .context("failed to read notification id")?,
+        kind: row
+            .try_get("kind")
+            .context("failed to read notification kind")?,
+        severity: row
+            .try_get("severity")
+            .context("failed to read notification severity")?,
+        title: row
+            .try_get("title")
+            .context("failed to read notification title")?,
+        body: row.try_get("body").ok(),
+        agent_id: row.try_get("agent_id").ok(),
+        related_entity_type: row.try_get("related_entity_type").ok(),
+        related_entity_id: row.try_get("related_entity_id").ok(),
+        action_url: row.try_get("action_url").ok(),
+        metadata: row.try_get("metadata").ok(),
+        created_at: row
+            .try_get("created_at")
+            .context("failed to read notification created_at")?,
+        read_at: row.try_get("read_at").ok(),
+        dismissed_at: row.try_get("dismissed_at").ok(),
+    })
+}
+
+fn notification_from_pg_row(row: sqlx::postgres::PgRow) -> Result<Notification> {
     Ok(Notification {
         id: row
             .try_get("id")

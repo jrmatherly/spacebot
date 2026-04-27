@@ -103,7 +103,9 @@ async fn send_agent_message_denies_when_can_link_channel_denies() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(pool.clone())),
+        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
+            pool.clone(),
+        )))),
         ConversationLogger::new(pool.clone()),
         Some(pool.clone()),
         alice,
@@ -135,7 +137,9 @@ async fn send_agent_message_skips_policy_when_pool_none() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(pool.clone())),
+        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
+            pool.clone(),
+        )))),
         ConversationLogger::new(pool.clone()),
         None,
         AuthContext::legacy_static(),
@@ -211,7 +215,9 @@ async fn send_agent_message_owner_of_both_agents_passes_policy_gate() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(pool.clone())),
+        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
+            pool.clone(),
+        )))),
         ConversationLogger::new(pool.clone()),
         Some(pool.clone()),
         alice,
@@ -252,7 +258,9 @@ async fn send_agent_message_system_principal_bypasses_policy() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(pool.clone())),
+        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
+            pool.clone(),
+        )))),
         ConversationLogger::new(pool.clone()),
         Some(pool.clone()),
         system_ctx(),

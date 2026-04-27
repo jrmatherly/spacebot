@@ -123,10 +123,14 @@ pub struct ApiState {
     pub project_store: ArcSwap<Option<Arc<ProjectStore>>>,
     /// Instance-level notification store for the dashboard inbox.
     pub notification_store: ArcSwap<Option<Arc<NotificationStore>>>,
-    /// Instance-level SQLite pool (spacebot.db). Populated at startup alongside
-    /// the store wrappers above so the Entra middleware can upsert user rows
-    /// on successful auth without having to route through a store.
-    pub instance_pool: ArcSwap<Option<sqlx::SqlitePool>>,
+    /// Instance-tier database pool (spacebot.db). Holds `Arc<DbPool>` so
+    /// handlers and the Entra middleware can dispatch on backend variant.
+    /// Populated at startup by `set_instance_pool` alongside the store
+    /// wrappers above. PR 11.2 widened this from `sqlx::SqlitePool` to
+    /// `Arc<DbPool>`; handlers consume via `.load().as_ref().clone()`
+    /// which yields `Option<Arc<DbPool>>`. Auto-deref through `Arc` produces
+    /// `&DbPool` at call sites without explicit dispatch.
+    pub instance_pool: ArcSwap<Option<Arc<crate::db::DbPool>>>,
     /// Instance-level audit appender. Attached atomically with the instance
     /// pool via `set_instance_pool` (A-13: production construction lives at
     /// that one call-site). `None` during the startup window before the pool
@@ -487,7 +491,7 @@ impl ApiState {
             .run(&pool)
             .await
             .expect("global migrations apply cleanly");
-        state.set_instance_pool(pool.clone());
+        state.set_instance_pool(Arc::new(crate::db::DbPool::Sqlite(pool.clone())));
 
         let mock: Arc<dyn crate::auth::jwks::DynJwtValidator> =
             Arc::new(crate::auth::testing::MockValidator::new());
@@ -1115,25 +1119,33 @@ impl ApiState {
         self.notification_store.store(Arc::new(Some(store)));
     }
 
-    /// Set the instance-level SQLite pool. The Entra middleware uses this to
-    /// upsert the user row on successful auth. Handlers should continue to
-    /// reach the instance database via the typed stores (TaskStore, etc.)
-    /// rather than this raw pool.
-    pub fn set_instance_pool(&self, pool: sqlx::SqlitePool) {
+    /// Set the instance-tier database pool. The Entra middleware uses this
+    /// to upsert the user row on successful auth. Handlers should reach
+    /// the instance database via the typed stores (TaskStore, etc.) rather
+    /// than this raw pool.
+    ///
+    /// PR 11.2: signature widened from `sqlx::SqlitePool` to `Arc<DbPool>`.
+    /// Test fixtures wrap a fresh `SqlitePool` into `Arc::new(DbPool::Sqlite(...))`
+    /// at the call site (no Option Fixture-A bridge here anymore — the bridge
+    /// served PR 11.2 Tasks 6-12; this widening retires it).
+    pub fn set_instance_pool(&self, pool: Arc<crate::db::DbPool>) {
         // A-13: the AuditAppender singleton is constructed here, the only
         // call-site where both ApiState and a pool are in scope. The
-        // pub(crate) constructor at crate::audit::AuditAppender::new enforces
-        // this at the module boundary.
+        // pub(crate) constructor at crate::audit::AuditAppender::new
+        // enforces this at the module boundary.
         //
-        // The appender is self-contained: it clones the pool into itself at
-        // construction (via AuditAppender::new(pool.clone())) and holds
-        // its own handle forever. We attach the appender BEFORE the outer
-        // `instance_pool` store so a racing observer sees either the
-        // fully-attached pair OR the brief (audit=Some, instance_pool=None)
-        // window. In the latter case, audit writes still succeed because
-        // the appender owns its pool handle; callers that read
-        // `state.instance_pool` directly (non-audit code paths) see None
-        // and no-op as designed.
+        // Atomic-ordering invariant (do NOT reorder these stores): the
+        // appender is attached BEFORE the outer `instance_pool` store so a
+        // racing observer that reads instance_pool=Some is guaranteed to
+        // see audit=Some too. The reverse window (audit=Some,
+        // instance_pool=None) is brief and benign — the appender owns its
+        // own Arc clone of the pool, so audit writes succeed independently.
+        // Callers that read `state.instance_pool` directly (non-audit
+        // paths) see None and no-op as designed.
+        //
+        // The two stores end up holding Arc clones of the SAME `DbPool`
+        // instance (Arc::clone is cheap and the underlying sqlx::*Pool is
+        // already cheaply-cloneable; no double-pool waste).
         let appender = Arc::new(crate::audit::AuditAppender::new(pool.clone()));
         self.audit.store(Arc::new(Some(appender)));
         self.instance_pool.store(Arc::new(Some(pool)));

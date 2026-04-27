@@ -1,12 +1,27 @@
 //! Persistence helpers for the authz data model. Thin wrappers around sqlx
 //! queries. Business rules (who may read or write) land in Phase 4.
 //!
-//! All operations target the instance-level DB (`SqlitePool` for `spacebot.db`),
-//! NOT a per-agent DB. Resource-level ownership rows cross-reference
-//! per-agent resources via (resource_type, resource_id), which is why the
-//! instance DB cannot use FKs into per-agent tables. See
+//! All operations target the instance-level DB. As of Phase 11.2 the
+//! `pool` parameter is `&DbPool` so each helper dispatches per-backend
+//! between SQLite and Postgres. Resource-level ownership rows
+//! cross-reference per-agent resources via (resource_type, resource_id),
+//! which is why the instance DB cannot use FKs into per-agent tables. See
 //! `docs/design-docs/entra-backfill-strategy.md` for the sweep-based orphan
 //! policy this creates.
+//!
+//! # Backend dispatch
+//!
+//! Every helper that touches sqlx matches on the `DbPool` variant. SQL
+//! diverges in two places: placeholder syntax (`?` vs `$N`) and the
+//! `now()` expression (`strftime('%Y-%m-%dT%H:%M:%fZ', 'now')` vs
+//! `to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`).
+//! The shared `ON CONFLICT(col) DO UPDATE SET` syntax works on both
+//! backends (SQLite 3.24+ adopted it; Postgres has had it since 9.5).
+//!
+//! Postgres SELECTs cast TIMESTAMPTZ columns through `to_char(...)` so
+//! `sqlx::FromRow` derives on `UserRecord`/`TeamRecord`/
+//! `ResourceOwnershipRecord` (all-`String` shapes) work identically
+//! across both arms.
 //!
 //! # Error taxonomy
 //!
@@ -23,11 +38,30 @@
 //! original `sqlx::Error`.
 
 use anyhow::Context as _;
-use sqlx::SqlitePool;
 use thiserror::Error;
 
 use crate::auth::context::AuthContext;
 use crate::auth::principals::{ResourceOwnershipRecord, TeamRecord, UserRecord, Visibility};
+use crate::db::DbPool;
+
+/// Postgres timestamp-column projection used in every SELECT against the
+/// instance DB so `FromRow` derives that expect `String` columns work
+/// uniformly. SQLite arms keep `SELECT *` because their TEXT columns
+/// already deserialize as `String`.
+const PG_USERS_COLUMNS: &str = "principal_key, tenant_id, object_id, principal_type, \
+    display_name, display_email, status, \
+    to_char(last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS last_seen_at, \
+    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
+    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
+
+const PG_TEAMS_COLUMNS: &str = "id, external_id, display_name, status, \
+    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
+    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
+
+const PG_RESOURCE_OWNERSHIP_COLUMNS: &str = "resource_type, resource_id, owner_agent_id, \
+    owner_principal_key, visibility, shared_with_team_id, \
+    to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, \
+    to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS updated_at";
 
 /// Errors returned by this module. Wraps `sqlx::Error` but carries a distinct
 /// variant for the one domain-level invariant we enforce here: legacy-static
@@ -54,7 +88,7 @@ pub enum RepositoryError {
 /// [`PrincipalType::LegacyStatic`][crate::auth::context::PrincipalType::LegacyStatic].
 /// Those principals do not get user rows. Callers should not retry this error.
 pub async fn upsert_user_from_auth(
-    pool: &SqlitePool,
+    pool: &DbPool,
     ctx: &AuthContext,
 ) -> Result<UserRecord, RepositoryError> {
     use crate::auth::context::PrincipalType;
@@ -66,67 +100,134 @@ pub async fn upsert_user_from_auth(
     };
     let principal_key = ctx.principal_key();
 
-    sqlx::query(
-        r#"
-        INSERT INTO users (
-            principal_key, tenant_id, object_id, principal_type,
-            display_name, display_email, status, last_seen_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, 'active', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        ON CONFLICT(principal_key) DO UPDATE SET
-            display_name = excluded.display_name,
-            display_email = excluded.display_email,
-            last_seen_at = excluded.last_seen_at,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        "#,
-    )
-    .bind(&principal_key)
-    .bind(ctx.tid.as_ref())
-    .bind(ctx.oid.as_ref())
-    .bind(principal_type)
-    .bind(ctx.display_name.as_deref())
-    .bind(ctx.display_email.as_deref())
-    .execute(pool)
-    .await?;
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO users (
+                    principal_key, tenant_id, object_id, principal_type,
+                    display_name, display_email, status, last_seen_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'active', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                ON CONFLICT(principal_key) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    display_email = excluded.display_email,
+                    last_seen_at = excluded.last_seen_at,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                "#,
+            )
+            .bind(&principal_key)
+            .bind(ctx.tid.as_ref())
+            .bind(ctx.oid.as_ref())
+            .bind(principal_type)
+            .bind(ctx.display_name.as_deref())
+            .bind(ctx.display_email.as_deref())
+            .execute(p)
+            .await?;
 
-    let row: UserRecord = sqlx::query_as("SELECT * FROM users WHERE principal_key = ?")
-        .bind(&principal_key)
-        .fetch_one(pool)
-        .await?;
-    Ok(row)
+            let row: UserRecord = sqlx::query_as("SELECT * FROM users WHERE principal_key = ?")
+                .bind(&principal_key)
+                .fetch_one(p)
+                .await?;
+            Ok(row)
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO users (
+                    principal_key, tenant_id, object_id, principal_type,
+                    display_name, display_email, status, last_seen_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'active', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+                ON CONFLICT(principal_key) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    display_email = excluded.display_email,
+                    last_seen_at = excluded.last_seen_at,
+                    updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                "#,
+            )
+            .bind(&principal_key)
+            .bind(ctx.tid.as_ref())
+            .bind(ctx.oid.as_ref())
+            .bind(principal_type)
+            .bind(ctx.display_name.as_deref())
+            .bind(ctx.display_email.as_deref())
+            .execute(p)
+            .await?;
+
+            let row: UserRecord = sqlx::query_as(&format!(
+                "SELECT {PG_USERS_COLUMNS} FROM users WHERE principal_key = $1"
+            ))
+            .bind(&principal_key)
+            .fetch_one(p)
+            .await?;
+            Ok(row)
+        }
+    }
 }
 
 /// Upsert a team keyed by Entra group `external_id`. Called by the Graph
 /// reconciliation loop when a new group is encountered.
 pub async fn upsert_team(
-    pool: &SqlitePool,
+    pool: &DbPool,
     external_id: &str,
     display_name: &str,
 ) -> anyhow::Result<TeamRecord> {
     let id = format!("team-{external_id}");
-    sqlx::query(
-        r#"
-        INSERT INTO teams (id, external_id, display_name, status)
-        VALUES (?, ?, ?, 'active')
-        ON CONFLICT(external_id) DO UPDATE SET
-            display_name = excluded.display_name,
-            status = 'active',
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        "#,
-    )
-    .bind(&id)
-    .bind(external_id)
-    .bind(display_name)
-    .execute(pool)
-    .await
-    .with_context(|| format!("upsert team external_id={external_id}"))?;
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO teams (id, external_id, display_name, status)
+                VALUES (?, ?, ?, 'active')
+                ON CONFLICT(external_id) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    status = 'active',
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                "#,
+            )
+            .bind(&id)
+            .bind(external_id)
+            .bind(display_name)
+            .execute(p)
+            .await
+            .with_context(|| format!("upsert team external_id={external_id}"))?;
 
-    let row: TeamRecord = sqlx::query_as("SELECT * FROM teams WHERE external_id = ?")
-        .bind(external_id)
-        .fetch_one(pool)
-        .await
-        .with_context(|| format!("read back team external_id={external_id}"))?;
-    Ok(row)
+            let row: TeamRecord = sqlx::query_as("SELECT * FROM teams WHERE external_id = ?")
+                .bind(external_id)
+                .fetch_one(p)
+                .await
+                .with_context(|| format!("read back team external_id={external_id}"))?;
+            Ok(row)
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO teams (id, external_id, display_name, status)
+                VALUES ($1, $2, $3, 'active')
+                ON CONFLICT(external_id) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    status = 'active',
+                    updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                "#,
+            )
+            .bind(&id)
+            .bind(external_id)
+            .bind(display_name)
+            .execute(p)
+            .await
+            .with_context(|| format!("upsert team external_id={external_id}"))?;
+
+            let row: TeamRecord = sqlx::query_as(&format!(
+                "SELECT {PG_TEAMS_COLUMNS} FROM teams WHERE external_id = $1"
+            ))
+            .bind(external_id)
+            .fetch_one(p)
+            .await
+            .with_context(|| format!("read back team external_id={external_id}"))?;
+            Ok(row)
+        }
+    }
 }
 
 /// Update the display-photo cache for an existing user (A-19). Writes
@@ -143,25 +244,47 @@ pub async fn upsert_team(
 /// Returns `anyhow::Result` per the sibling pattern documented at the
 /// top of the file.
 pub async fn upsert_user_photo(
-    pool: &SqlitePool,
+    pool: &DbPool,
     principal_key: &str,
     photo_b64: Option<&str>,
 ) -> anyhow::Result<()> {
-    let result = sqlx::query(
-        r#"
-        UPDATE users
-        SET display_photo_b64 = ?,
-            photo_updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE principal_key = ?
-        "#,
-    )
-    .bind(photo_b64)
-    .bind(principal_key)
-    .execute(pool)
-    .await
-    .with_context(|| format!("update user photo for {principal_key}"))?;
-    if result.rows_affected() == 0 {
+    let rows_affected = match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(
+                r#"
+                UPDATE users
+                SET display_photo_b64 = ?,
+                    photo_updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE principal_key = ?
+                "#,
+            )
+            .bind(photo_b64)
+            .bind(principal_key)
+            .execute(p)
+            .await
+            .with_context(|| format!("update user photo for {principal_key}"))?
+            .rows_affected()
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(
+                r#"
+                UPDATE users
+                SET display_photo_b64 = $1,
+                    photo_updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+                    updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                WHERE principal_key = $2
+                "#,
+            )
+            .bind(photo_b64)
+            .bind(principal_key)
+            .execute(p)
+            .await
+            .with_context(|| format!("update user photo for {principal_key}"))?
+            .rows_affected()
+        }
+    };
+    if rows_affected == 0 {
         anyhow::bail!(
             "upsert_user_photo: no users row for principal_key={principal_key} \
              (photo sync raced ahead of user upsert; next request retries)"
@@ -173,7 +296,7 @@ pub async fn upsert_user_photo(
 /// Upsert resource ownership at resource-creation time.
 /// Callers: every handler that creates an owned resource (Phase 4).
 pub async fn set_ownership(
-    pool: &SqlitePool,
+    pool: &DbPool,
     resource_type: &str,
     resource_id: &str,
     owner_agent_id: Option<&str>,
@@ -181,29 +304,57 @@ pub async fn set_ownership(
     visibility: Visibility,
     shared_with_team_id: Option<&str>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO resource_ownership (
-            resource_type, resource_id, owner_agent_id,
-            owner_principal_key, visibility, shared_with_team_id
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO resource_ownership (
+                    resource_type, resource_id, owner_agent_id,
+                    owner_principal_key, visibility, shared_with_team_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resource_type, resource_id) DO UPDATE SET
+                    owner_agent_id = excluded.owner_agent_id,
+                    owner_principal_key = excluded.owner_principal_key,
+                    visibility = excluded.visibility,
+                    shared_with_team_id = excluded.shared_with_team_id,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                "#,
+            )
+            .bind(resource_type)
+            .bind(resource_id)
+            .bind(owner_agent_id)
+            .bind(owner_principal_key)
+            .bind(visibility.as_str())
+            .bind(shared_with_team_id)
+            .execute(p)
+            .await
+        }
+        DbPool::Postgres(p) => sqlx::query(
+            r#"
+                INSERT INTO resource_ownership (
+                    resource_type, resource_id, owner_agent_id,
+                    owner_principal_key, visibility, shared_with_team_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT(resource_type, resource_id) DO UPDATE SET
+                    owner_agent_id = excluded.owner_agent_id,
+                    owner_principal_key = excluded.owner_principal_key,
+                    visibility = excluded.visibility,
+                    shared_with_team_id = excluded.shared_with_team_id,
+                    updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                "#,
         )
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(resource_type, resource_id) DO UPDATE SET
-            owner_agent_id = excluded.owner_agent_id,
-            owner_principal_key = excluded.owner_principal_key,
-            visibility = excluded.visibility,
-            shared_with_team_id = excluded.shared_with_team_id,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        "#,
-    )
-    .bind(resource_type)
-    .bind(resource_id)
-    .bind(owner_agent_id)
-    .bind(owner_principal_key)
-    .bind(visibility.as_str())
-    .bind(shared_with_team_id)
-    .execute(pool)
-    .await
+        .bind(resource_type)
+        .bind(resource_id)
+        .bind(owner_agent_id)
+        .bind(owner_principal_key)
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .execute(p)
+        .await
+        .map(|_| Default::default()),
+    }
     .with_context(|| {
         format!("set ownership resource={resource_type}:{resource_id} owner={owner_principal_key}")
     })?;
@@ -225,47 +376,78 @@ pub async fn set_ownership(
 /// ownership row under the caller's principal (which would be a silent
 /// re-parent of a pre-existing unowned resource to the wrong owner).
 pub async fn update_visibility_only(
-    pool: &SqlitePool,
+    pool: &DbPool,
     resource_type: &str,
     resource_id: &str,
     visibility: Visibility,
     shared_with_team_id: Option<&str>,
 ) -> anyhow::Result<bool> {
-    let result = sqlx::query(
-        r#"
-        UPDATE resource_ownership
-        SET visibility = ?,
-            shared_with_team_id = ?,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE resource_type = ? AND resource_id = ?
-        "#,
-    )
-    .bind(visibility.as_str())
-    .bind(shared_with_team_id)
-    .bind(resource_type)
-    .bind(resource_id)
-    .execute(pool)
-    .await
-    .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?;
-    Ok(result.rows_affected() > 0)
+    let rows_affected = match pool {
+        DbPool::Sqlite(p) => sqlx::query(
+            r#"
+                UPDATE resource_ownership
+                SET visibility = ?,
+                    shared_with_team_id = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE resource_type = ? AND resource_id = ?
+                "#,
+        )
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .bind(resource_type)
+        .bind(resource_id)
+        .execute(p)
+        .await
+        .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
+        .rows_affected(),
+        DbPool::Postgres(p) => sqlx::query(
+            r#"
+                UPDATE resource_ownership
+                SET visibility = $1,
+                    shared_with_team_id = $2,
+                    updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                WHERE resource_type = $3 AND resource_id = $4
+                "#,
+        )
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .bind(resource_type)
+        .bind(resource_id)
+        .execute(p)
+        .await
+        .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
+        .rows_affected(),
+    };
+    Ok(rows_affected > 0)
 }
 
 /// Read ownership. Returns `None` if the resource is not owned-tracked (e.g.,
 /// pre-existing resource not yet backfilled). See
 /// `docs/design-docs/entra-backfill-strategy.md` for the Phase 4 policy.
 pub async fn get_ownership(
-    pool: &SqlitePool,
+    pool: &DbPool,
     resource_type: &str,
     resource_id: &str,
 ) -> anyhow::Result<Option<ResourceOwnershipRecord>> {
-    let row = sqlx::query_as::<_, ResourceOwnershipRecord>(
-        "SELECT * FROM resource_ownership WHERE resource_type = ? AND resource_id = ?",
-    )
-    .bind(resource_type)
-    .bind(resource_id)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("read ownership resource={resource_type}:{resource_id}"))?;
+    let row = match pool {
+        DbPool::Sqlite(p) => sqlx::query_as::<_, ResourceOwnershipRecord>(
+            "SELECT * FROM resource_ownership WHERE resource_type = ? AND resource_id = ?",
+        )
+        .bind(resource_type)
+        .bind(resource_id)
+        .fetch_optional(p)
+        .await
+        .with_context(|| format!("read ownership resource={resource_type}:{resource_id}"))?,
+        DbPool::Postgres(p) => sqlx::query_as::<_, ResourceOwnershipRecord>(&format!(
+            "SELECT {PG_RESOURCE_OWNERSHIP_COLUMNS} FROM resource_ownership \
+             WHERE resource_type = $1 AND resource_id = $2"
+        ))
+        .bind(resource_type)
+        .bind(resource_id)
+        .fetch_optional(p)
+        .await
+        .with_context(|| format!("read ownership resource={resource_type}:{resource_id}"))?,
+    };
     Ok(row)
 }
 
@@ -284,32 +466,70 @@ pub async fn get_ownership(
 /// Cited by function name rather than line number so the citation survives
 /// unrelated edits to the memory store.
 pub async fn list_ownerships_by_ids(
-    pool: &SqlitePool,
+    pool: &DbPool,
     resource_type: &str,
     resource_ids: &[String],
 ) -> anyhow::Result<std::collections::HashMap<String, ResourceOwnershipRecord>> {
     if resource_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let placeholders: String = resource_ids
+    // Placeholder sequence: $1 reserves resource_type, then $2..$N for ids.
+    // SQLite uses `?` everywhere.
+    let dialect = pool.dialect();
+    let mut bind_index: usize = 1;
+    let mut next_placeholder = || -> String {
+        bind_index += 1;
+        match dialect {
+            crate::db::Dialect::Sqlite => "?".to_string(),
+            crate::db::Dialect::Postgres => format!("${bind_index}"),
+        }
+    };
+    let id_placeholders: String = resource_ids
         .iter()
-        .map(|_| "?")
+        .map(|_| next_placeholder())
         .collect::<Vec<_>>()
         .join(",");
-    let query_str = format!(
-        "SELECT * FROM resource_ownership \
-         WHERE resource_type = ? AND resource_id IN ({placeholders})"
-    );
-    let mut query = sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
-    for id in resource_ids {
-        query = query.bind(id);
-    }
-    let rows = query.fetch_all(pool).await.with_context(|| {
-        format!(
-            "batch read ownership resource_type={resource_type} count={}",
-            resource_ids.len()
-        )
-    })?;
+    let rt_placeholder = match dialect {
+        crate::db::Dialect::Sqlite => "?".to_string(),
+        crate::db::Dialect::Postgres => "$1".to_string(),
+    };
+
+    let rows: Vec<ResourceOwnershipRecord> = match pool {
+        DbPool::Sqlite(p) => {
+            let query_str = format!(
+                "SELECT * FROM resource_ownership \
+                 WHERE resource_type = {rt_placeholder} AND resource_id IN ({id_placeholders})"
+            );
+            let mut q =
+                sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
+            for id in resource_ids {
+                q = q.bind(id);
+            }
+            q.fetch_all(p).await.with_context(|| {
+                format!(
+                    "batch read ownership resource_type={resource_type} count={}",
+                    resource_ids.len()
+                )
+            })?
+        }
+        DbPool::Postgres(p) => {
+            let query_str = format!(
+                "SELECT {PG_RESOURCE_OWNERSHIP_COLUMNS} FROM resource_ownership \
+                 WHERE resource_type = {rt_placeholder} AND resource_id IN ({id_placeholders})"
+            );
+            let mut q =
+                sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
+            for id in resource_ids {
+                q = q.bind(id);
+            }
+            q.fetch_all(p).await.with_context(|| {
+                format!(
+                    "batch read ownership resource_type={resource_type} count={}",
+                    resource_ids.len()
+                )
+            })?
+        }
+    };
     Ok(rows
         .into_iter()
         .map(|r| (r.resource_id.clone(), r))
@@ -320,22 +540,50 @@ pub async fn list_ownerships_by_ids(
 /// to resolve `shared_with_team_id` references into display names. Returns a
 /// map keyed by `id`. Empty input short-circuits without a roundtrip.
 pub async fn get_teams_by_ids(
-    pool: &SqlitePool,
+    pool: &DbPool,
     team_ids: &[String],
 ) -> anyhow::Result<std::collections::HashMap<String, TeamRecord>> {
     if team_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let placeholders: String = team_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let query_str = format!("SELECT * FROM teams WHERE id IN ({placeholders})");
-    let mut query = sqlx::query_as::<_, TeamRecord>(&query_str);
-    for id in team_ids {
-        query = query.bind(id);
-    }
-    let rows = query
-        .fetch_all(pool)
-        .await
-        .with_context(|| format!("batch read teams count={}", team_ids.len()))?;
+    let dialect = pool.dialect();
+    let mut bind_index: usize = 0;
+    let mut next_placeholder = || -> String {
+        bind_index += 1;
+        match dialect {
+            crate::db::Dialect::Sqlite => "?".to_string(),
+            crate::db::Dialect::Postgres => format!("${bind_index}"),
+        }
+    };
+    let placeholders: String = team_ids
+        .iter()
+        .map(|_| next_placeholder())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let rows: Vec<TeamRecord> = match pool {
+        DbPool::Sqlite(p) => {
+            let query_str = format!("SELECT * FROM teams WHERE id IN ({placeholders})");
+            let mut q = sqlx::query_as::<_, TeamRecord>(&query_str);
+            for id in team_ids {
+                q = q.bind(id);
+            }
+            q.fetch_all(p)
+                .await
+                .with_context(|| format!("batch read teams count={}", team_ids.len()))?
+        }
+        DbPool::Postgres(p) => {
+            let query_str =
+                format!("SELECT {PG_TEAMS_COLUMNS} FROM teams WHERE id IN ({placeholders})");
+            let mut q = sqlx::query_as::<_, TeamRecord>(&query_str);
+            for id in team_ids {
+                q = q.bind(id);
+            }
+            q.fetch_all(p)
+                .await
+                .with_context(|| format!("batch read teams count={}", team_ids.len()))?
+        }
+    };
     Ok(rows.into_iter().map(|r| (r.id.clone(), r)).collect())
 }
 
@@ -351,15 +599,25 @@ pub async fn get_teams_by_ids(
 /// additive migration on `teams` does not silently widen the query's
 /// result set, and the projection invariant lives at the SQL layer
 /// (not just the response-mapping step).
-pub async fn list_teams(pool: &SqlitePool) -> anyhow::Result<Vec<TeamRecord>> {
-    sqlx::query_as::<_, TeamRecord>(
-        "SELECT id, external_id, display_name, status, created_at, updated_at \
-         FROM teams WHERE status = 'active' \
-         ORDER BY display_name, id",
-    )
-    .fetch_all(pool)
-    .await
-    .context("list active teams")
+pub async fn list_teams(pool: &DbPool) -> anyhow::Result<Vec<TeamRecord>> {
+    match pool {
+        DbPool::Sqlite(p) => sqlx::query_as::<_, TeamRecord>(
+            "SELECT id, external_id, display_name, status, created_at, updated_at \
+             FROM teams WHERE status = 'active' \
+             ORDER BY display_name, id",
+        )
+        .fetch_all(p)
+        .await
+        .context("list active teams"),
+        DbPool::Postgres(p) => sqlx::query_as::<_, TeamRecord>(&format!(
+            "SELECT {PG_TEAMS_COLUMNS} \
+             FROM teams WHERE status = 'active' \
+             ORDER BY display_name, id"
+        ))
+        .fetch_all(p)
+        .await
+        .context("list active teams"),
+    }
 }
 
 /// List `resource_id` values the given principal owns directly for the given
@@ -374,24 +632,40 @@ pub async fn list_teams(pool: &SqlitePool) -> anyhow::Result<Vec<TeamRecord>> {
 /// Ordered by `resource_id` for a deterministic result across invocations.
 /// Callers that need a set-membership check can `.collect::<HashSet<_>>()`.
 pub async fn list_resource_ids_owned_by(
-    pool: &SqlitePool,
+    pool: &DbPool,
     principal_key: &str,
     resource_type: &str,
 ) -> anyhow::Result<Vec<String>> {
-    let ids: Vec<String> = sqlx::query_scalar(
-        "SELECT resource_id FROM resource_ownership \
-         WHERE owner_principal_key = ? AND resource_type = ? \
-         ORDER BY resource_id",
-    )
-    .bind(principal_key)
-    .bind(resource_type)
-    .fetch_all(pool)
-    .await
-    .with_context(|| {
-        format!(
-            "list owned resource_ids principal_key={principal_key} resource_type={resource_type}"
+    let ids: Vec<String> = match pool {
+        DbPool::Sqlite(p) => sqlx::query_scalar(
+            "SELECT resource_id FROM resource_ownership \
+             WHERE owner_principal_key = ? AND resource_type = ? \
+             ORDER BY resource_id",
         )
-    })?;
+        .bind(principal_key)
+        .bind(resource_type)
+        .fetch_all(p)
+        .await
+        .with_context(|| {
+            format!(
+                "list owned resource_ids principal_key={principal_key} resource_type={resource_type}"
+            )
+        })?,
+        DbPool::Postgres(p) => sqlx::query_scalar(
+            "SELECT resource_id FROM resource_ownership \
+             WHERE owner_principal_key = $1 AND resource_type = $2 \
+             ORDER BY resource_id",
+        )
+        .bind(principal_key)
+        .bind(resource_type)
+        .fetch_all(p)
+        .await
+        .with_context(|| {
+            format!(
+                "list owned resource_ids principal_key={principal_key} resource_type={resource_type}"
+            )
+        })?,
+    };
     Ok(ids)
 }
 
@@ -409,27 +683,47 @@ pub async fn list_resource_ids_owned_by(
 /// doubling up with `Mine`. Handlers that want the union fetch both
 /// scopes and merge.
 pub async fn list_team_scoped_resource_ids(
-    pool: &SqlitePool,
+    pool: &DbPool,
     principal_key: &str,
     resource_type: &str,
 ) -> anyhow::Result<Vec<String>> {
-    let ids: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT ro.resource_id \
-         FROM resource_ownership ro \
-         INNER JOIN team_memberships tm ON tm.team_id = ro.shared_with_team_id \
-         WHERE tm.principal_key = ? AND ro.resource_type = ? \
-               AND ro.owner_principal_key != ? \
-         ORDER BY ro.resource_id",
-    )
-    .bind(principal_key)
-    .bind(resource_type)
-    .bind(principal_key)
-    .fetch_all(pool)
-    .await
-    .with_context(|| {
-        format!(
-            "list team-scoped resource_ids principal_key={principal_key} resource_type={resource_type}"
+    let ids: Vec<String> = match pool {
+        DbPool::Sqlite(p) => sqlx::query_scalar(
+            "SELECT DISTINCT ro.resource_id \
+             FROM resource_ownership ro \
+             INNER JOIN team_memberships tm ON tm.team_id = ro.shared_with_team_id \
+             WHERE tm.principal_key = ? AND ro.resource_type = ? \
+                   AND ro.owner_principal_key != ? \
+             ORDER BY ro.resource_id",
         )
-    })?;
+        .bind(principal_key)
+        .bind(resource_type)
+        .bind(principal_key)
+        .fetch_all(p)
+        .await
+        .with_context(|| {
+            format!(
+                "list team-scoped resource_ids principal_key={principal_key} resource_type={resource_type}"
+            )
+        })?,
+        DbPool::Postgres(p) => sqlx::query_scalar(
+            "SELECT DISTINCT ro.resource_id \
+             FROM resource_ownership ro \
+             INNER JOIN team_memberships tm ON tm.team_id = ro.shared_with_team_id \
+             WHERE tm.principal_key = $1 AND ro.resource_type = $2 \
+                   AND ro.owner_principal_key != $3 \
+             ORDER BY ro.resource_id",
+        )
+        .bind(principal_key)
+        .bind(resource_type)
+        .bind(principal_key)
+        .fetch_all(p)
+        .await
+        .with_context(|| {
+            format!(
+                "list team-scoped resource_ids principal_key={principal_key} resource_type={resource_type}"
+            )
+        })?,
+    };
     Ok(ids)
 }

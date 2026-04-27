@@ -145,6 +145,12 @@ impl TryFrom<String> for DatabaseUrl {
 
 /// Backend-typed connection pool. Each variant holds the native sqlx pool
 /// so chrono types, query_as! macros, and FromRow derives work per variant.
+///
+/// `Debug` is derived (both `SqlitePool` and `PgPool` already implement it)
+/// so any store struct holding `Arc<DbPool>` can keep its own derived
+/// `Debug`. The pool's Debug output may include connection metadata; do not
+/// log it at info level on hot paths.
+#[derive(Debug)]
 pub enum DbPool {
     Sqlite(SqlitePool),
     Postgres(PgPool),
@@ -356,6 +362,20 @@ impl MigrationsTree {
             MigrationsTree::Instance => "migrations/global",
         }
     }
+
+    /// Postgres migrations directory companion to `sqlite_path()`. Returns
+    /// `None` for trees that don't yet have a Postgres tree on disk; the
+    /// pool-open path treats `None` as "Postgres unsupported for this tier
+    /// in this PR" and returns a structured error pointing the operator at
+    /// the next PR that lands the missing tree. PR 11.2 ships
+    /// `migrations/postgres/global/`; PR 11.3 ships
+    /// `migrations/postgres/`.
+    fn postgres_path(self) -> Option<&'static str> {
+        match self {
+            MigrationsTree::PerAgent => None,
+            MigrationsTree::Instance => Some("migrations/postgres/global"),
+        }
+    }
 }
 
 async fn connect_per_agent_pool(data_dir: &Path, db_url: Option<&DatabaseUrl>) -> Result<DbPool> {
@@ -376,8 +396,9 @@ async fn connect_instance_pool(data_dir: &Path, db_url: Option<&DatabaseUrl>) ->
 /// call for daemon deployments that ship with their `migrations/`
 /// directory adjacent.
 ///
-/// PR 11.1 hard-errors on Postgres because the `migrations/postgres/`
-/// tree is not yet shipped. PR 11.2 / 11.3 land it.
+/// PR 11.2 unblocks the Postgres arm for `MigrationsTree::Instance` only.
+/// `MigrationsTree::PerAgent` keeps hard-erroring until PR 11.3 ships
+/// `migrations/postgres/`.
 async fn open_pool_and_migrate(url: &DatabaseUrl, tree: MigrationsTree) -> Result<DbPool> {
     match url {
         DatabaseUrl::Sqlite(s) => {
@@ -395,12 +416,25 @@ async fn open_pool_and_migrate(url: &DatabaseUrl, tree: MigrationsTree) -> Resul
                 .with_context(|| format!("failed to run {} migrations", tree.sqlite_path()))?;
             Ok(DbPool::Sqlite(pool))
         }
-        DatabaseUrl::Postgres(_) => Err(DbError::Other(anyhow::anyhow!(
-            "Postgres backend selected but migrations/postgres/ does not exist. \
-             PR 11.2 ships the instance-tier Postgres migrations; \
-             PR 11.3 ships the per-agent Postgres migrations."
-        ))
-        .into()),
+        DatabaseUrl::Postgres(p) => {
+            let path = tree.postgres_path().ok_or_else(|| {
+                DbError::Other(anyhow::anyhow!(
+                    "Postgres backend selected but migrations/postgres/ does not exist for the \
+                     per-agent tier. PR 11.3 will ship `migrations/postgres/` for per-agent stores."
+                ))
+            })?;
+            let pool = PgPool::connect(p.as_str()).await.with_context(|| {
+                format!("failed to connect to Postgres: {}", redact_url(p.as_str()))
+            })?;
+            let migrator = sqlx::migrate::Migrator::new(std::path::Path::new(path))
+                .await
+                .with_context(|| format!("failed to load migrations from {path}"))?;
+            migrator
+                .run(&pool)
+                .await
+                .with_context(|| format!("failed to run {path} migrations"))?;
+            Ok(DbPool::Postgres(pool))
+        }
     }
 }
 
@@ -591,8 +625,34 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(
-            msg.contains("PR 11.2") || msg.contains("PR 11.3"),
-            "expected fail-fast message to point at later PR, got: {msg}"
+            msg.contains("PR 11.3"),
+            "expected per-agent fail-fast message to point at PR 11.3, got: {msg}"
+        );
+    }
+
+    /// PR 11.2 unblocked the instance-tier Postgres dispatch. The fail-fast
+    /// message that PR 11.1 emitted for ALL Postgres URLs no longer fires
+    /// when `connect_instance_db` is the entry point. We can't actually
+    /// connect to a real Postgres in unit-test scope (testcontainers is
+    /// reserved for `tests/instance_postgres.rs`), so the contract verified
+    /// here is: the error must NOT be the PR 11.3 fail-fast message — the
+    /// dispatch must reach the connect / migration-loading step downstream.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn connect_instance_db_with_postgres_url_attempts_connect() {
+        let tmp = tempfile::tempdir().unwrap();
+        let url: DatabaseUrl = "postgres://nobody@127.0.0.1:1/neverexists".parse().unwrap();
+        let err = match connect_instance_db(tmp.path(), Some(&url)).await {
+            Ok(_) => panic!("expected connect to fail without a real Postgres"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("PR 11.3"),
+            "instance-tier Postgres should no longer fail-fast on PR 11.3 message; got: {msg}"
+        );
+        assert!(
+            msg.contains("Postgres") || msg.contains("connection") || msg.contains("migrations"),
+            "expected connect/migration-related error, got: {msg}"
         );
     }
 

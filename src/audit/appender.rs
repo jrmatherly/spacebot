@@ -2,15 +2,21 @@
 //! a Tokio mutex so chained writes are serialized. The transaction is
 //! narrow (SELECT prior row + INSERT new row + commit) so contention is
 //! proportional to audit volume, not request volume.
+//!
+//! Per-method dispatch on `Arc<DbPool>` per Phase 11.2. Both backends store
+//! audit_events with identical column types (TEXT for ISO-8601 timestamps,
+//! BIGINT for seq) so the `AuditRow` `FromRow` derive works generically;
+//! only placeholder syntax (`?` vs `$N`) and transaction begin diverge.
 
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::audit::types::{AuditEvent, AuditRow, canonical_bytes, sha256_hex};
+use crate::db::DbPool;
 
 pub struct AuditAppender {
-    pool: SqlitePool,
+    pool: Arc<DbPool>,
     write_mutex: Arc<Mutex<()>>,
 }
 
@@ -30,7 +36,7 @@ impl AuditAppender {
     /// (UNIQUE INDEX catches it, but the second writer's error is swallowed
     /// by the fire-and-forget `tokio::spawn` in the middleware → silent
     /// audit gap).
-    pub(crate) fn new(pool: SqlitePool) -> Self {
+    pub(crate) fn new(pool: Arc<DbPool>) -> Self {
         Self {
             pool,
             write_mutex: Arc::new(Mutex::new(())),
@@ -43,9 +49,16 @@ impl AuditAppender {
     /// plain `pub mod`, `ApiState::new_test_state_with_mock_entra` is plain
     /// `pub`. `#[doc(hidden)]` keeps it out of rendered rustdoc so the
     /// surface still LOOKS internal, but integration tests can call it.
+    ///
+    /// Option Fixture-A bridge: accepts the legacy `SqlitePool` parameter
+    /// and wraps it into `Arc<DbPool::Sqlite(...))` internally so the 14
+    /// audit-domain test files (tests/audit_chain.rs, audit_export.rs,
+    /// audit_scrubbing.rs, api_admin_audit.rs, etc.) keep working without
+    /// per-call-site edits. The full Phase 11.2 widen-to-Arc<DbPool> on the
+    /// test surface lands when ApiState.instance_pool widens (Task 13).
     #[doc(hidden)]
     pub fn new_for_tests(pool: SqlitePool) -> Self {
-        Self::new(pool)
+        Self::new(Arc::new(DbPool::Sqlite(pool)))
     }
 
     pub async fn append(&self, event: AuditEvent) -> sqlx::Result<AuditRow> {
@@ -77,58 +90,121 @@ impl AuditAppender {
             ..event
         };
 
-        let mut tx = self.pool.begin().await?;
-
-        // Prior row → prev_hash.
-        let prior: Option<(i64, String)> =
-            sqlx::query_as("SELECT seq, row_hash FROM audit_events ORDER BY seq DESC LIMIT 1")
-                .fetch_optional(&mut *tx)
-                .await?;
-        let (prev_seq, prev_hash) = prior.unwrap_or((0, "0".repeat(64)));
-        let seq = prev_seq + 1;
-
         let id = uuid::Uuid::now_v7().to_string();
         let timestamp = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
 
+        // Per-backend transaction. SELECT prior + INSERT new + commit. The
+        // SELECT is identical SQL on both backends (TEXT/INTEGER columns);
+        // INSERT placeholders diverge `?` vs `$N`.
+        let (seq, prev_hash) = match &*self.pool {
+            DbPool::Sqlite(p) => {
+                let mut tx = p.begin().await?;
+
+                let prior: Option<(i64, String)> = sqlx::query_as(
+                    "SELECT seq, row_hash FROM audit_events ORDER BY seq DESC LIMIT 1",
+                )
+                .fetch_optional(&mut *tx)
+                .await?;
+                let (prev_seq, prev_hash) = prior.unwrap_or((0, "0".repeat(64)));
+                let seq = prev_seq + 1;
+
+                let canon = canonical_bytes(&event, seq, &timestamp, &prev_hash);
+                let row_hash = sha256_hex(&canon);
+                let metadata_json =
+                    serde_json::to_string(&event.metadata).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "scrubbed metadata serialization failed; storing empty object");
+                        "{}".into()
+                    });
+
+                sqlx::query(
+                    r#"
+                    INSERT INTO audit_events (
+                        id, seq, timestamp, principal_key, principal_type, action,
+                        resource_type, resource_id, result, source_ip, request_id,
+                        metadata_json, prev_hash, row_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+                )
+                .bind(&id)
+                .bind(seq)
+                .bind(&timestamp)
+                .bind(&event.principal_key)
+                .bind(&event.principal_type)
+                .bind(event.action.as_str())
+                .bind(event.resource_type.as_deref())
+                .bind(event.resource_id.as_deref())
+                .bind(&event.result)
+                .bind(event.source_ip.as_deref())
+                .bind(event.request_id.as_deref())
+                .bind(&metadata_json)
+                .bind(&prev_hash)
+                .bind(&row_hash)
+                .execute(&mut *tx)
+                .await?;
+
+                tx.commit().await?;
+                (seq, prev_hash)
+            }
+            DbPool::Postgres(p) => {
+                let mut tx = p.begin().await?;
+
+                let prior: Option<(i64, String)> = sqlx::query_as(
+                    "SELECT seq, row_hash FROM audit_events ORDER BY seq DESC LIMIT 1",
+                )
+                .fetch_optional(&mut *tx)
+                .await?;
+                let (prev_seq, prev_hash) = prior.unwrap_or((0, "0".repeat(64)));
+                let seq = prev_seq + 1;
+
+                let canon = canonical_bytes(&event, seq, &timestamp, &prev_hash);
+                let row_hash = sha256_hex(&canon);
+                let metadata_json =
+                    serde_json::to_string(&event.metadata).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "scrubbed metadata serialization failed; storing empty object");
+                        "{}".into()
+                    });
+
+                sqlx::query(
+                    r#"
+                    INSERT INTO audit_events (
+                        id, seq, timestamp, principal_key, principal_type, action,
+                        resource_type, resource_id, result, source_ip, request_id,
+                        metadata_json, prev_hash, row_hash
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                "#,
+                )
+                .bind(&id)
+                .bind(seq)
+                .bind(&timestamp)
+                .bind(&event.principal_key)
+                .bind(&event.principal_type)
+                .bind(event.action.as_str())
+                .bind(event.resource_type.as_deref())
+                .bind(event.resource_id.as_deref())
+                .bind(&event.result)
+                .bind(event.source_ip.as_deref())
+                .bind(event.request_id.as_deref())
+                .bind(&metadata_json)
+                .bind(&prev_hash)
+                .bind(&row_hash)
+                .execute(&mut *tx)
+                .await?;
+
+                tx.commit().await?;
+                (seq, prev_hash)
+            }
+        };
+
+        // Recompute row_hash + metadata_json for the return value (cheap;
+        // both arms produced the same values from the same inputs).
         let canon = canonical_bytes(&event, seq, &timestamp, &prev_hash);
         let row_hash = sha256_hex(&canon);
-
-        // PR #106 I9: same serialization-is-infallible invariant as above;
-        // log explicitly if it ever breaks rather than silently storing "{}".
         let metadata_json = serde_json::to_string(&event.metadata).unwrap_or_else(|error| {
             tracing::warn!(%error, "scrubbed metadata serialization failed; storing empty object");
             "{}".into()
         });
-
-        sqlx::query(
-            r#"
-            INSERT INTO audit_events (
-                id, seq, timestamp, principal_key, principal_type, action,
-                resource_type, resource_id, result, source_ip, request_id,
-                metadata_json, prev_hash, row_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        "#,
-        )
-        .bind(&id)
-        .bind(seq)
-        .bind(&timestamp)
-        .bind(&event.principal_key)
-        .bind(&event.principal_type)
-        .bind(event.action.as_str())
-        .bind(event.resource_type.as_deref())
-        .bind(event.resource_id.as_deref())
-        .bind(&event.result)
-        .bind(event.source_ip.as_deref())
-        .bind(event.request_id.as_deref())
-        .bind(&metadata_json)
-        .bind(&prev_hash)
-        .bind(&row_hash)
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
 
         Ok(AuditRow {
             id,
@@ -155,9 +231,18 @@ impl AuditAppender {
         // this guard, a row inserted mid-SELECT can make verify() return
         // spurious false-negatives. (Per 2026-04-22 Phase 5 audit IMPORTANT 8.)
         let _guard = self.write_mutex.lock().await;
-        let rows: Vec<AuditRow> = sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<AuditRow> = match &*self.pool {
+            DbPool::Sqlite(p) => {
+                sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
+                    .fetch_all(p)
+                    .await?
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
+                    .fetch_all(p)
+                    .await?
+            }
+        };
         let total = rows.len() as i64;
         let mut prev_hash = "0".repeat(64);
         for row in &rows {

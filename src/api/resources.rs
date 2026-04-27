@@ -38,7 +38,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -118,7 +117,7 @@ impl VisibilityTag {
 /// but PR 1.5 chose post-fetch enrichment for all 4 handlers so readers
 /// do not context-switch on which storage backs which endpoint.
 pub(super) async fn enrich_visibility_tags(
-    pool: &SqlitePool,
+    pool: &crate::db::DbPool,
     resource_type: &str,
     resource_ids: &[String],
 ) -> HashMap<String, VisibilityTag> {
@@ -190,7 +189,7 @@ mod tests {
     use crate::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
     use sqlx::sqlite::SqlitePoolOptions;
 
-    async fn setup_pool() -> SqlitePool {
+    async fn setup_pool() -> Arc<crate::db::DbPool> {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -200,7 +199,7 @@ mod tests {
             .run(&pool)
             .await
             .expect("run global migrations");
-        pool
+        Arc::new(crate::db::DbPool::Sqlite(pool))
     }
 
     fn user_ctx(tid: &str, oid: &str) -> AuthContext {

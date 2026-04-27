@@ -47,7 +47,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// authz middleware reads. Required because `ApiState::new_test_state_*`
 /// leaves `project_store` unset (service returns 404 without it).
 fn attach_project_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_project_store(Arc::new(ProjectStore::new(pool.clone())));
+    state.set_project_store(Arc::new(ProjectStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_get_project(project_id: &str, bearer: &str) -> Request<Body> {
@@ -79,7 +81,7 @@ fn req_create_project(bearer: &str, name: &str, root_path: &str) -> Request<Body
 /// Create a project directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns the project's UUID.
 async fn seed_project(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
-    let store = ProjectStore::new(pool.clone());
+    let store = ProjectStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let project = store
         .create_project(CreateProjectInput {
             name: "seeded".to_string(),
@@ -269,7 +271,7 @@ async fn list_projects_enriches_team_scoped_project_with_chip_fields() {
         .await
         .unwrap();
     let project = {
-        let store = ProjectStore::new(pool.clone());
+        let store = ProjectStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
         store
             .create_project(CreateProjectInput {
                 name: "Team Runbook".to_string(),
@@ -340,7 +342,7 @@ async fn seed_owned_project(
     name: &str,
     root_path: &str,
 ) -> String {
-    let store = ProjectStore::new(pool.clone());
+    let store = ProjectStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let project = store
         .create_project(CreateProjectInput {
             name: name.to_string(),
@@ -437,7 +439,7 @@ async fn list_projects_scope_team_returns_only_team_shared_projects() {
     .unwrap();
 
     // Bob owns bob-shared, shared to team-x (Alice's team)
-    let store = ProjectStore::new(pool.clone());
+    let store = ProjectStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
     let bob_shared = store
         .create_project(CreateProjectInput {
             name: "bob-shared".to_string(),
