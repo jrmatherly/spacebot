@@ -45,9 +45,7 @@ pub fn validate_deployment_invariants(cfg: &Config) -> Result<(), ConfigError> {
         return Err(ConfigError::AllowUnauthenticatedInHosted);
     }
 
-    if cfg.api.allow_unauthenticated
-        && cfg.api.auth_token.is_none()
-        && cfg.api.entra_auth.is_none()
+    if cfg.api.allow_unauthenticated && cfg.api.auth_token.is_none() && cfg.api.entra_auth.is_none()
     {
         tracing::warn!(
             "API is configured to accept unauthenticated requests with no \

@@ -2632,7 +2632,9 @@ audience = "api://test"
             std::env::set_var("SPACEBOT_DEPLOYMENT", "hosted");
         }
 
-        let cfg = config_with_api_overrides(None, /* allow_unauth */ true, /* with_entra */ true);
+        let cfg = config_with_api_overrides(
+            None, /* allow_unauth */ true, /* with_entra */ true,
+        );
         let result = validate_deployment_invariants(&cfg);
         assert!(
             matches!(
@@ -2653,8 +2655,9 @@ audience = "api://test"
             std::env::set_var("SPACEBOT_DEPLOYMENT", "hosted");
         }
 
-        let cfg =
-            config_with_api_overrides(None, /* allow_unauth */ false, /* with_entra */ true);
+        let cfg = config_with_api_overrides(
+            None, /* allow_unauth */ false, /* with_entra */ true,
+        );
         validate_deployment_invariants(&cfg).expect("hosted+Entra should validate");
     }
 
@@ -2665,7 +2668,9 @@ audience = "api://test"
 
         // Default (SPACEBOT_DEPLOYMENT unset) is treated as docker mode by
         // hosted_api_bind/is_hosted_deployment. EnvGuard already cleared it.
-        let cfg = config_with_api_overrides(None, /* allow_unauth */ true, /* with_entra */ false);
+        let cfg = config_with_api_overrides(
+            None, /* allow_unauth */ true, /* with_entra */ false,
+        );
         validate_deployment_invariants(&cfg)
             .expect("docker mode + allow_unauthenticated should validate (warns only)");
     }
@@ -2675,7 +2680,9 @@ audience = "api://test"
         let _lock = env_test_lock().lock();
         let _env = EnvGuard::new();
 
-        let cfg = config_with_api_overrides(None, /* allow_unauth */ false, /* with_entra */ false);
+        let cfg = config_with_api_overrides(
+            None, /* allow_unauth */ false, /* with_entra */ false,
+        );
         validate_deployment_invariants(&cfg)
             .expect("docker default-deny should validate without auth backend");
     }
