@@ -98,6 +98,20 @@ pub enum ConfigError {
     #[error("missing required config key: {0}")]
     MissingKey(String),
 
+    /// Multi-team plan WS-1.3 (Hermes audit P1-2). Hosted deployment mode
+    /// (`SPACEBOT_DEPLOYMENT=hosted`) is inseparable from Entra ID auth per
+    /// post-Phase-10 (PR #120) policy. Failing here at startup prevents a
+    /// hosted deployment from coming up healthy with no auth backend.
+    #[error("hosted deployment mode requires [api.auth.entra] to be configured")]
+    HostedRequiresEntra,
+
+    /// Multi-team plan WS-1.3. Composition of P1-2 + P0-2: in hosted mode,
+    /// the Envoy-SSO seam (`allow_unauthenticated = true`) is not safe
+    /// because hosted-mode tenancy is enforced in-process, not at the
+    /// gateway. Refuse to start with this combination.
+    #[error("hosted deployment mode is incompatible with allow_unauthenticated = true")]
+    AllowUnauthenticatedInHosted,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

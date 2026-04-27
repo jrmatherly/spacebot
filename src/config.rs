@@ -7,6 +7,7 @@ mod providers;
 mod runtime;
 mod toml_schema;
 mod types;
+mod validate;
 mod watcher;
 
 // Re-export all public types from submodules so external consumers
@@ -22,6 +23,7 @@ pub use permissions::{
 pub(crate) use providers::default_provider_config;
 pub use runtime::RuntimeConfig;
 pub use types::*;
+pub use validate::validate_deployment_invariants;
 pub use watcher::spawn_file_watcher;
 
 // Re-export pub(crate) items that need crate-wide visibility.
@@ -2564,5 +2566,117 @@ use_bearer_auth = true
             ]
         );
         assert!(custom.use_bearer_auth);
+    }
+
+    // -----------------------------------------------------------------
+    // Multi-team plan WS-1.3 (Hermes audit P1-2): startup invariant guard
+    // -----------------------------------------------------------------
+
+    /// Helper for the validate-tests below. Builds a Config via the existing
+    /// load path with a TOML override, so all fields parse through the real
+    /// resolution pipeline rather than a synthetic Default::default().
+    fn config_with_api_overrides(
+        auth_token: Option<&str>,
+        allow_unauthenticated: bool,
+        with_entra: bool,
+    ) -> Config {
+        let entra_block = if with_entra {
+            r#"
+[api.auth.entra]
+enabled = true
+tenant_id = "00000000-0000-0000-0000-000000000000"
+audience = "api://test"
+"#
+        } else {
+            ""
+        };
+        let auth_token_line = match auth_token {
+            Some(t) => format!("auth_token = \"{}\"\n", t),
+            None => String::new(),
+        };
+        let toml = format!(
+            r#"
+[api]
+{auth_token_line}allow_unauthenticated = {allow_unauthenticated}
+{entra_block}
+"#
+        );
+        let parsed: TomlConfig = toml::from_str(&toml).expect("failed to parse test TOML");
+        Config::from_toml(parsed, PathBuf::from(".")).expect("failed to build Config")
+    }
+
+    #[test]
+    fn validate_hosted_without_entra_errors() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        unsafe {
+            std::env::set_var("SPACEBOT_DEPLOYMENT", "hosted");
+        }
+
+        let cfg = config_with_api_overrides(None, false, /* with_entra */ false);
+        let result = validate_deployment_invariants(&cfg);
+        assert!(
+            matches!(result, Err(crate::error::ConfigError::HostedRequiresEntra)),
+            "expected HostedRequiresEntra, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn validate_hosted_with_allow_unauthenticated_errors() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        unsafe {
+            std::env::set_var("SPACEBOT_DEPLOYMENT", "hosted");
+        }
+
+        let cfg = config_with_api_overrides(None, /* allow_unauth */ true, /* with_entra */ true);
+        let result = validate_deployment_invariants(&cfg);
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::ConfigError::AllowUnauthenticatedInHosted)
+            ),
+            "expected AllowUnauthenticatedInHosted, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn validate_hosted_with_entra_ok() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        unsafe {
+            std::env::set_var("SPACEBOT_DEPLOYMENT", "hosted");
+        }
+
+        let cfg =
+            config_with_api_overrides(None, /* allow_unauth */ false, /* with_entra */ true);
+        validate_deployment_invariants(&cfg).expect("hosted+Entra should validate");
+    }
+
+    #[test]
+    fn validate_docker_with_allow_unauthenticated_warns_but_allows() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        // Default (SPACEBOT_DEPLOYMENT unset) is treated as docker mode by
+        // hosted_api_bind/is_hosted_deployment. EnvGuard already cleared it.
+        let cfg = config_with_api_overrides(None, /* allow_unauth */ true, /* with_entra */ false);
+        validate_deployment_invariants(&cfg)
+            .expect("docker mode + allow_unauthenticated should validate (warns only)");
+    }
+
+    #[test]
+    fn validate_docker_default_ok() {
+        let _lock = env_test_lock().lock();
+        let _env = EnvGuard::new();
+
+        let cfg = config_with_api_overrides(None, /* allow_unauth */ false, /* with_entra */ false);
+        validate_deployment_invariants(&cfg)
+            .expect("docker default-deny should validate without auth backend");
     }
 }

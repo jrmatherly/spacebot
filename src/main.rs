@@ -535,6 +535,13 @@ fn cmd_start(
 
     let config = load_config(&resolved_config_path)?;
 
+    // Multi-team plan WS-1.3 (Hermes audit P1-2): fail fast on cross-cutting
+    // deployment-invariant violations (hosted mode without Entra, hosted mode
+    // with allow_unauthenticated=true, etc.). The check runs before the
+    // Tokio runtime is built so a misconfigured deployment never reaches
+    // service-startup with a healthy-looking process.
+    spacebot::config::validate_deployment_invariants(&config)?;
+
     // Build a fresh Tokio runtime in this process (the child after daemonize,
     // or the foreground process). Tracing init — including the OTLP batch
     // exporter — must happen inside block_on because the async
