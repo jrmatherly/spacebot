@@ -14,7 +14,7 @@ use crate::db::DbPool;
 /// so the all-`String` `AuditRow` `FromRow` derive works uniformly across
 /// both backends. SQLite arms keep `SELECT *` because their TEXT columns
 /// already deserialize as `String`.
-const PG_AUDIT_EVENTS_COLUMNS: &str = "seq, id, \
+pub(crate) const PG_AUDIT_EVENTS_COLUMNS: &str = "seq, id, \
     to_char(\"timestamp\" AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS \"timestamp\", \
     principal_key, principal_type, action, resource_type, resource_id, \
     result, source_ip, request_id, metadata_json, prev_hash, row_hash";
