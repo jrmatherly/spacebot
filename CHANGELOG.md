@@ -82,6 +82,35 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.6.4
+
+### Release Story
+
+v0.6.4 is a single-file fix for a visual regression that became visible the moment v0.6.3 reached the Talos cluster. With Microsoft Entra ID actually configured for the first time in a deployed environment, the SPA rendered the `unauthenticated` branch of `AuthGate`, and the `SignInPrompt` subtree showed unstyled HTML. A bare "Sign in with Microsoft" link, a default browser checkbox, no layout. The dark background and IBM Plex Sans were applied, so CSS was loading, but the React component itself carried zero `className` attributes. The component had been scaffolded in Phase 6 PR A and never restyled.
+
+The reason it survived to a tagged release is that local development defaults to `entra_disabled` and `VITE_AUTH_MOCK=1` mode, both of which take the `entra_disabled` fast path and render `{children}` directly. Tests assert the existence of `data-testid="auth-gate-signin"` but never that styling is applied. The cluster deploy was the first environment where any human eyes had seen the SignInPrompt rendered against real CSS.
+
+v0.6.4 ships the fix in `interface/src/auth/AuthGate.tsx` with no other source changes. `Button` and `CheckBox` from `@spacedrive/primitives` replace the raw HTML elements. The layout mirrors `ConnectionScreen`'s centered-card pattern so the sign-in screen and the connect screen feel like one continuous pre-app surface. The error-state inline `var(--color-danger)` styling is replaced with Tailwind `red-500/40` utilities. The legacy `--color-danger` token does not exist in SpaceUI, so the inline fallback hex `#dc2626` had been carrying every render. A shared `AuthGateStatus` helper covers the loading and `waiting_for_server` transitional states so they pick up the same orb plus accent pulse instead of unstyled "Signing in…" text.
+
+### Files
+
+- `interface/src/auth/AuthGate.tsx` — adopt SpaceUI primitives, share centered-card layout with ConnectionScreen, factor AuthGateStatus helper for transitional states, replace broken `--color-danger` token reference.
+
+### Verification (post-deploy in Talos cluster)
+
+The styled login screen is embedded in the binary via `rust-embed` from `interface/dist/`. After the v0.6.4 image lands and pods restart, browsers loading the SPA should see:
+
+1. A centered card with the Spacebot orb, "Sign in to Spacebot" headline, explanatory body copy, a full-width accent purple "Sign in with Microsoft" button, and a SpaceUI checkbox for "Stay signed in on this device" with subtext below it.
+2. Transitional states (waiting for server, signing in) render the same centered card with a smaller orb and an accent-color pulse next to the status text.
+3. The error state (e.g., daemon reports `entra_enabled` but missing `client_id` or `authority`) renders a red-bordered alert card on the same dark background, replacing the v0.6.3 inline-style error block.
+
+No backend changes ship in v0.6.4. The fastembed model cache, Postgres backend foundation, audit log, JWKS rotation, and every other v0.6.0–v0.6.3 invariant is unchanged. Liveness and readiness probes continue to target `/api/health`. The four bypass paths exposed without authentication remain `/health`, `/api/health`, `/api/auth/config`, `/api/desktop/tokens`.
+
+### Phase 11 Postgres backend
+
+The Phase 11.2 worktree (in-flight, instance-tier Postgres dispatch) rebases onto v0.6.4 after release. PR #136 continues with the per-store dispatch sweeps already underway. Zero file overlap between this release and the Phase 11.2 branch, so the rebase is a fast-forward.
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.6.3...v0.6.4
 ## v0.6.3
 
 ### Release Story
