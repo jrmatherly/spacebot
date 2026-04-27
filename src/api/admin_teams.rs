@@ -134,18 +134,32 @@ pub(super) async fn list_admin_teams(
     // LEFT JOIN so teams with zero members still appear. The aggregated
     // `MAX(observed_at)` collapses to NULL when there are no memberships,
     // which surfaces in the response as `last_sync_at: null`.
-    let rows: Vec<AdminTeamRow> = sqlx::query_as(
-        "SELECT t.id, t.display_name, t.status, \
-                COUNT(tm.principal_key) AS member_count, \
-                MAX(tm.observed_at) AS last_sync_at \
-         FROM teams t \
-         LEFT JOIN team_memberships tm ON tm.team_id = t.id \
-         WHERE t.status = 'active' \
-         GROUP BY t.id \
-         ORDER BY t.display_name, t.id",
-    )
-    .fetch_all(&pool)
-    .await
+    let rows: Vec<AdminTeamRow> = match &*pool {
+        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
+            "SELECT t.id, t.display_name, t.status, \
+                    COUNT(tm.principal_key) AS member_count, \
+                    MAX(tm.observed_at) AS last_sync_at \
+             FROM teams t \
+             LEFT JOIN team_memberships tm ON tm.team_id = t.id \
+             WHERE t.status = 'active' \
+             GROUP BY t.id \
+             ORDER BY t.display_name, t.id",
+        )
+        .fetch_all(p)
+        .await,
+        crate::db::DbPool::Postgres(p) => sqlx::query_as(
+            "SELECT t.id, t.display_name, t.status, \
+                    COUNT(tm.principal_key) AS member_count, \
+                    MAX(tm.observed_at) AS last_sync_at \
+             FROM teams t \
+             LEFT JOIN team_memberships tm ON tm.team_id = t.id \
+             WHERE t.status = 'active' \
+             GROUP BY t.id, t.display_name, t.status \
+             ORDER BY t.display_name, t.id",
+        )
+        .fetch_all(p)
+        .await,
+    }
     .map_err(|error| {
         tracing::error!(%error, "list_admin_teams query failed");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -202,29 +216,53 @@ pub(super) async fn list_team_members(
     // "team id does not exist." Without this the two cases collapse
     // into an identical 200 + empty array, and a typo in the URL
     // looks identical to a real empty team.
-    let team_exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM teams WHERE id = ?")
-        .bind(&team_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, team_id = %team_id, "list_team_members existence check failed");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let team_exists: Option<i64> = match &*pool {
+        crate::db::DbPool::Sqlite(p) => {
+            sqlx::query_scalar("SELECT 1 FROM teams WHERE id = ?")
+                .bind(&team_id)
+                .fetch_optional(p)
+                .await
+        }
+        crate::db::DbPool::Postgres(p) => {
+            sqlx::query_scalar("SELECT 1 FROM teams WHERE id = $1")
+                .bind(&team_id)
+                .fetch_optional(p)
+                .await
+        }
+    }
+    .map_err(|error| {
+        tracing::error!(%error, team_id = %team_id, "list_team_members existence check failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     if team_exists.is_none() {
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let rows: Vec<AdminTeamMemberRow> = sqlx::query_as(
-        "SELECT u.principal_key, u.display_name, u.display_email, \
-                tm.observed_at, tm.source \
-         FROM team_memberships tm \
-         INNER JOIN users u ON u.principal_key = tm.principal_key \
-         WHERE tm.team_id = ? \
-         ORDER BY u.display_name, u.principal_key",
-    )
-    .bind(&team_id)
-    .fetch_all(&pool)
-    .await
+    let rows: Vec<AdminTeamMemberRow> = match &*pool {
+        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
+            "SELECT u.principal_key, u.display_name, u.display_email, \
+                    tm.observed_at, tm.source \
+             FROM team_memberships tm \
+             INNER JOIN users u ON u.principal_key = tm.principal_key \
+             WHERE tm.team_id = ? \
+             ORDER BY u.display_name, u.principal_key",
+        )
+        .bind(&team_id)
+        .fetch_all(p)
+        .await,
+        crate::db::DbPool::Postgres(p) => sqlx::query_as(
+            "SELECT u.principal_key, u.display_name, u.display_email, \
+                    to_char(tm.observed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS observed_at, \
+                    tm.source \
+             FROM team_memberships tm \
+             INNER JOIN users u ON u.principal_key = tm.principal_key \
+             WHERE tm.team_id = $1 \
+             ORDER BY u.display_name, u.principal_key",
+        )
+        .bind(&team_id)
+        .fetch_all(p)
+        .await,
+    }
     .map_err(|error| {
         tracing::error!(%error, team_id = %team_id, "list_team_members query failed");
         StatusCode::INTERNAL_SERVER_ERROR

@@ -119,9 +119,10 @@ fn table_for_resource_type(rt: &str) -> Option<&'static str> {
 /// creation or deletion during a sweep is expected and surfaces as a
 /// follow-up cycle's findings.
 pub async fn sweep_orphans(
-    instance_pool: &sqlx::SqlitePool,
+    instance_pool: &crate::db::DbPool,
     agent_db_paths: &[PathBuf],
 ) -> anyhow::Result<Vec<Orphan>> {
+    use crate::db::DbPool;
     let mut orphans = Vec::new();
 
     // Direction 1: each agent DB's resources should have a row in the
@@ -168,12 +169,20 @@ pub async fn sweep_orphans(
         };
 
         for (rid,) in memory_ids {
-            let owned: Option<i64> = sqlx::query_scalar(
-                "SELECT 1 FROM resource_ownership WHERE resource_type = 'memory' AND resource_id = ?",
-            )
-            .bind(&rid)
-            .fetch_optional(instance_pool)
-            .await?;
+            let owned: Option<i64> = match instance_pool {
+                DbPool::Sqlite(p) => sqlx::query_scalar(
+                    "SELECT 1 FROM resource_ownership WHERE resource_type = 'memory' AND resource_id = ?",
+                )
+                .bind(&rid)
+                .fetch_optional(p)
+                .await?,
+                DbPool::Postgres(p) => sqlx::query_scalar(
+                    "SELECT 1 FROM resource_ownership WHERE resource_type = 'memory' AND resource_id = $1",
+                )
+                .bind(&rid)
+                .fetch_optional(p)
+                .await?,
+            };
             if owned.is_none() {
                 orphans.push(Orphan {
                     kind: OrphanKind::MissingOwnership,
@@ -190,10 +199,18 @@ pub async fn sweep_orphans(
     // Direction 2: each `resource_ownership` row should reference a real
     // resource. Anything pointing at a missing resource (or a vanished
     // agent directory) is StaleOwnership.
-    let ownership_rows: Vec<(String, String, Option<String>)> =
-        sqlx::query_as("SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership")
-            .fetch_all(instance_pool)
-            .await?;
+    let ownership_rows: Vec<(String, String, Option<String>)> = match instance_pool {
+        DbPool::Sqlite(p) => sqlx::query_as(
+            "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
+        )
+        .fetch_all(p)
+        .await?,
+        DbPool::Postgres(p) => sqlx::query_as(
+            "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
+        )
+        .fetch_all(p)
+        .await?,
+    };
 
     let root = std::env::var("SPACEBOT_DIR").ok().map(PathBuf::from);
     if root.is_none() {
