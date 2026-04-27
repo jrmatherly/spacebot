@@ -608,18 +608,28 @@ pub async fn migrate_secrets(State(state): State<Arc<ApiState>>) -> impl IntoRes
     migrate_section_secrets::<TwitchConfig>(&store, &mut doc, &mut migrated);
     migrate_section_secrets::<EmailConfig>(&store, &mut doc, &mut migrated);
 
-    // Write updated config.toml if any migrations were made.
-    if !migrated.is_empty()
-        && let Err(error) = std::fs::write(&config_path, doc.to_string())
-    {
-        tracing::error!(%error, "failed to write updated config.toml after migration");
-        return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("migrated {count} secrets to the store but failed to update config.toml: {error}", count = migrated.len())
-                })),
-            )
-                .into_response();
+    // Write updated config.toml if any migrations were made and the mount is
+    // writable. Read-only mounts (e.g., Kubernetes ConfigMap subPath) skip
+    // persistence; the in-store migration already succeeded.
+    if !migrated.is_empty() {
+        if state.is_config_writable() {
+            if let Err(error) = std::fs::write(&config_path, doc.to_string()) {
+                tracing::error!(%error, "failed to write updated config.toml after migration");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("migrated {count} secrets to the store but failed to update config.toml: {error}", count = migrated.len())
+                    })),
+                )
+                    .into_response();
+            }
+        } else {
+            tracing::info!(
+                path = %config_path.display(),
+                count = migrated.len(),
+                "config.toml read-only; secrets migrated to store but config.toml secret: references will not persist"
+            );
+        }
     }
 
     let count = migrated.len();

@@ -226,8 +226,7 @@ impl Db {
             .map_err(|e| DbError::LanceConnect(e.to_string()))?;
 
         let redb_path = data_dir.join("config.redb");
-        let redb = redb::Database::create(&redb_path)
-            .with_context(|| format!("failed to create redb at: {}", redb_path.display()))?;
+        let redb = open_config_redb_with_retry(&redb_path).await?;
 
         Ok(Self {
             pool: Arc::new(pool),
@@ -247,6 +246,71 @@ impl Db {
     pub async fn close(self) {
         self.pool.close().await;
         // LanceDB and redb close automatically when dropped
+    }
+}
+
+/// Open `config.redb`, retrying briefly on `DatabaseAlreadyOpen`.
+///
+/// Containerized restarts can leave a redb lockfile in a transient state
+/// that resolves once the prior process's flock is fully released. Rather
+/// than CrashLoopBackOff through the kernel-driven cleanup, this helper
+/// retries up to 5 times with exponential backoff (200ms, 400ms, 800ms,
+/// 1600ms, 3200ms — total worst case 6.2s, well under K8s readiness
+/// windows). Other `DatabaseError` variants surface immediately because
+/// they don't represent a transient lock collision.
+async fn open_config_redb_with_retry(path: &Path) -> Result<redb::Database> {
+    use std::time::Duration;
+
+    const MAX_RETRIES: u32 = 5;
+
+    let mut attempt: u32 = 0;
+    loop {
+        tracing::info!(
+            path = %path.display(),
+            attempt,
+            "opening config.redb"
+        );
+        match redb::Database::create(path) {
+            Ok(db) => return Ok(db),
+            Err(redb::DatabaseError::DatabaseAlreadyOpen) if attempt < MAX_RETRIES => {
+                let delay_ms: u64 = 200u64 << attempt;
+                tracing::warn!(
+                    path = %path.display(),
+                    attempt,
+                    delay_ms,
+                    "config.redb DatabaseAlreadyOpen, retrying"
+                );
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                attempt += 1;
+            }
+            Err(redb::DatabaseError::DatabaseAlreadyOpen) => {
+                let attempts = attempt + 1;
+                tracing::error!(
+                    path = %path.display(),
+                    attempts,
+                    "config.redb still locked after retry budget exhausted; another process likely holds the flock"
+                );
+                return Err(anyhow::anyhow!(
+                    "config.redb at {} still locked after {} attempts (DatabaseAlreadyOpen); another process likely holds the flock",
+                    path.display(),
+                    attempts
+                )
+                .into());
+            }
+            Err(error) => {
+                tracing::error!(
+                    path = %path.display(),
+                    %error,
+                    "non-retryable error opening config.redb"
+                );
+                return Err(anyhow::Error::from(error)
+                    .context(format!(
+                        "failed to create redb at: {} (non-retryable error)",
+                        path.display()
+                    ))
+                    .into());
+            }
+        }
     }
 }
 

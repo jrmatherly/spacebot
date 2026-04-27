@@ -49,6 +49,7 @@ pub struct PromptSnapshotStore {
 impl PromptSnapshotStore {
     /// Open or create the snapshot store at the given path.
     pub fn new(path: &Path) -> crate::error::Result<Self> {
+        tracing::info!(path = %path.display(), "opening prompt_snapshots.redb");
         let db = Database::create(path).map_err(|error| {
             crate::error::SettingsError::Other(format!(
                 "failed to open prompt snapshot db: {error}"

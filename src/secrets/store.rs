@@ -175,7 +175,9 @@ impl SecretsStore {
     /// `encrypted` flag, the store starts in locked state until `unlock()` is
     /// called with the master key.
     pub fn new(path: impl AsRef<Path>) -> Result<Self, SecretsError> {
-        let db = Database::create(path.as_ref()).map_err(|error| {
+        let path_ref = path.as_ref();
+        tracing::info!(path = %path_ref.display(), "opening secrets.redb");
+        let db = Database::create(path_ref).map_err(|error| {
             SecretsError::Other(anyhow::anyhow!("failed to open secrets database: {error}"))
         })?;
 

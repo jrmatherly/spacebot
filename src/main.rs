@@ -1444,9 +1444,25 @@ const KEYSTORE_INSTANCE_ID: &str = "instance";
 ///
 /// If no instance-level store exists but per-agent stores do (from the previous
 /// per-agent model), secrets are migrated from the first non-empty agent store.
+///
+/// Idempotent within a process: the first successful (or attempted-and-failed)
+/// call caches its result in [`BOOTSTRAPPED_STORE`] and subsequent calls return
+/// the cached value without re-opening redb. This eliminates the
+/// `Database already open. Cannot acquire lock.` warning that surfaced in
+/// containerized deployments where probe sidecars or restart races could
+/// invoke this function more than once against the same flock.
+///
+/// Tracing is not yet initialized at the daemon's first call site
+/// (`tracing` init runs inside `block_on`), so boot-phase visibility uses
+/// `eprintln!` for the entry log, the data-directory create failure, and
+/// the store-open failure. All three land on stderr.
 fn bootstrap_secrets_store(
     config_path: &Option<std::path::PathBuf>,
 ) -> Option<Arc<spacebot::secrets::store::SecretsStore>> {
+    if let Some(cached) = BOOTSTRAPPED_STORE.get() {
+        return cached.clone();
+    }
+
     // Probe kernel keyring support before any workers spawn. If keyctl is
     // blocked (restrictive seccomp, gVisor, etc.), worker keyring isolation
     // is disabled but workers still start normally.
@@ -1457,16 +1473,26 @@ fn bootstrap_secrets_store(
     let data_dir = instance_dir.join("data");
     if let Err(error) = std::fs::create_dir_all(&data_dir) {
         eprintln!("warning: failed to create instance data directory: {error}");
+        let _ = BOOTSTRAPPED_STORE.set(None);
         return None;
     }
 
     let secrets_path = data_dir.join("secrets.redb");
     let is_new_store = !secrets_path.exists();
 
+    eprintln!(
+        "info: opening instance secrets store path={}",
+        secrets_path.display()
+    );
+
     let store = match spacebot::secrets::store::SecretsStore::new(&secrets_path) {
         Ok(store) => Arc::new(store),
         Err(error) => {
-            eprintln!("warning: failed to open secrets store: {error}");
+            eprintln!(
+                "warning: failed to open secrets store path={} error={error}",
+                secrets_path.display()
+            );
+            let _ = BOOTSTRAPPED_STORE.set(None);
             return None;
         }
     };
@@ -1570,7 +1596,67 @@ fn bootstrap_secrets_store(
     // Set the store into the thread-local for config resolution.
     spacebot::config::set_resolve_secrets_store(store.clone());
 
-    Some(store)
+    let result = Some(store);
+    let _ = BOOTSTRAPPED_STORE.set(result.clone());
+    result
+}
+
+/// Process-wide cache for [`bootstrap_secrets_store`]. The function is called
+/// from both `Command::Run` (daemon boot) and `Command::Secrets` (CLI), and a
+/// hypothetical sidecar invocation against a live daemon would race against
+/// the daemon's existing redb flock. `OnceLock` collapses any second call to
+/// the cached result without re-opening the file.
+///
+/// `None` cached on first-call failure is intentional: the failure is
+/// already logged at the eprintln site, and re-attempting from a second call
+/// would only re-log the same failure.
+static BOOTSTRAPPED_STORE: std::sync::OnceLock<
+    Option<Arc<spacebot::secrets::store::SecretsStore>>,
+> = std::sync::OnceLock::new();
+
+/// Probe whether `config.toml` is on a writable mount.
+///
+/// Returns `true` only when the daemon can confidently write to the file.
+/// `OpenOptions::append(true).open(...)` is used (rather than
+/// `write(true).truncate(true)`) so the file content is never modified by
+/// the probe even on writable mounts where the open succeeds.
+///
+/// Error kinds are inspected to avoid false-negatives on cold-boot:
+///
+/// - `NotFound`: config.toml has not been written yet (fresh deploy, OAuth
+///   setup will create it). Probe parent directory writability instead. If
+///   the parent is writable, the OAuth flow will create config.toml there
+///   and subsequent writes will succeed.
+/// - `PermissionDenied` or `ReadOnlyFilesystem`: a real read-only mount.
+///   Returns false.
+/// - Anything else: unexpected (typed as a directory, ESTALE on NFS, etc.).
+///   Logs `error!` and returns false (conservative).
+fn probe_config_writable(config_path: &std::path::Path) -> bool {
+    use std::io::ErrorKind;
+
+    match std::fs::OpenOptions::new().append(true).open(config_path) {
+        Ok(_) => true,
+        Err(error) => match error.kind() {
+            ErrorKind::NotFound => {
+                // Cold boot before config.toml exists. Probe parent dir.
+                config_path
+                    .parent()
+                    .and_then(|parent| std::fs::metadata(parent).ok())
+                    .map(|meta| !meta.permissions().readonly())
+                    .unwrap_or(false)
+            }
+            ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem => false,
+            other => {
+                tracing::error!(
+                    kind = ?other,
+                    %error,
+                    path = %config_path.display(),
+                    "unexpected error probing config.toml writability; assuming read-only"
+                );
+                false
+            }
+        },
+    }
 }
 
 /// Migrate secrets from legacy per-agent redb stores into the new instance-level
@@ -2076,6 +2162,21 @@ async fn run(
     // Set the config path on the API state for config.toml writes
     let config_path = config.instance_dir.join("config.toml");
     api_state.set_config_path(config_path.clone()).await;
+
+    // Probe the config.toml mount once. Kubernetes ConfigMap subPath mounts
+    // are read-only and produce per-request EROFS log spam in handlers that
+    // persist mutations back to disk. When read-only, those handlers update
+    // in-memory state only. An operator-facing warn fires here at boot so
+    // the disabled-persistence behavior is visible without log noise.
+    let config_writable = probe_config_writable(&config_path);
+    api_state.set_config_writable(config_writable);
+    if !config_writable {
+        tracing::warn!(
+            path = %config_path.display(),
+            "config.toml is on a read-only mount; runtime API mutations will not persist across restarts"
+        );
+    }
+
     api_state.set_instance_dir(config.instance_dir.clone());
     api_state.set_database_url(config.database.url.clone());
     api_state.set_llm_manager(llm_manager.clone()).await;

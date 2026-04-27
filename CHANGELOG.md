@@ -82,6 +82,48 @@ Post-v0.4.1 work on the detached fork. Final section content gets generated at r
 - **`examples/prometheus.yml`** removed along with the now-empty `examples/` directory. The `deploy/docker/prometheus.yml` scrape config (wired into Compose's `observability` profile) is the active, non-duplicate configuration. The two pieces of operator guidance that made the examples file useful — the `cargo build --release --features metrics` build prerequisite and the `metric_relabel_configs` cardinality-trimming snippet — were documentation rather than config and have been absorbed into `docs/metrics.md` under a new "Trimming High-Cardinality LLM Series" subsection of "Prometheus Scrape Config". Companion updates: `.dockerignore` (dropped the now-dead `examples/` entry), `docs/design-docs/k8s-helm-scaffold.md:41` (reference retargeted to `docs/metrics.md` + `deploy/docker/prometheus.yml`).
 - **`fly.toml` and `fly.staging.toml`** decommissioned. Production deploy target is `deploy/helm/spacebot/` (Talos K8s via Flux GitOps). Zero CI, `justfile`, or workflow references pointed at Fly; GHCR image publishing via `.github/workflows/release.yml` is unaffected. Companion reference cleanups: `AGENTS.md:435`, `PROJECT_INDEX.md:87`, `docs/design-docs/k8s-helm-scaffold.md:41`.
 
+## v0.6.3
+
+### Release Story
+
+v0.6.3 is a runtime hardening release. Three operational issues surfaced after v0.6.2 deployed to the Talos cluster: the boot logs carried a "Database already open. Cannot acquire lock." warning of unclear origin, fresh pods CrashLoopBackOff'd 3-5 times before stabilizing because `redb::DatabaseError::DatabaseAlreadyOpen` surfaced before the prior process's flock was kernel-released, and every API mutation against the read-only ConfigMap subPath mount produced an EROFS log line per call. None of these blocked traffic. Together they made the steady-state log volume noisy enough to obscure real signals.
+
+A fourth issue surfaced in operator review: v0.6.2 deployed with `spacebot_entra_*` cluster variables defined but no `[api.auth.entra]` block rendered into config.toml. The daemon ran in static-token pass-through mode, leaving the deployment publicly accessible despite the Entra intent. The cluster operator needs to render the block. See Operator notes below for Pattern A. The daemon code has supported Pattern A since v0.6.0. v0.6.3 ships no auth code change, only the operator clarity below.
+
+### Fixed
+
+- **(Issue 2)** Idempotent `bootstrap_secrets_store` via `OnceLock<Option<Arc<SecretsStore>>>` cache. Containerized boots had been logging `failed to open secrets store: failed to open secrets database: Database already open. Cannot acquire lock.` from the `eprintln!` in `src/main.rs:bootstrap_secrets_store`. The function is invoked from both `Command::Run` and `Command::Secrets`. The cache collapses any second call to the first result without re-attempting redb open. The entry/error logs now carry the secrets path so a future trace shows which call hit which file.
+- **(Issue 3)** `redb::Database::create` for `config.redb` retries up to 5 times with exponential backoff (200, 400, 800, 1600, 3200 ms, total worst case 6.2s, well under K8s readiness windows) when the kernel returns `DatabaseAlreadyOpen`. Other `DatabaseError` variants surface immediately. Adds `tracing::info!` entry logs to three of the four `redb::Database::create` sites (`config.redb`, `settings.redb`, `prompt_snapshots.redb`). The fourth site (`secrets.redb`, opened pre-tracing-init from `bootstrap_secrets_store`) logs via `eprintln!` for boot-phase visibility. Both surfaces land on stderr, so a single `grep` against the cold-boot log shows the open-order across all four files. On retry-budget exhaustion, an explicit `tracing::error!` fires before the error propagates so operators see the "tried 5 times" framing without scrolling back through the per-attempt warns.
+- **(Issue 4)** Read-only `config.toml` mounts no longer spam `failed to write config.toml — Read-only file system (os error 30)` on every API mutation. The daemon detects mount mode at startup via a probe that inspects `io::Error::kind()` (recognizing `NotFound` as cold-boot and probing the parent dir, `PermissionDenied`/`ReadOnlyFilesystem` as legitimately read-only, anything else as unexpected and conservatively treated as read-only). The result is exposed via `ApiState.config_writable: ArcSwap<bool>`. 32 `tokio::fs::write(&config_path, ...)` sites across `src/api/links.rs` (9), `agents.rs` (3), `messaging.rs` (4), `bindings.rs` (3), `settings.rs` (3), `config.rs` (1), `mcp.rs` (3), and `providers.rs` (6) now go through a single `try_persist_config(state, path, contents)` helper. Two additional sites use inline `is_config_writable()` guards because their surrounding error type is `anyhow::Result` rather than `Result<_, StatusCode>`: `finalize_openai_oauth` in `providers.rs` and `migrate_secrets` in `secrets.rs`. On a read-only mount, the helper and inline guards return success without writing so the caller's in-memory state update still proceeds. An operator-facing `tracing::warn!` fires once at startup, and per-mutation skips log at `tracing::info!` so operators running the default log filter see the disabled-persistence behavior on every mutation. Kubernetes operators using ConfigMap subPath mounts as their config source no longer need to scrub `Read-only file system` lines from queries. Three new unit tests guard the helper directly.
+
+### Operator notes — Microsoft Entra ID auth (no code change)
+
+`[api.auth.entra]` Pattern A has been the supported deployment path for Entra-gated SpaceBot installs since v0.6.0. **v0.6.3 ships no Entra-related code change.** This note exists because the v0.6.2 cluster deploy reported a configuration gap: `spacebot_entra_*` cluster variables were defined, the daemon was expected to enforce JWT validation, but no `[api.auth.entra]` block was rendered into `config.toml`. The daemon fell through to static-token pass-through mode, leaving the deployment publicly accessible.
+
+Two requirements every operator should verify before flipping Entra on:
+
+1. **Two Entra app registrations are required** — one API registration with `accessTokenAcceptedVersion: 2` exposing the `api.access` scope (this is the `audience` field, supplied as the client ID GUID, not the `api://...` URI form), and one SPA registration with redirect URI `<your-host>/` (trailing slash). Reusing one registration for both does not work in v0.6.x.
+2. **`auth_token` in `[api]` must be omitted** when `[api.auth.entra]` is configured. Otherwise the static-token branch is selected and Entra enforcement does not activate.
+
+The full configuration reference, including Entra app-registration manifest details and SPA bootstrap flow, lives at `docs/content/docs/(configuration)/entra-auth.mdx` (renders at `/docs/entra-auth`). Kubernetes operators using the Talos cluster template can follow the prebuilt setup guide at the cluster repo's `docs/guides/spacebot-entra-setup.mdx` for HelmRelease probe paths, configmap subPath mount notes, and the Flux push workflow.
+
+### Verification
+
+The four bypass paths exposed without authentication remain unchanged in v0.6.3: `/health`, `/api/health`, `/api/auth/config`, `/api/desktop/tokens`. Source: `src/auth/bypass.rs:39-44`. Liveness and readiness probes should target `/api/health` (NOT `/api/system/health`, which requires auth).
+
+Cold-boot logs after v0.6.3 deploy should show:
+
+- `auth branch: entra JWT validation` (when `[api.auth.entra]` is configured) or `auth branch: static token (or pass-through when no token set)` (when it is not).
+- No `failed to open secrets store` warning (Issue 2).
+- No `failed to write config.toml — Read-only file system` warnings during steady-state API traffic (Issue 4).
+- A single startup `WARN config.toml is on a read-only mount` line if the deploy uses a read-only mount (Issue 4).
+
+### Phase 11 Postgres backend
+
+The Phase 11.2 worktree (in-flight, instance-tier Postgres dispatch) rebases onto v0.6.3 after release. PR #136 continues with the per-store dispatch sweeps already underway.
+
+**Full Changelog**: https://github.com/jrmatherly/spacebot/compare/v0.6.2...v0.6.3
+
 ## v0.6.2
 
 ### Release Story

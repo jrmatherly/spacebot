@@ -1,4 +1,4 @@
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 
 use axum::Json;
 use axum::extract::State;
@@ -398,12 +398,7 @@ pub(super) async fn update_global_settings(
         doc["ssh"]["enabled"] = toml_edit::value(enabled);
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, path = %config_path.display(), "failed to write config.toml for update");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     let reload_path = config_path.clone();
     match tokio::task::spawn_blocking(move || crate::config::Config::load_from_path(&reload_path))
@@ -457,7 +452,7 @@ pub(super) async fn update_global_settings(
                 && let Ok(mut rollback_doc) = content.parse::<toml_edit::DocumentMut>()
             {
                 rollback_doc["ssh"]["enabled"] = toml_edit::value(!enabled);
-                let _ = tokio::fs::write(&config_path, rollback_doc.to_string()).await;
+                let _ = try_persist_config(&state, &config_path, rollback_doc.to_string()).await;
             }
             return Ok(Json(GlobalSettingsUpdateResponse {
                 success: false,
@@ -616,12 +611,7 @@ pub(super) async fn update_raw_config(
         }));
     }
 
-    tokio::fs::write(&config_path, &request.content)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, request.content.as_bytes()).await?;
 
     tracing::info!("config.toml updated via raw editor");
 

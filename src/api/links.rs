@@ -1,6 +1,6 @@
 //! API handlers for agent links and topology.
 
-use crate::api::state::ApiState;
+use crate::api::state::{ApiState, try_persist_config};
 use crate::links::{AgentLink, LinkDirection, LinkKind};
 
 use axum::Json;
@@ -279,12 +279,7 @@ pub async fn create_link(
     link_table["kind"] = toml_edit::value(kind.as_str());
     links_array.push(link_table);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Update in-memory state
     let new_link = AgentLink {
@@ -382,12 +377,7 @@ pub async fn update_link(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Update in-memory state
     let mut links = (**existing).clone();
@@ -457,12 +447,7 @@ pub async fn delete_link(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Update in-memory state
     let links: Vec<_> = existing
@@ -565,12 +550,7 @@ pub async fn create_group(
     }
     groups_array.push(group_table);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     let new_group = crate::config::GroupDef {
         name: request.name.clone(),
@@ -676,12 +656,7 @@ pub async fn update_group(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     let mut groups = (**existing).clone();
     groups[index] = updated.clone();
@@ -743,12 +718,7 @@ pub async fn delete_group(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     let groups: Vec<_> = existing
         .iter()
@@ -941,12 +911,7 @@ pub async fn create_human(
     }
     humans_array.push(table);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Write HUMAN.md to the human's directory on disk.
     let instance_dir = (**state.instance_dir.load()).clone();
@@ -1135,12 +1100,7 @@ pub async fn update_human(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Write or remove HUMAN.md on disk.
     if request.description.is_some() {
@@ -1248,12 +1208,7 @@ pub async fn delete_human(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to write config.toml");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Update in-memory state
     let humans: Vec<_> = existing

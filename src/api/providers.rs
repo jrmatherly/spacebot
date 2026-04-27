@@ -1,4 +1,4 @@
-use super::state::ApiState;
+use super::state::{ApiState, try_persist_config};
 use crate::openai_auth::DeviceTokenPollResult;
 
 use anyhow::Context as _;
@@ -384,9 +384,16 @@ async fn finalize_openai_oauth(
 
     let mut doc: toml_edit::DocumentMut = content.parse().context("failed to parse config.toml")?;
     apply_model_routing(&mut doc, model);
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .context("failed to write config.toml")?;
+    if state.is_config_writable() {
+        tokio::fs::write(&config_path, doc.to_string())
+            .await
+            .context("failed to write config.toml")?;
+    } else {
+        tracing::info!(
+            path = %config_path.display(),
+            "config.toml read-only; in-memory routing change applied without persistence (will be lost on daemon restart)"
+        );
+    }
 
     // Refresh in-memory defaults so newly created agents inherit the updated routing.
     refresh_defaults_config(state).await;
@@ -980,12 +987,7 @@ pub(super) async fn update_provider(
     doc["llm"][key_name] = toml_edit::value(request.api_key);
     apply_model_routing(&mut doc, &normalized_model);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, path = %config_path.display(), "failed to write config.toml for provider setup");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     // Refresh in-memory defaults so newly created agents inherit the updated routing.
     refresh_defaults_config(&state).await;
@@ -1175,12 +1177,7 @@ async fn update_azure_provider(
         }
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to write config.toml for azure provider");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     refresh_defaults_config(&state).await;
 
@@ -1331,12 +1328,7 @@ async fn update_litellm_provider(
 
     apply_model_routing(&mut doc, normalized_model);
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, path = %config_path.display(), "failed to write config.toml for litellm setup");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     refresh_defaults_config(&state).await;
 
@@ -1929,12 +1921,7 @@ pub(super) async fn delete_provider(
             }
         }
 
-        tokio::fs::write(&config_path, doc.to_string())
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "failed to write config after azure removal");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        try_persist_config(&state, &config_path, doc.to_string()).await?;
 
         return Ok(Json(ProviderUpdateResponse {
             success: true,
@@ -1972,12 +1959,7 @@ pub(super) async fn delete_provider(
             }
         }
 
-        tokio::fs::write(&config_path, doc.to_string())
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "failed to write config after litellm removal");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+        try_persist_config(&state, &config_path, doc.to_string()).await?;
 
         return Ok(Json(ProviderUpdateResponse {
             success: true,
@@ -2016,12 +1998,7 @@ pub(super) async fn delete_provider(
         table.remove(key_name);
     }
 
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, path = %config_path.display(), "failed to write config.toml for provider removal");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    try_persist_config(&state, &config_path, doc.to_string()).await?;
 
     Ok(Json(ProviderUpdateResponse {
         success: true,
