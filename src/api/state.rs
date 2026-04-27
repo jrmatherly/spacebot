@@ -52,6 +52,13 @@ pub struct AgentInfo {
 pub struct ApiState {
     pub started_at: Instant,
     pub auth_token: Option<String>,
+    /// Multi-team plan WS-1.1 (Hermes audit P0-2). Operator opt-in for the
+    /// LegacyStatic fallthrough when neither `auth_token` nor Entra is
+    /// configured. Default `false` is hard default-deny: middleware returns
+    /// 401 instead of injecting a `LegacyStatic` AuthContext. The opt-in
+    /// supports the Envoy-SSO seam documented in
+    /// `docs/design-docs/k8s-cluster-deployment.md` (bearer-auth-disable).
+    pub allow_unauthenticated: bool,
     /// When populated, the Entra-JWT middleware is installed instead of the
     /// static-token middleware. Mutually exclusive with `auth_token` at
     /// request time (the branch is chosen in `start_http_server`). Wrapped
@@ -384,6 +391,7 @@ impl ApiState {
         Self {
             started_at: Instant::now(),
             auth_token: None,
+            allow_unauthenticated: false,
             entra_auth: Arc::new(ArcSwap::from_pointee(None)),
             entra_config: Arc::new(ArcSwap::from_pointee(None)),
             entra_config_missing_warned: std::sync::atomic::AtomicBool::new(false),

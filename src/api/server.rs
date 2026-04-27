@@ -430,8 +430,27 @@ async fn api_auth_middleware(
     next: Next,
 ) -> Response {
     let Some(expected_token) = state.auth_token.as_deref() else {
-        // Pass-through mode: still populate a LegacyStatic AuthContext so
-        // downstream handlers can extract it uniformly (Phase 4+).
+        // Multi-team plan WS-1.1 (Hermes audit P0-2): default-deny when no
+        // auth_token is configured. The legacy LegacyStatic fallthrough is
+        // gated behind explicit operator opt-in via `[api]
+        // allow_unauthenticated = true` (Envoy-SSO seam — see
+        // docs/design-docs/k8s-cluster-deployment.md). Without the opt-in,
+        // a misconfigured deployment fails closed with 401 instead of
+        // silently downgrading to no-tenancy mode.
+        if !state.allow_unauthenticated {
+            #[cfg(feature = "metrics")]
+            crate::telemetry::Metrics::global()
+                .auth_failures_total
+                .with_label_values(&["static_token", "no_auth_configured"])
+                .inc();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "unauthorized"})),
+            )
+                .into_response();
+        }
+        // Operator-opted-in pass-through mode: populate LegacyStatic
+        // AuthContext so downstream handlers can extract it uniformly.
         request
             .extensions_mut()
             .insert(crate::auth::AuthContext::legacy_static());

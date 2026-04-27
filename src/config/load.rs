@@ -2683,6 +2683,7 @@ impl Config {
             port: toml.api.port,
             bind: hosted_api_bind(toml.api.bind),
             auth_token: toml.api.auth_token.as_deref().and_then(resolve_env_value),
+            allow_unauthenticated: toml.api.allow_unauthenticated.unwrap_or(false),
             entra_auth,
         };
 

@@ -20,6 +20,14 @@
 host = "0.0.0.0"
 port = 19898
 
+# Multi-team plan WS-1.2 (Hermes audit P0-2): the daemon defaults to
+# default-deny (return 401 when no `auth_token` and no `[api.auth.entra]`
+# are configured). docker-compose is the local dev profile, so we
+# explicitly opt into the LegacyStatic fallthrough. K8s deployments
+# (deploy/helm/spacebot/) do NOT set this; production must configure
+# auth_token or [api.auth.entra] before reaching the daemon.
+allow_unauthenticated = true
+
 # Metrics endpoint for the `observability` profile's Prometheus to scrape.
 # Port 9090 must match the Service port and docker-compose.yml `ports:` line.
 # bind = "0.0.0.0" lets Prometheus (in a separate container on the same
