@@ -36,10 +36,7 @@ async fn setup_postgres() -> (Arc<DbPool>, ContainerAsync<Postgres>) {
         .start()
         .await
         .expect("failed to start postgres testcontainer (docker daemon required)");
-    let host = container
-        .get_host()
-        .await
-        .expect("read container host");
+    let host = container.get_host().await.expect("read container host");
     let port = container
         .get_host_port_ipv4(5432)
         .await
