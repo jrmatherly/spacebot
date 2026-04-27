@@ -200,16 +200,20 @@ pub async fn sweep_orphans(
     // resource. Anything pointing at a missing resource (or a vanished
     // agent directory) is StaleOwnership.
     let ownership_rows: Vec<(String, String, Option<String>)> = match instance_pool {
-        DbPool::Sqlite(p) => sqlx::query_as(
-            "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
-        )
-        .fetch_all(p)
-        .await?,
-        DbPool::Postgres(p) => sqlx::query_as(
-            "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
-        )
-        .fetch_all(p)
-        .await?,
+        DbPool::Sqlite(p) => {
+            sqlx::query_as(
+                "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
+            )
+            .fetch_all(p)
+            .await?
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query_as(
+                "SELECT resource_type, resource_id, owner_agent_id FROM resource_ownership",
+            )
+            .fetch_all(p)
+            .await?
+        }
     };
 
     let root = std::env::var("SPACEBOT_DIR").ok().map(PathBuf::from);

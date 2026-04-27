@@ -113,12 +113,14 @@ pub async fn export_audit(pool: &DbPool, cfg: &ExportConfig) -> anyhow::Result<E
                 .fetch_all(p)
                 .await?
         }
-        DbPool::Postgres(p) => sqlx::query_as(&format!(
-            "SELECT {PG_AUDIT_EVENTS_COLUMNS} FROM audit_events WHERE seq > $1 ORDER BY seq"
-        ))
-        .bind(last_exported_seq)
-        .fetch_all(p)
-        .await?,
+        DbPool::Postgres(p) => {
+            sqlx::query_as(&format!(
+                "SELECT {PG_AUDIT_EVENTS_COLUMNS} FROM audit_events WHERE seq > $1 ORDER BY seq"
+            ))
+            .bind(last_exported_seq)
+            .fetch_all(p)
+            .await?
+        }
     };
     if rows.is_empty() {
         return Ok(ExportResult {

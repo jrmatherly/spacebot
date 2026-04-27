@@ -272,18 +272,22 @@ pub async fn entra_auth_middleware(
             {
                 let key = ctx.principal_key();
                 let has_memberships: Option<i64> = match match &*pool {
-                    crate::db::DbPool::Sqlite(p) => sqlx::query_scalar(
-                        "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
-                    )
-                    .bind(&key)
-                    .fetch_optional(p)
-                    .await,
-                    crate::db::DbPool::Postgres(p) => sqlx::query_scalar(
-                        "SELECT 1 FROM team_memberships WHERE principal_key = $1 LIMIT 1",
-                    )
-                    .bind(&key)
-                    .fetch_optional(p)
-                    .await,
+                    crate::db::DbPool::Sqlite(p) => {
+                        sqlx::query_scalar(
+                            "SELECT 1 FROM team_memberships WHERE principal_key = ? LIMIT 1",
+                        )
+                        .bind(&key)
+                        .fetch_optional(p)
+                        .await
+                    }
+                    crate::db::DbPool::Postgres(p) => {
+                        sqlx::query_scalar(
+                            "SELECT 1 FROM team_memberships WHERE principal_key = $1 LIMIT 1",
+                        )
+                        .bind(&key)
+                        .fetch_optional(p)
+                        .await
+                    }
                 } {
                     Ok(v) => v,
                     Err(error) => {

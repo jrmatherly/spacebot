@@ -232,12 +232,16 @@ impl AuditAppender {
         // spurious false-negatives. (Per 2026-04-22 Phase 5 audit IMPORTANT 8.)
         let _guard = self.write_mutex.lock().await;
         let rows: Vec<AuditRow> = match &*self.pool {
-            DbPool::Sqlite(p) => sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
-                .fetch_all(p)
-                .await?,
-            DbPool::Postgres(p) => sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
-                .fetch_all(p)
-                .await?,
+            DbPool::Sqlite(p) => {
+                sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
+                    .fetch_all(p)
+                    .await?
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query_as("SELECT * FROM audit_events ORDER BY seq")
+                    .fetch_all(p)
+                    .await?
+            }
         };
         let total = rows.len() as i64;
         let mut prev_hash = "0".repeat(64);

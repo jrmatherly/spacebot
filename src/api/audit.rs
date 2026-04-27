@@ -83,8 +83,9 @@ pub(super) async fn list_audit_events(
     let limit = q.limit.clamp(1, 1000);
     let offset = q.offset.max(0);
     let rows: Vec<AuditRow> = match &*pool {
-        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
-            r#"
+        crate::db::DbPool::Sqlite(p) => {
+            sqlx::query_as(
+                r#"
             SELECT * FROM audit_events
             WHERE (? IS NULL OR timestamp >= ?)
               AND (? IS NULL OR timestamp <= ?)
@@ -93,21 +94,23 @@ pub(super) async fn list_audit_events(
             ORDER BY seq DESC
             LIMIT ? OFFSET ?
             "#,
-        )
-        .bind(&q.from)
-        .bind(&q.from)
-        .bind(&q.to)
-        .bind(&q.to)
-        .bind(&q.principal)
-        .bind(&q.principal)
-        .bind(&q.action)
-        .bind(&q.action)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(p)
-        .await,
-        crate::db::DbPool::Postgres(p) => sqlx::query_as(&format!(
-            r#"
+            )
+            .bind(&q.from)
+            .bind(&q.from)
+            .bind(&q.to)
+            .bind(&q.to)
+            .bind(&q.principal)
+            .bind(&q.principal)
+            .bind(&q.action)
+            .bind(&q.action)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(p)
+            .await
+        }
+        crate::db::DbPool::Postgres(p) => {
+            sqlx::query_as(&format!(
+                r#"
             SELECT {cols} FROM audit_events
             WHERE ($1 IS NULL OR "timestamp" >= $2)
               AND ($3 IS NULL OR "timestamp" <= $4)
@@ -116,20 +119,21 @@ pub(super) async fn list_audit_events(
             ORDER BY seq DESC
             LIMIT $9 OFFSET $10
             "#,
-            cols = crate::audit::export::PG_AUDIT_EVENTS_COLUMNS,
-        ))
-        .bind(&q.from)
-        .bind(&q.from)
-        .bind(&q.to)
-        .bind(&q.to)
-        .bind(&q.principal)
-        .bind(&q.principal)
-        .bind(&q.action)
-        .bind(&q.action)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(p)
-        .await,
+                cols = crate::audit::export::PG_AUDIT_EVENTS_COLUMNS,
+            ))
+            .bind(&q.from)
+            .bind(&q.from)
+            .bind(&q.to)
+            .bind(&q.to)
+            .bind(&q.principal)
+            .bind(&q.principal)
+            .bind(&q.action)
+            .bind(&q.action)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(p)
+            .await
+        }
     }
     .map_err(|e| {
         tracing::error!(?e, "audit query failed");

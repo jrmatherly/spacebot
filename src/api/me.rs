@@ -83,20 +83,20 @@ pub(super) async fn me(
                 .await
         }
     } {
-            Ok(rows) => rows,
-            Err(err) => {
-                // Pool exhaustion, schema drift, or column rename leaves
-                // the user looking like they belong to no teams. Loud-log
-                // the error so the "user lost all group access" report
-                // has a grep target.
-                tracing::warn!(
-                    error = %err,
-                    principal = %ctx.principal_key(),
-                    "me: team_memberships query failed; returning empty groups"
-                );
-                Vec::new()
-            }
-        };
+        Ok(rows) => rows,
+        Err(err) => {
+            // Pool exhaustion, schema drift, or column rename leaves
+            // the user looking like they belong to no teams. Loud-log
+            // the error so the "user lost all group access" report
+            // has a grep target.
+            tracing::warn!(
+                error = %err,
+                principal = %ctx.principal_key(),
+                "me: team_memberships query failed; returning empty groups"
+            );
+            Vec::new()
+        }
+    };
 
     // Read the cached photo row keyed on principal_key. The
     // photo_updated_at column is selected alongside the blob but the

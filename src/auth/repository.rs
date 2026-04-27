@@ -330,9 +330,8 @@ pub async fn set_ownership(
             .execute(p)
             .await
         }
-        DbPool::Postgres(p) => {
-            sqlx::query(
-                r#"
+        DbPool::Postgres(p) => sqlx::query(
+            r#"
                 INSERT INTO resource_ownership (
                     resource_type, resource_id, owner_agent_id,
                     owner_principal_key, visibility, shared_with_team_id
@@ -345,17 +344,16 @@ pub async fn set_ownership(
                     shared_with_team_id = excluded.shared_with_team_id,
                     updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
                 "#,
-            )
-            .bind(resource_type)
-            .bind(resource_id)
-            .bind(owner_agent_id)
-            .bind(owner_principal_key)
-            .bind(visibility.as_str())
-            .bind(shared_with_team_id)
-            .execute(p)
-            .await
-            .map(|_| Default::default())
-        }
+        )
+        .bind(resource_type)
+        .bind(resource_id)
+        .bind(owner_agent_id)
+        .bind(owner_principal_key)
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .execute(p)
+        .await
+        .map(|_| Default::default()),
     }
     .with_context(|| {
         format!("set ownership resource={resource_type}:{resource_id} owner={owner_principal_key}")
@@ -385,44 +383,40 @@ pub async fn update_visibility_only(
     shared_with_team_id: Option<&str>,
 ) -> anyhow::Result<bool> {
     let rows_affected = match pool {
-        DbPool::Sqlite(p) => {
-            sqlx::query(
-                r#"
+        DbPool::Sqlite(p) => sqlx::query(
+            r#"
                 UPDATE resource_ownership
                 SET visibility = ?,
                     shared_with_team_id = ?,
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                 WHERE resource_type = ? AND resource_id = ?
                 "#,
-            )
-            .bind(visibility.as_str())
-            .bind(shared_with_team_id)
-            .bind(resource_type)
-            .bind(resource_id)
-            .execute(p)
-            .await
-            .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
-            .rows_affected()
-        }
-        DbPool::Postgres(p) => {
-            sqlx::query(
-                r#"
+        )
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .bind(resource_type)
+        .bind(resource_id)
+        .execute(p)
+        .await
+        .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
+        .rows_affected(),
+        DbPool::Postgres(p) => sqlx::query(
+            r#"
                 UPDATE resource_ownership
                 SET visibility = $1,
                     shared_with_team_id = $2,
                     updated_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
                 WHERE resource_type = $3 AND resource_id = $4
                 "#,
-            )
-            .bind(visibility.as_str())
-            .bind(shared_with_team_id)
-            .bind(resource_type)
-            .bind(resource_id)
-            .execute(p)
-            .await
-            .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
-            .rows_affected()
-        }
+        )
+        .bind(visibility.as_str())
+        .bind(shared_with_team_id)
+        .bind(resource_type)
+        .bind(resource_id)
+        .execute(p)
+        .await
+        .with_context(|| format!("update visibility resource={resource_type}:{resource_id}"))?
+        .rows_affected(),
     };
     Ok(rows_affected > 0)
 }
@@ -506,7 +500,8 @@ pub async fn list_ownerships_by_ids(
                 "SELECT * FROM resource_ownership \
                  WHERE resource_type = {rt_placeholder} AND resource_id IN ({id_placeholders})"
             );
-            let mut q = sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
+            let mut q =
+                sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
             for id in resource_ids {
                 q = q.bind(id);
             }
@@ -522,7 +517,8 @@ pub async fn list_ownerships_by_ids(
                 "SELECT {PG_RESOURCE_OWNERSHIP_COLUMNS} FROM resource_ownership \
                  WHERE resource_type = {rt_placeholder} AND resource_id IN ({id_placeholders})"
             );
-            let mut q = sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
+            let mut q =
+                sqlx::query_as::<_, ResourceOwnershipRecord>(&query_str).bind(resource_type);
             for id in resource_ids {
                 q = q.bind(id);
             }
@@ -577,9 +573,8 @@ pub async fn get_teams_by_ids(
                 .with_context(|| format!("batch read teams count={}", team_ids.len()))?
         }
         DbPool::Postgres(p) => {
-            let query_str = format!(
-                "SELECT {PG_TEAMS_COLUMNS} FROM teams WHERE id IN ({placeholders})"
-            );
+            let query_str =
+                format!("SELECT {PG_TEAMS_COLUMNS} FROM teams WHERE id IN ({placeholders})");
             let mut q = sqlx::query_as::<_, TeamRecord>(&query_str);
             for id in team_ids {
                 q = q.bind(id);

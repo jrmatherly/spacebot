@@ -135,8 +135,9 @@ pub(super) async fn list_admin_teams(
     // `MAX(observed_at)` collapses to NULL when there are no memberships,
     // which surfaces in the response as `last_sync_at: null`.
     let rows: Vec<AdminTeamRow> = match &*pool {
-        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
-            "SELECT t.id, t.display_name, t.status, \
+        crate::db::DbPool::Sqlite(p) => {
+            sqlx::query_as(
+                "SELECT t.id, t.display_name, t.status, \
                     COUNT(tm.principal_key) AS member_count, \
                     MAX(tm.observed_at) AS last_sync_at \
              FROM teams t \
@@ -144,11 +145,13 @@ pub(super) async fn list_admin_teams(
              WHERE t.status = 'active' \
              GROUP BY t.id \
              ORDER BY t.display_name, t.id",
-        )
-        .fetch_all(p)
-        .await,
-        crate::db::DbPool::Postgres(p) => sqlx::query_as(
-            "SELECT t.id, t.display_name, t.status, \
+            )
+            .fetch_all(p)
+            .await
+        }
+        crate::db::DbPool::Postgres(p) => {
+            sqlx::query_as(
+                "SELECT t.id, t.display_name, t.status, \
                     COUNT(tm.principal_key) AS member_count, \
                     MAX(tm.observed_at) AS last_sync_at \
              FROM teams t \
@@ -156,9 +159,10 @@ pub(super) async fn list_admin_teams(
              WHERE t.status = 'active' \
              GROUP BY t.id, t.display_name, t.status \
              ORDER BY t.display_name, t.id",
-        )
-        .fetch_all(p)
-        .await,
+            )
+            .fetch_all(p)
+            .await
+        }
     }
     .map_err(|error| {
         tracing::error!(%error, "list_admin_teams query failed");

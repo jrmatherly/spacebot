@@ -520,26 +520,26 @@ impl ProjectStore {
 
     pub async fn list_repos(&self, project_id: &str) -> Result<Vec<ProjectRepo>> {
         match &*self.pool {
-            DbPool::Sqlite(p) => sqlx::query(
-                "SELECT * FROM project_repos WHERE project_id = ? ORDER BY name ASC",
-            )
-            .bind(project_id)
-            .fetch_all(p)
-            .await
-            .context("failed to list repos")?
-            .iter()
-            .map(row_to_repo_sqlite)
-            .collect(),
-            DbPool::Postgres(p) => sqlx::query(
-                "SELECT * FROM project_repos WHERE project_id = $1 ORDER BY name ASC",
-            )
-            .bind(project_id)
-            .fetch_all(p)
-            .await
-            .context("failed to list repos")?
-            .iter()
-            .map(row_to_repo_pg)
-            .collect(),
+            DbPool::Sqlite(p) => {
+                sqlx::query("SELECT * FROM project_repos WHERE project_id = ? ORDER BY name ASC")
+                    .bind(project_id)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list repos")?
+                    .iter()
+                    .map(row_to_repo_sqlite)
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("SELECT * FROM project_repos WHERE project_id = $1 ORDER BY name ASC")
+                    .bind(project_id)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list repos")?
+                    .iter()
+                    .map(row_to_repo_pg)
+                    .collect()
+            }
         }
     }
 
@@ -568,26 +568,26 @@ impl ProjectStore {
         path: &str,
     ) -> Result<Option<ProjectRepo>> {
         match &*self.pool {
-            DbPool::Sqlite(p) => sqlx::query(
-                "SELECT * FROM project_repos WHERE project_id = ? AND path = ?",
-            )
-            .bind(project_id)
-            .bind(path)
-            .fetch_optional(p)
-            .await
-            .context("failed to fetch repo by path")?
-            .map(|r| row_to_repo_sqlite(&r))
-            .transpose(),
-            DbPool::Postgres(p) => sqlx::query(
-                "SELECT * FROM project_repos WHERE project_id = $1 AND path = $2",
-            )
-            .bind(project_id)
-            .bind(path)
-            .fetch_optional(p)
-            .await
-            .context("failed to fetch repo by path")?
-            .map(|r| row_to_repo_pg(&r))
-            .transpose(),
+            DbPool::Sqlite(p) => {
+                sqlx::query("SELECT * FROM project_repos WHERE project_id = ? AND path = ?")
+                    .bind(project_id)
+                    .bind(path)
+                    .fetch_optional(p)
+                    .await
+                    .context("failed to fetch repo by path")?
+                    .map(|r| row_to_repo_sqlite(&r))
+                    .transpose()
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("SELECT * FROM project_repos WHERE project_id = $1 AND path = $2")
+                    .bind(project_id)
+                    .bind(path)
+                    .fetch_optional(p)
+                    .await
+                    .context("failed to fetch repo by path")?
+                    .map(|r| row_to_repo_pg(&r))
+                    .transpose()
+            }
         }
     }
 
@@ -705,9 +705,11 @@ impl ProjectStore {
             .iter()
             .map(|r| {
                 let worktree = row_to_worktree_sqlite(r)?;
-                let repo_name: String =
-                    r.try_get("repo_name").context("missing repo_name")?;
-                Ok(ProjectWorktreeWithRepo { worktree, repo_name })
+                let repo_name: String = r.try_get("repo_name").context("missing repo_name")?;
+                Ok(ProjectWorktreeWithRepo {
+                    worktree,
+                    repo_name,
+                })
             })
             .collect(),
             DbPool::Postgres(p) => sqlx::query(
@@ -726,9 +728,11 @@ impl ProjectStore {
             .iter()
             .map(|r| {
                 let worktree = row_to_worktree_pg(r)?;
-                let repo_name: String =
-                    r.try_get("repo_name").context("missing repo_name")?;
-                Ok(ProjectWorktreeWithRepo { worktree, repo_name })
+                let repo_name: String = r.try_get("repo_name").context("missing repo_name")?;
+                Ok(ProjectWorktreeWithRepo {
+                    worktree,
+                    repo_name,
+                })
             })
             .collect(),
         }
@@ -759,26 +763,26 @@ impl ProjectStore {
         path: &str,
     ) -> Result<Option<ProjectWorktree>> {
         match &*self.pool {
-            DbPool::Sqlite(p) => sqlx::query(
-                "SELECT * FROM project_worktrees WHERE project_id = ? AND path = ?",
-            )
-            .bind(project_id)
-            .bind(path)
-            .fetch_optional(p)
-            .await
-            .context("failed to fetch worktree by path")?
-            .map(|r| row_to_worktree_sqlite(&r))
-            .transpose(),
-            DbPool::Postgres(p) => sqlx::query(
-                "SELECT * FROM project_worktrees WHERE project_id = $1 AND path = $2",
-            )
-            .bind(project_id)
-            .bind(path)
-            .fetch_optional(p)
-            .await
-            .context("failed to fetch worktree by path")?
-            .map(|r| row_to_worktree_pg(&r))
-            .transpose(),
+            DbPool::Sqlite(p) => {
+                sqlx::query("SELECT * FROM project_worktrees WHERE project_id = ? AND path = ?")
+                    .bind(project_id)
+                    .bind(path)
+                    .fetch_optional(p)
+                    .await
+                    .context("failed to fetch worktree by path")?
+                    .map(|r| row_to_worktree_sqlite(&r))
+                    .transpose()
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("SELECT * FROM project_worktrees WHERE project_id = $1 AND path = $2")
+                    .bind(project_id)
+                    .bind(path)
+                    .fetch_optional(p)
+                    .await
+                    .context("failed to fetch worktree by path")?
+                    .map(|r| row_to_worktree_pg(&r))
+                    .transpose()
+            }
         }
     }
 
@@ -887,26 +891,26 @@ impl ProjectStore {
     /// List worktrees belonging to a specific repo.
     pub async fn list_worktrees_for_repo(&self, repo_id: &str) -> Result<Vec<ProjectWorktree>> {
         match &*self.pool {
-            DbPool::Sqlite(p) => sqlx::query(
-                "SELECT * FROM project_worktrees WHERE repo_id = ? ORDER BY name ASC",
-            )
-            .bind(repo_id)
-            .fetch_all(p)
-            .await
-            .context("failed to list worktrees for repo")?
-            .iter()
-            .map(row_to_worktree_sqlite)
-            .collect(),
-            DbPool::Postgres(p) => sqlx::query(
-                "SELECT * FROM project_worktrees WHERE repo_id = $1 ORDER BY name ASC",
-            )
-            .bind(repo_id)
-            .fetch_all(p)
-            .await
-            .context("failed to list worktrees for repo")?
-            .iter()
-            .map(row_to_worktree_pg)
-            .collect(),
+            DbPool::Sqlite(p) => {
+                sqlx::query("SELECT * FROM project_worktrees WHERE repo_id = ? ORDER BY name ASC")
+                    .bind(repo_id)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list worktrees for repo")?
+                    .iter()
+                    .map(row_to_worktree_sqlite)
+                    .collect()
+            }
+            DbPool::Postgres(p) => {
+                sqlx::query("SELECT * FROM project_worktrees WHERE repo_id = $1 ORDER BY name ASC")
+                    .bind(repo_id)
+                    .fetch_all(p)
+                    .await
+                    .context("failed to list worktrees for repo")?
+                    .iter()
+                    .map(row_to_worktree_pg)
+                    .collect()
+            }
         }
     }
 }

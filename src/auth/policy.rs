@@ -152,26 +152,30 @@ async fn decide_user_read(
                 ));
             };
             let found: Option<i64> = match pool {
-                DbPool::Sqlite(p) => sqlx::query_scalar(
-                    r#"
+                DbPool::Sqlite(p) => {
+                    sqlx::query_scalar(
+                        r#"
                     SELECT 1 FROM team_memberships
                     WHERE principal_key = ? AND team_id = ?
                     "#,
-                )
-                .bind(ctx.principal_key())
-                .bind(team_id)
-                .fetch_optional(p)
-                .await?,
-                DbPool::Postgres(p) => sqlx::query_scalar(
-                    r#"
+                    )
+                    .bind(ctx.principal_key())
+                    .bind(team_id)
+                    .fetch_optional(p)
+                    .await?
+                }
+                DbPool::Postgres(p) => {
+                    sqlx::query_scalar(
+                        r#"
                     SELECT 1 FROM team_memberships
                     WHERE principal_key = $1 AND team_id = $2
                     "#,
-                )
-                .bind(ctx.principal_key())
-                .bind(team_id)
-                .fetch_optional(p)
-                .await?,
+                    )
+                    .bind(ctx.principal_key())
+                    .bind(team_id)
+                    .fetch_optional(p)
+                    .await?
+                }
             };
             if found.is_some() {
                 Ok(Access::Allowed)

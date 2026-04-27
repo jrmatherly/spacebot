@@ -640,9 +640,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn connect_instance_db_with_postgres_url_attempts_connect() {
         let tmp = tempfile::tempdir().unwrap();
-        let url: DatabaseUrl = "postgres://nobody@127.0.0.1:1/neverexists"
-            .parse()
-            .unwrap();
+        let url: DatabaseUrl = "postgres://nobody@127.0.0.1:1/neverexists".parse().unwrap();
         let err = match connect_instance_db(tmp.path(), Some(&url)).await {
             Ok(_) => panic!("expected connect to fail without a real Postgres"),
             Err(e) => e,

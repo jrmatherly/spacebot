@@ -193,13 +193,11 @@ impl NotificationStore {
     pub async fn get_by_id(&self, id: &str) -> Result<Notification> {
         match &*self.pool {
             DbPool::Sqlite(p) => {
-                let row = sqlx::query(&format!(
-                    "{SELECT_COLUMNS} FROM notifications WHERE id = ?"
-                ))
-                .bind(id)
-                .fetch_one(p)
-                .await
-                .context("failed to fetch notification by id")?;
+                let row = sqlx::query(&format!("{SELECT_COLUMNS} FROM notifications WHERE id = ?"))
+                    .bind(id)
+                    .fetch_one(p)
+                    .await
+                    .context("failed to fetch notification by id")?;
                 notification_from_sqlite_row(row)
             }
             DbPool::Postgres(p) => {
@@ -245,7 +243,9 @@ impl NotificationStore {
         }
         let p_limit = next_placeholder();
         let p_offset = next_placeholder();
-        query.push_str(&format!(" ORDER BY created_at DESC LIMIT {p_limit} OFFSET {p_offset}"));
+        query.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT {p_limit} OFFSET {p_offset}"
+        ));
 
         let limit = filter.limit.unwrap_or(50).clamp(1, 500);
         let offset = filter.offset.unwrap_or(0);
@@ -290,7 +290,8 @@ impl NotificationStore {
 
     pub async fn unread_count(&self) -> Result<i64> {
         // Pattern A: identical SQL on both backends.
-        let sql = "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL AND dismissed_at IS NULL";
+        let sql =
+            "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL AND dismissed_at IS NULL";
         let count: i64 = match &*self.pool {
             DbPool::Sqlite(p) => sqlx::query_scalar(sql)
                 .fetch_one(p)

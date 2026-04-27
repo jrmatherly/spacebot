@@ -25,7 +25,9 @@ pub async fn migrate_legacy_projects(
     let instance_pool = match instance_pool {
         DbPool::Sqlite(p) => p,
         DbPool::Postgres(_) => {
-            tracing::debug!("legacy project migration skipped (Postgres backend has no legacy data)");
+            tracing::debug!(
+                "legacy project migration skipped (Postgres backend has no legacy data)"
+            );
             return Ok(());
         }
     };

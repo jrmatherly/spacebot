@@ -26,10 +26,7 @@ const MIGRATION_MARKER: &str = ".tasks_migrated";
 ///
 /// The migration is idempotent: if the marker file exists, it returns
 /// immediately. On success, the marker file is written.
-pub async fn migrate_legacy_tasks(
-    instance_dir: &Path,
-    global_pool: &DbPool,
-) -> anyhow::Result<()> {
+pub async fn migrate_legacy_tasks(instance_dir: &Path, global_pool: &DbPool) -> anyhow::Result<()> {
     // Legacy per-agent tasks live in SQLite agent.db files. Postgres
     // deployments are greenfield (PR 11.4 ships them with no legacy data),
     // so the migration is a no-op there. Required for type-correctness;
