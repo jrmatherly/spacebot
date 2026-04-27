@@ -16,6 +16,7 @@ pub mod policy;
 pub mod principals;
 pub mod repository;
 pub mod roles;
+pub mod scope;
 // Plain `pub mod` (no `cfg(test)` gate): integration tests under `tests/*.rs`
 // are separate compilation units that cannot see `cfg(test)` items from the
 // library. Precedent: `tests/support/mock_entra.rs` and `ApiState::new_for_tests`.
@@ -33,3 +34,4 @@ pub use principals::{
     Visibility,
 };
 pub use roles::{ROLE_ADMIN, ROLE_SERVICE, ROLE_USER, is_admin, require_role};
+pub use scope::agent_ids_for;
