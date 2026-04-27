@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
     related TEXT NOT NULL DEFAULT '[]',
     created_by TEXT NOT NULL,
     updated_by TEXT NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
+    -- BIGINT (vs SQLite's dynamic INTEGER) so sqlx's FromRow derive on
+    -- WikiPage::version maps cleanly without per-backend i32→i64 casts.
+    -- The Rust struct uses `i64` and Postgres `INTEGER` is 32-bit (INT4)
+    -- which sqlx refuses to decode into i64.
+    version BIGINT NOT NULL DEFAULT 1,
     archived INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
     updated_at TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 CREATE TABLE IF NOT EXISTS wiki_page_versions (
     id TEXT PRIMARY KEY DEFAULT replace(gen_random_uuid()::text, '-', ''),
     page_id TEXT NOT NULL REFERENCES wiki_pages (id),
-    version INTEGER NOT NULL,
+    -- BIGINT for parity with wiki_pages.version above; sqlx FromRow needs i64.
+    version BIGINT NOT NULL,
     content TEXT NOT NULL,
     edit_summary TEXT,
     author_type TEXT NOT NULL CHECK (
