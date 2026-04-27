@@ -1,6 +1,6 @@
 //! Integration test for PR 11.2 instance-tier Postgres support.
 //!
-//! Spins up `postgres:16-alpine` via testcontainers, applies the
+//! Spins up `postgres:18-alpine` via testcontainers, applies the
 //! `migrations/postgres/global/` tree, exercises each instance-tier store
 //! (TaskStore, WikiStore, NotificationStore, ProjectStore) and validates
 //! the audit hash chain end-to-end on the Postgres backend.
@@ -28,14 +28,23 @@ use spacebot::tasks::store::{CreateTaskInput, TaskPriority, TaskStatus, TaskStor
 use spacebot::wiki::{CreateWikiPageInput, WikiPageType, WikiStore};
 use sqlx::PgPool;
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
-/// Spin up a fresh `postgres:16-alpine` container, apply the
+/// Spin up a fresh `postgres:18-alpine` container, apply the
 /// `migrations/postgres/global/` tree, and return an `Arc<DbPool>` plus
 /// the container handle (kept alive for the lifetime of the test).
+///
+/// The Postgres 18 pin is load-bearing: production deployments target
+/// CloudNativePG (CNPG) on Talos with Postgres 18, and `migrations/
+/// postgres/global/20260407120000_wiki.sql` uses `GENERATED ALWAYS AS
+/// (... tsvector ...) STORED` which requires Postgres 12+. The
+/// `testcontainers-modules` 0.15 default tag is `11-alpine` (would fail
+/// the wiki migration with `syntax error at or near "("`).
 async fn setup_postgres() -> (Arc<DbPool>, ContainerAsync<Postgres>) {
     let container = Postgres::default()
+        .with_tag("18-alpine")
         .start()
         .await
         .expect("failed to start postgres testcontainer (docker daemon required)");
@@ -64,7 +73,7 @@ async fn setup_postgres() -> (Arc<DbPool>, ContainerAsync<Postgres>) {
 async fn migrations_apply_cleanly() {
     // Reaching this assertion means all 14 migrations under
     // migrations/postgres/global/ applied without error against
-    // postgres:16-alpine.
+    // postgres:18-alpine.
     let (_pool, _container) = setup_postgres().await;
 }
 
@@ -307,7 +316,7 @@ async fn auth_repository_upsert_user_against_postgres() {
 ///      one row (the new one) and `first_seq = last_seq = 4`.
 ///
 /// Mirrors `tests/audit_export.rs::incremental_cursor_skips_already_exported_rows`
-/// but against postgres:16-alpine. The pre-R2 projection bug
+/// but against postgres:18-alpine. The pre-R2 projection bug
 /// (`PG_AUDIT_EVENTS_COLUMNS` casting `timestamp TEXT` through
 /// `to_char(... AT TIME ZONE 'UTC', ...)`) would have made the second
 /// export's `audit_export_state` UPSERT a runtime error; this test fails

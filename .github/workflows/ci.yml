@@ -253,7 +253,7 @@ jobs:
           persist-credentials: false
 
       # Free disk space — same rationale as the `test` job: integration test
-      # binaries plus the postgres:16-alpine image (~250 MB) plus
+      # binaries plus the postgres:18-alpine image (~250 MB) plus
       # testcontainers state can exhaust the runner's 14 GB free baseline.
       - name: Free disk space
         run: |
@@ -284,6 +284,6 @@ jobs:
 
       - name: Run Postgres instance integration tests
         # GHA runners ship with Docker; testcontainers spins up
-        # postgres:16-alpine on demand. No GHA service container, so the
+        # postgres:18-alpine on demand. No GHA service container, so the
         # test environment matches local dev exactly.
         run: cargo test --test instance_postgres -- --nocapture

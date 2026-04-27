@@ -260,7 +260,7 @@ Shipped 2026-04-27 on branch `feat/phase-11-pr-2-instance-postgres` (PR #136). R
 - `ApiState.instance_pool` widened from `ArcSwap<Option<SqlitePool>>` to `ArcSwap<Option<Arc<DbPool>>>`. ~30 handler call sites swept.
 - `src/main.rs` drops the `.as_sqlite()?` PR 11.1 transitional bridge — `instance_pool` is `Arc<DbPool>` throughout.
 - Legacy migrators (`tasks::migration::migrate_legacy_tasks`, `projects::migration::migrate_legacy_projects`) take `&DbPool`, no-op on the Postgres arm (legacy SQLite per-agent files are desktop-only).
-- `tests/instance_postgres.rs` validates audit chain + 4 stores against `postgres:16-alpine` via testcontainers (5 tests: migrations smoke, audit hash chain, TaskStore CRUD, WikiStore tsvector search, NotificationStore ON CONFLICT, ProjectStore CRUD).
+- `tests/instance_postgres.rs` validates audit chain + 4 stores against `postgres:18-alpine` via testcontainers (5 tests: migrations smoke, audit hash chain, TaskStore CRUD, WikiStore tsvector search, NotificationStore ON CONFLICT, ProjectStore CRUD).
 - CI: new `test-postgres-instance` job (`.github/workflows/ci.yml`).
 
 Out of scope (PR 11.3): per-agent stores (`MemoryStore`, `WorkingMemoryStore`, `CronStore`, `ConversationLogger`, `ProcessRunLogger`, `ChannelStore`, …), `migrations/postgres/` per-agent tree (41 files), `agents` parent table, `AgentDeps.sqlite_pool` → `Arc<DbPool>`.
