@@ -156,8 +156,13 @@ jobs:
       - name: cargo test (lib)
         run: cargo test --lib
 
+      # Multi-team WS-1.4: the integration-test crate uses the
+      # `auth-overrides` feature. tests/jwks_rotation.rs and
+      # tests/entra_jwt_middleware.rs are gated `#![cfg(feature =
+      # "auth-overrides")]` and need the flag to compile. Mirrors the
+      # local gate-pr.sh integration-compile step.
       - name: cargo test (integration compile check)
-        run: cargo test --tests --no-run
+        run: cargo test --tests --no-run --features auth-overrides
 
   check-typegen:
     name: OpenAPI Typegen Drift

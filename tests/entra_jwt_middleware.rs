@@ -1,6 +1,14 @@
 //! Phase 1 Task 1.12: Wiremock-backed integration tests for the Entra JWT
 //! validator. Covers the happy path, the wrong-signature path, and the
 //! service-principal path.
+//!
+//! Requires `feature = "auth-overrides"` (multi-team WS-1.4): the test
+//! points the validator at the Wiremock-backed tenant via
+//! `EntraAuthConfig::with_test_overrides`, which is feature-gated. The
+//! gate-pr script and the CI Test job pass `--features auth-overrides`;
+//! default `cargo check --all-targets` skips this file by design — the
+//! override surface is not available in production builds.
+#![cfg(feature = "auth-overrides")]
 
 #[path = "support/mock_entra.rs"]
 mod mock_entra;
