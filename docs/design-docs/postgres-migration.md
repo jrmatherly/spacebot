@@ -133,10 +133,10 @@ migrations/                                    # SQLite (existing, unchanged)
 └── global/
     └── ... (all 14 existing instance migrations)
 
-migrations/postgres/                           # Postgres (new in PR 11.2/11.3)
-├── 20260211000001_memories.sql
+migrations/postgres/                           # Postgres
+├── 20260211000001_memories.sql                # per-agent (PR 11.3)
 ├── ... (Postgres equivalents)
-└── global/
+└── global/                                    # instance-tier (PR 11.2, 14 files shipped)
     └── ... (Postgres equivalents)
 ```
 
@@ -247,16 +247,25 @@ The Phase 10 evidence package (PR #120) shipped against the SQLite-on-PVC postur
 - `DbError::UnsupportedScheme` variant
 - `ApiState.database_url: ArcSwap<Option<String>>` for runtime store construction
 - `tests/dialect_adapter.rs` unit tests
-- Stores remain on `SqlitePool` parameter type. They will be migrated in PR 11.2/11.3 as those PRs touch each subsystem. The `Db.pool` field exposes a backend-specific accessor that returns `&SqlitePool` for SQLite-mode (the path that compiles today) and a `Result` for Postgres-mode (errors with "store not yet migrated to dual-backend" until 11.2).
+- Stores in PR 11.1 remained on `SqlitePool` parameter type. PR 11.2 widened the instance-tier stores (`TaskStore`, `WikiStore`, `ProjectStore`, `NotificationStore`, `AuditAppender`) to `Arc<DbPool>`; per-agent stores migrate in PR 11.3. The `Db.pool` field exposes `Db::sqlite_pool()` as a transitional accessor returning `&SqlitePool` for SQLite-mode (the only remaining caller is `AgentDeps.sqlite_pool` on the per-agent path) and a `Result` for Postgres-mode (errors until PR 11.3 retires the accessor).
 
-### PR 11.2 — Instance pool Postgres support + per-store migration tranche A
+### PR 11.2 — Instance pool Postgres support + per-store migration tranche A — SHIPPED
 
-- `migrations/postgres/global/` mirrors `migrations/global/` (14 files, dialect-translated)
-- Migrate the **instance-tier stores** to take `Arc<DbPool>`:
-  - `TaskStore`, `WikiStore`, `ProjectStore`, `NotificationStore`, `AuditAppender`, plus instance helpers in `auth/repository.rs`, `auth/middleware.rs`, `audit/export.rs`, `config/load.rs::ensure_legacy_static_user`
-- Hash-chained audit log validates against Postgres
-- `connect_instance_db` actually connects to Postgres when URL is `postgres://`
-- CI gains a `test-postgres-instance` job using `testcontainers` crate against `postgres:16-alpine`
+Shipped 2026-04-27 on branch `feat/phase-11-pr-2-instance-postgres` (PR #136). Realized scope:
+
+- `migrations/postgres/global/` — 14 files, dialect-translated. FTS5 → tsvector STORED column + GIN index. INSERT OR IGNORE → ON CONFLICT DO NOTHING. randomblob/hex → gen_random_uuid()::text. INTEGER bytes/seq → BIGINT.
+- 5 instance-tier stores migrated to `Arc<DbPool>` dispatch: `TaskStore`, `WikiStore`, `ProjectStore`, `NotificationStore`, `AuditAppender`.
+- Auth + config helpers migrated to `&DbPool`: `auth/repository.rs` (12 fns), `auth/middleware.rs` (`sync_groups_for_principal`, `sync_user_photo_for_principal`), `auth/policy.rs` (5 fns), `config/load.rs` (`ensure_legacy_static_user`, `reconcile_toml_agents_with_ownership`).
+- `audit::export::export_audit` migrated to `&DbPool`.
+- `ApiState.instance_pool` widened from `ArcSwap<Option<SqlitePool>>` to `ArcSwap<Option<Arc<DbPool>>>`. ~30 handler call sites swept.
+- `src/main.rs` drops the `.as_sqlite()?` PR 11.1 transitional bridge — `instance_pool` is `Arc<DbPool>` throughout.
+- Legacy migrators (`tasks::migration::migrate_legacy_tasks`, `projects::migration::migrate_legacy_projects`) take `&DbPool`, no-op on the Postgres arm (legacy SQLite per-agent files are desktop-only).
+- `tests/instance_postgres.rs` validates audit chain + 4 stores against `postgres:16-alpine` via testcontainers (5 tests: migrations smoke, audit hash chain, TaskStore CRUD, WikiStore tsvector search, NotificationStore ON CONFLICT, ProjectStore CRUD).
+- CI: new `test-postgres-instance` job (`.github/workflows/ci.yml`).
+
+Out of scope (PR 11.3): per-agent stores (`MemoryStore`, `WorkingMemoryStore`, `CronStore`, `ConversationLogger`, `ProcessRunLogger`, `ChannelStore`, …), `migrations/postgres/` per-agent tree (41 files), `agents` parent table, `AgentDeps.sqlite_pool` → `Arc<DbPool>`.
+
+Out of scope (PR 11.4): K8s manifests, Helm wiring, advisory-lock leader election, `docs/security/data-classification.md` delta, runbook.
 
 ### PR 11.3 — Per-agent Postgres support + per-store migration tranche B
 

@@ -331,15 +331,16 @@ pub enum DbPool {
 
 impl Db {
     /// Transitional accessor returning the underlying SqlitePool for the
-    /// SQLite variant; Err for Postgres. PR 11.1 stores still take
-    /// `&SqlitePool`. PR 11.2/11.3 migrate them to take `Arc<DbPool>`.
+    /// SQLite variant; Err for Postgres. PR 11.2 widened the instance-tier
+    /// stores to `Arc<DbPool>`; the remaining caller is `AgentDeps.sqlite_pool`
+    /// on the per-agent path. PR 11.3 retires this accessor.
     pub fn sqlite_pool(&self) -> Result<&SqlitePool> {
         self.pool.as_sqlite()
     }
 }
 ```
 
-`DialectAdapter` (`src/dialect.rs`) is the companion trait for cross-backend DDL string differences (`now_expr()`, `autoincrement_pk()`, `json_type()`). `SqliteDialect` and `PostgresDialect` are zero-state unit structs. Per-query placeholder syntax (`?` vs `$1`) and JSON operators live in per-variant store dispatch (PR 11.2/11.3), not in this trait.
+`DialectAdapter` (`src/dialect.rs`) is the companion trait for cross-backend DDL string differences (`now_expr()`, `autoincrement_pk()`, `json_type()`). `SqliteDialect` and `PostgresDialect` are zero-state unit structs. Per-query placeholder syntax (`?` vs `$1`) and JSON operators live in per-variant store dispatch (instance-tier stores shipped in PR 11.2; per-agent stores in PR 11.3), not in this trait.
 
 ### SQLite Tables (per-agent `spacebot.db`)
 memories, associations, conversation_messages, channels, cron_jobs, cron_executions, worker_runs, branch_runs, cortex_events, cortex_chat_messages, tasks, ingestion_progress, ingestion_files, agent_profile, portal_conversations, channel_settings, token_usage, working_memory
