@@ -83,7 +83,7 @@ fn hosted_agent_limit() -> Option<usize> {
 /// before returning to the creator so an immediate follow-up GET
 /// does not race into a `NotOwned` 404.
 pub async fn register_agent_ownership(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     ctx: &crate::auth::context::AuthContext,
     agent_id: &str,
 ) -> anyhow::Result<()> {

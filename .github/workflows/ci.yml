@@ -235,3 +235,55 @@ jobs:
         # RUSTSEC-2023-0071: rsa Marvin Attack — pulled by sqlx-mysql but never compiled
         # (spacebot uses only the sqlite feature). No upstream fix available.
         run: cargo audit --ignore RUSTSEC-2023-0071
+
+  test-postgres-instance:
+    name: Postgres instance integration tests
+    runs-on: ubuntu-24.04
+    # Depends on `check` (lib + clippy) so we don't burn a Docker pull on a
+    # tree that fails clippy. check-typegen is unrelated (OpenAPI drift).
+    needs: [check]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # This job only reads source and runs cargo test against a
+          # testcontainers-provisioned Postgres. It does not push commits,
+          # so do not persist the GITHUB_TOKEN into `.git/config`. Closes
+          # the `zizmor/artipacked` alert on this job (#135).
+          persist-credentials: false
+
+      # Free disk space — same rationale as the `test` job: integration test
+      # binaries plus the postgres:18-alpine image (~250 MB) plus
+      # testcontainers state can exhaust the runner's 14 GB free baseline.
+      - name: Free disk space
+        run: |
+          echo "=== Before cleanup ==="
+          df -h /
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          sudo docker system prune -af || true
+          echo "=== After cleanup ==="
+          df -h /
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      # Separate cache slot: the instance_postgres test compile differs
+      # from the lib/integration cache because it pulls testcontainers and
+      # testcontainers-modules into the dep graph.
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ci-rust-postgres
+          key: ${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+
+      - name: Run Postgres instance integration tests
+        # GHA runners ship with Docker; testcontainers spins up
+        # postgres:18-alpine on demand. No GHA service container, so the
+        # test environment matches local dev exactly.
+        run: cargo test --test instance_postgres -- --nocapture

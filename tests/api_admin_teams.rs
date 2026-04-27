@@ -16,6 +16,7 @@ use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::{upsert_team, upsert_user_from_auth};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -75,15 +76,16 @@ async fn non_admin_list_team_members_returns_403() {
 #[tokio::test]
 async fn admin_list_admin_teams_returns_teams_with_counts() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     // Seed two active teams with distinct member counts.
     let alice = user("alice", vec!["SpacebotUser"]);
     let bob = user("bob", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let team_platform = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let team_platform = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
-    let team_data = upsert_team(&pool, "grp-data", "Data").await.unwrap();
+    let team_data = upsert_team(&db_pool, "grp-data", "Data").await.unwrap();
     seed_membership(&pool, &alice.principal_key(), &team_platform.id).await;
     seed_membership(&pool, &bob.principal_key(), &team_platform.id).await;
     seed_membership(&pool, &alice.principal_key(), &team_data.id).await;
@@ -124,7 +126,10 @@ async fn admin_list_admin_teams_includes_empty_team_with_null_last_sync() {
     // LEFT JOIN coverage: a team with no memberships still appears, with
     // member_count=0 and last_sync_at=null.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
-    upsert_team(&pool, "grp-empty", "Empty Team").await.unwrap();
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    upsert_team(&db_pool, "grp-empty", "Empty Team")
+        .await
+        .unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&user("admin", vec!["SpacebotAdmin"]));
@@ -149,11 +154,12 @@ async fn admin_list_admin_teams_includes_empty_team_with_null_last_sync() {
 #[tokio::test]
 async fn admin_list_team_members_returns_trimmed_rows() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let bob = user("bob", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     seed_membership(&pool, &alice.principal_key(), &team.id).await;
@@ -218,7 +224,10 @@ async fn admin_list_team_members_returns_200_for_real_empty_team() {
     // (distinct from the unknown-team 404 case above). Mirrors
     // `admin_list_admin_teams_includes_empty_team_with_null_last_sync`.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
-    let team = upsert_team(&pool, "grp-empty", "Empty Team").await.unwrap();
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    let team = upsert_team(&db_pool, "grp-empty", "Empty Team")
+        .await
+        .unwrap();
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&user("admin", vec!["SpacebotAdmin"]));
     let req = Request::builder()

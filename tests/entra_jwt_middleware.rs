@@ -414,7 +414,7 @@ mod router_level {
             .run(&pool)
             .await
             .expect("global migrations");
-        state.set_instance_pool(pool);
+        state.set_instance_pool(std::sync::Arc::new(spacebot::db::DbPool::Sqlite(pool)));
 
         let app = build_test_router_entra(state);
 

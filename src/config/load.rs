@@ -2915,19 +2915,39 @@ fn load_human_md(human_dir: &std::path::Path) -> Option<String> {
 /// - Use `tenant_id = ''` as an orthogonal sentinel. Already true
 ///   here, but also true of the System principal (cortex has no
 ///   Entra tenant), so it doesn't disambiguate alone.
-async fn ensure_legacy_static_user(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT OR IGNORE INTO users (
-            principal_key, tenant_id, object_id, principal_type,
-            display_name, status
-        )
-        VALUES ('legacy-static', '', '', 'system', 'Legacy Static (pre-Entra)', 'active')
-        "#,
-    )
-    .execute(pool)
-    .await
-    .context("seed legacy-static user row for FK constraint")?;
+async fn ensure_legacy_static_user(pool: &crate::db::DbPool) -> anyhow::Result<()> {
+    use crate::db::DbPool;
+    match pool {
+        DbPool::Sqlite(p) => {
+            sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO users (
+                    principal_key, tenant_id, object_id, principal_type,
+                    display_name, status
+                )
+                VALUES ('legacy-static', '', '', 'system', 'Legacy Static (pre-Entra)', 'active')
+                "#,
+            )
+            .execute(p)
+            .await
+            .context("seed legacy-static user row for FK constraint")?;
+        }
+        DbPool::Postgres(p) => {
+            sqlx::query(
+                r#"
+                INSERT INTO users (
+                    principal_key, tenant_id, object_id, principal_type,
+                    display_name, status
+                )
+                VALUES ('legacy-static', '', '', 'system', 'Legacy Static (pre-Entra)', 'active')
+                ON CONFLICT(principal_key) DO NOTHING
+                "#,
+            )
+            .execute(p)
+            .await
+            .context("seed legacy-static user row for FK constraint")?;
+        }
+    }
     Ok(())
 }
 
@@ -2942,7 +2962,7 @@ async fn ensure_legacy_static_user(pool: &sqlx::SqlitePool) -> anyhow::Result<()
 /// untouched. MUST run AFTER migrations and BEFORE the HTTP server
 /// accepts requests; see the wiring in `src/main.rs`.
 pub async fn reconcile_toml_agents_with_ownership(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     agents: &[super::AgentConfig],
 ) -> anyhow::Result<usize> {
     if agents.is_empty() {

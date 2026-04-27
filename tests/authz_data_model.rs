@@ -8,10 +8,11 @@ use spacebot::auth::repository::{
     list_resource_ids_owned_by, list_team_scoped_resource_ids, set_ownership, upsert_team,
     upsert_user_from_auth,
 };
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     // :memory: in-process for each test. Migrations run against it.
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -24,7 +25,8 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .expect("run global migrations");
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn make_ctx(tid: &str, oid: &str) -> AuthContext {
@@ -48,12 +50,12 @@ async fn migrations_apply_cleanly() {
 
 #[tokio::test]
 async fn upsert_user_is_idempotent() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    let first = upsert_user_from_auth(&pool, &ctx)
+    let first = upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("first upsert");
-    let second = upsert_user_from_auth(&pool, &ctx)
+    let second = upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("second upsert");
     assert_eq!(first.principal_key, second.principal_key);
@@ -69,9 +71,11 @@ async fn upsert_user_is_idempotent() {
 
 #[tokio::test]
 async fn team_upsert_keys_on_external_id() {
-    let pool = setup_pool().await;
-    let t1 = upsert_team(&pool, "grp-111", "Platform").await.expect("t1");
-    let t2 = upsert_team(&pool, "grp-111", "Platform (renamed)")
+    let (_pool, db_pool) = setup_pool().await;
+    let t1 = upsert_team(&db_pool, "grp-111", "Platform")
+        .await
+        .expect("t1");
+    let t2 = upsert_team(&db_pool, "grp-111", "Platform (renamed)")
         .await
         .expect("t2");
     assert_eq!(t1.id, t2.id);
@@ -80,13 +84,13 @@ async fn team_upsert_keys_on_external_id() {
 
 #[tokio::test]
 async fn ownership_write_then_read_roundtrips() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "mem-42",
         Some("agent-alpha"),
@@ -97,7 +101,7 @@ async fn ownership_write_then_read_roundtrips() {
     .await
     .expect("set ownership");
 
-    let got = get_ownership(&pool, "memory", "mem-42")
+    let got = get_ownership(&db_pool, "memory", "mem-42")
         .await
         .expect("read ownership")
         .expect("row present");
@@ -108,13 +112,13 @@ async fn ownership_write_then_read_roundtrips() {
 
 #[tokio::test]
 async fn team_visibility_requires_team_id() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     let result = set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "mem-42",
         None,
@@ -131,9 +135,9 @@ async fn team_visibility_requires_team_id() {
 
 #[tokio::test]
 async fn upsert_user_rejects_legacy_static_principal() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = AuthContext::legacy_static();
-    let err = upsert_user_from_auth(&pool, &ctx)
+    let err = upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect_err("legacy_static principals must be rejected");
     assert!(
@@ -144,8 +148,8 @@ async fn upsert_user_rejects_legacy_static_principal() {
 
 #[tokio::test]
 async fn get_ownership_returns_none_for_missing_row() {
-    let pool = setup_pool().await;
-    let missing = get_ownership(&pool, "memory", "never-created")
+    let (_pool, db_pool) = setup_pool().await;
+    let missing = get_ownership(&db_pool, "memory", "never-created")
         .await
         .expect("read ownership");
     assert!(
@@ -160,9 +164,9 @@ async fn raw_visibility_insert_rejects_unknown_value() {
     // against SQL paths that bypass the Visibility enum (migrations, admin
     // tooling, backfill scripts). Uses the legacy 'global' value from the
     // research draft, which is the most likely regression vector.
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     let result = sqlx::query(
@@ -198,7 +202,7 @@ async fn raw_visibility_insert_rejects_unknown_value() {
 
 #[tokio::test]
 async fn raw_users_insert_rejects_unknown_principal_type() {
-    let pool = setup_pool().await;
+    let (pool, _db_pool) = setup_pool().await;
     let result = sqlx::query(
         r#"
         INSERT INTO users (principal_key, tenant_id, object_id, principal_type)
@@ -219,7 +223,7 @@ async fn raw_users_insert_rejects_unknown_principal_type() {
 
 #[tokio::test]
 async fn raw_users_insert_rejects_unknown_status() {
-    let pool = setup_pool().await;
+    let (pool, _db_pool) = setup_pool().await;
     let result = sqlx::query(
         r#"
         INSERT INTO users (principal_key, tenant_id, object_id, principal_type, status)
@@ -241,7 +245,7 @@ async fn raw_users_insert_rejects_unknown_status() {
 
 #[tokio::test]
 async fn raw_teams_insert_rejects_unknown_status() {
-    let pool = setup_pool().await;
+    let (pool, _db_pool) = setup_pool().await;
     let result = sqlx::query(
         r#"
         INSERT INTO teams (id, external_id, display_name, status)
@@ -262,10 +266,10 @@ async fn raw_teams_insert_rejects_unknown_status() {
 
 #[tokio::test]
 async fn raw_team_memberships_insert_rejects_unknown_source() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
-    let team = upsert_team(&pool, "grp-777", "Team 777").await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-777", "Team 777").await.unwrap();
     let key = ctx.principal_key();
 
     let result = sqlx::query(
@@ -287,21 +291,25 @@ async fn raw_team_memberships_insert_rejects_unknown_source() {
 
 #[tokio::test]
 async fn list_ownerships_by_ids_empty_short_circuits() {
-    let pool = setup_pool().await;
-    let result = list_ownerships_by_ids(&pool, "memory", &[]).await.unwrap();
+    let (_pool, db_pool) = setup_pool().await;
+    let result = list_ownerships_by_ids(&db_pool, "memory", &[])
+        .await
+        .unwrap();
     assert!(result.is_empty());
 }
 
 #[tokio::test]
 async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-a");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
-    let team = upsert_team(&pool, "grp-batch", "Batch Team").await.unwrap();
+    let team = upsert_team(&db_pool, "grp-batch", "Batch Team")
+        .await
+        .unwrap();
 
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-1",
         Some("agent-1"),
@@ -312,7 +320,7 @@ async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-2",
         Some("agent-1"),
@@ -328,7 +336,9 @@ async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
         "m-2".to_string(),
         "m-missing".to_string(),
     ];
-    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    let map = list_ownerships_by_ids(&db_pool, "memory", &ids)
+        .await
+        .unwrap();
     assert_eq!(map.len(), 2, "only 2 ownership rows exist");
     assert_eq!(
         map.get("m-1").unwrap().visibility.as_str(),
@@ -345,18 +355,18 @@ async fn list_ownerships_by_ids_returns_map_keyed_by_resource_id() {
 
 #[tokio::test]
 async fn get_teams_by_ids_returns_display_names() {
-    let pool = setup_pool().await;
-    let t1 = upsert_team(&pool, "grp-alpha", "Alpha").await.unwrap();
-    let t2 = upsert_team(&pool, "grp-beta", "Beta").await.unwrap();
+    let (_pool, db_pool) = setup_pool().await;
+    let t1 = upsert_team(&db_pool, "grp-alpha", "Alpha").await.unwrap();
+    let t2 = upsert_team(&db_pool, "grp-beta", "Beta").await.unwrap();
 
     let ids = vec![t1.id.clone(), t2.id.clone(), "team-missing".to_string()];
-    let map = get_teams_by_ids(&pool, &ids).await.unwrap();
+    let map = get_teams_by_ids(&db_pool, &ids).await.unwrap();
     assert_eq!(map.len(), 2);
     assert_eq!(map.get(&t1.id).unwrap().display_name, "Alpha");
     assert_eq!(map.get(&t2.id).unwrap().display_name, "Beta");
     assert!(!map.contains_key("team-missing"));
 
-    let empty = get_teams_by_ids(&pool, &[]).await.unwrap();
+    let empty = get_teams_by_ids(&db_pool, &[]).await.unwrap();
     assert!(empty.is_empty());
 }
 
@@ -367,13 +377,13 @@ async fn list_ownerships_by_ids_dedupes_duplicate_inputs() {
     // assembly overwrites the second row with identical data. Pin the
     // contract so a future regression (e.g., switching to Vec<Record> with
     // duplicate-preserving semantics) is caught.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-dup", "oid-dup");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-dup",
         Some("agent-dup"),
@@ -389,7 +399,9 @@ async fn list_ownerships_by_ids_dedupes_duplicate_inputs() {
         "m-dup".to_string(),
         "m-dup".to_string(),
     ];
-    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    let map = list_ownerships_by_ids(&db_pool, "memory", &ids)
+        .await
+        .unwrap();
     assert_eq!(
         map.len(),
         1,
@@ -415,16 +427,16 @@ async fn list_ownerships_by_ids_handles_small_batches_up_to_known_safe_cap() {
     // stay under SQLITE_MAX_VARIABLE_NUMBER. If/when a caller approaches
     // the cap, add chunk-loop logic here rather than relying on SQLite
     // version detection at runtime.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-batch", "oid-batch");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     // Seed 50 ownership rows (fast, deterministic) and query for 500 ids
     // (250 hits + 250 misses) to exercise a realistically-sized batch.
     for i in 0..50 {
         set_ownership(
-            &pool,
+            &db_pool,
             "memory",
             &format!("m-{i}"),
             Some("agent-batch"),
@@ -440,7 +452,9 @@ async fn list_ownerships_by_ids_handles_small_batches_up_to_known_safe_cap() {
     ids.extend((0..250).map(|i| format!("miss-{i}")));
     assert_eq!(ids.len(), 500, "500 binds plus 1 for resource_type = 501");
 
-    let map = list_ownerships_by_ids(&pool, "memory", &ids).await.unwrap();
+    let map = list_ownerships_by_ids(&db_pool, "memory", &ids)
+        .await
+        .unwrap();
     assert_eq!(map.len(), 50, "only seeded rows resolve; misses are absent");
 }
 
@@ -466,11 +480,11 @@ fn resource_scope_round_trips_through_as_str() {
 
 #[tokio::test]
 async fn list_resource_ids_owned_by_empty_principal_returns_empty() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-empty", "oid-empty");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
 
-    let ids = list_resource_ids_owned_by(&pool, &ctx.principal_key(), "memory")
+    let ids = list_resource_ids_owned_by(&db_pool, &ctx.principal_key(), "memory")
         .await
         .expect("query runs against empty ownership table");
     assert!(ids.is_empty(), "no ownership rows means no ids");
@@ -481,8 +495,8 @@ async fn list_resource_ids_owned_by_nonexistent_principal_returns_empty() {
     // A principal_key that never appeared in users or resource_ownership
     // must return an empty Vec, not an error. Handlers rely on this so an
     // unknown caller sees "no owned resources" rather than a 500.
-    let pool = setup_pool().await;
-    let ids = list_resource_ids_owned_by(&pool, "user:nonexistent@example.com", "memory")
+    let (_pool, db_pool) = setup_pool().await;
+    let ids = list_resource_ids_owned_by(&db_pool, "user:nonexistent@example.com", "memory")
         .await
         .expect("unknown principal is a valid query");
     assert!(ids.is_empty());
@@ -490,14 +504,14 @@ async fn list_resource_ids_owned_by_nonexistent_principal_returns_empty() {
 
 #[tokio::test]
 async fn list_resource_ids_owned_by_returns_ids_for_owned_resources() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-owner", "oid-owner");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     for id in ["mem-1", "mem-2", "mem-3"] {
         set_ownership(
-            &pool,
+            &db_pool,
             "memory",
             id,
             Some("agent-a"),
@@ -509,7 +523,7 @@ async fn list_resource_ids_owned_by_returns_ids_for_owned_resources() {
         .unwrap();
     }
 
-    let mut ids = list_resource_ids_owned_by(&pool, &key, "memory")
+    let mut ids = list_resource_ids_owned_by(&db_pool, &key, "memory")
         .await
         .unwrap();
     ids.sort();
@@ -529,13 +543,13 @@ async fn list_resource_ids_owned_by_filters_by_resource_type() {
     // resource_type="memory" returns only the memory id; the project id
     // must not leak. Guards against a future refactor that accidentally
     // drops the resource_type filter (e.g., building the wrong WHERE clause).
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-mixed", "oid-mixed");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
     let key = ctx.principal_key();
 
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "mem-x",
         Some("agent-a"),
@@ -546,7 +560,7 @@ async fn list_resource_ids_owned_by_filters_by_resource_type() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         "proj-y",
         None,
@@ -557,12 +571,12 @@ async fn list_resource_ids_owned_by_filters_by_resource_type() {
     .await
     .unwrap();
 
-    let memory_ids = list_resource_ids_owned_by(&pool, &key, "memory")
+    let memory_ids = list_resource_ids_owned_by(&db_pool, &key, "memory")
         .await
         .unwrap();
     assert_eq!(memory_ids, vec!["mem-x".to_string()]);
 
-    let project_ids = list_resource_ids_owned_by(&pool, &key, "project")
+    let project_ids = list_resource_ids_owned_by(&db_pool, &key, "project")
         .await
         .unwrap();
     assert_eq!(project_ids, vec!["proj-y".to_string()]);
@@ -573,14 +587,14 @@ async fn list_resource_ids_owned_by_excludes_other_principals() {
     // Two principals each own their own memory. A query from principal A
     // sees only A's id; B's remains private. This is the scope-filtering
     // core invariant the ResourceScope::Mine query-param relies on.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx_a = make_ctx("tid-a", "oid-a");
     let ctx_b = make_ctx("tid-a", "oid-b");
-    upsert_user_from_auth(&pool, &ctx_a).await.unwrap();
-    upsert_user_from_auth(&pool, &ctx_b).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx_a).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx_b).await.unwrap();
 
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "mem-a",
         Some("agent-a"),
@@ -591,7 +605,7 @@ async fn list_resource_ids_owned_by_excludes_other_principals() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "mem-b",
         Some("agent-b"),
@@ -602,12 +616,12 @@ async fn list_resource_ids_owned_by_excludes_other_principals() {
     .await
     .unwrap();
 
-    let a_ids = list_resource_ids_owned_by(&pool, &ctx_a.principal_key(), "memory")
+    let a_ids = list_resource_ids_owned_by(&db_pool, &ctx_a.principal_key(), "memory")
         .await
         .unwrap();
     assert_eq!(a_ids, vec!["mem-a".to_string()]);
 
-    let b_ids = list_resource_ids_owned_by(&pool, &ctx_b.principal_key(), "memory")
+    let b_ids = list_resource_ids_owned_by(&db_pool, &ctx_b.principal_key(), "memory")
         .await
         .unwrap();
     assert_eq!(b_ids, vec!["mem-b".to_string()]);
@@ -618,11 +632,14 @@ async fn list_resource_ids_owned_by_excludes_other_principals() {
 // the CHECK constraint.
 async fn seed_team_with_membership(
     pool: &sqlx::SqlitePool,
+    db_pool: &Arc<DbPool>,
     principal_key: &str,
     external_id: &str,
     display_name: &str,
 ) -> String {
-    let team = upsert_team(pool, external_id, display_name).await.unwrap();
+    let team = upsert_team(db_pool, external_id, display_name)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO team_memberships (principal_key, team_id, source) \
          VALUES (?, ?, 'token_claim')",
@@ -638,11 +655,11 @@ async fn seed_team_with_membership(
 #[tokio::test]
 async fn list_team_scoped_resource_ids_empty_when_no_memberships() {
     // Caller with no team_memberships rows sees an empty team scope.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-lonely", "oid-lonely");
-    upsert_user_from_auth(&pool, &ctx).await.unwrap();
+    upsert_user_from_auth(&db_pool, &ctx).await.unwrap();
 
-    let ids = list_team_scoped_resource_ids(&pool, &ctx.principal_key(), "project")
+    let ids = list_team_scoped_resource_ids(&db_pool, &ctx.principal_key(), "project")
         .await
         .unwrap();
     assert!(ids.is_empty());
@@ -653,17 +670,18 @@ async fn list_team_scoped_resource_ids_returns_shared_team_resources() {
     // Alice is in team-x. Bob shares project-shared with team-x. Alice's
     // team-scope query returns project-shared. Personal resources owned
     // by Alice are not in scope here; they land in the Mine query.
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = make_ctx("tid-a", "oid-alice");
     let bob = make_ctx("tid-a", "oid-bob");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
-    let team_id = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
+    let team_id =
+        seed_team_with_membership(&pool, &db_pool, &alice.principal_key(), "grp-x", "Team X").await;
 
     // Bob owns project-shared, shared to team-x.
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         "project-shared",
         None,
@@ -676,7 +694,7 @@ async fn list_team_scoped_resource_ids_returns_shared_team_resources() {
 
     // Alice owns her-own (personal; should NOT appear in team scope).
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         "her-own",
         None,
@@ -687,7 +705,7 @@ async fn list_team_scoped_resource_ids_returns_shared_team_resources() {
     .await
     .unwrap();
 
-    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+    let ids = list_team_scoped_resource_ids(&db_pool, &alice.principal_key(), "project")
         .await
         .unwrap();
     assert_eq!(ids, vec!["project-shared".to_string()]);
@@ -699,13 +717,14 @@ async fn list_team_scoped_resource_ids_excludes_own_team_shares() {
     // team scope should NOT return it (that would double-count with the
     // Mine scope). Handlers that want the union fetch both scopes and
     // merge.
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = make_ctx("tid-a", "oid-alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team_id = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team_id =
+        seed_team_with_membership(&pool, &db_pool, &alice.principal_key(), "grp-x", "Team X").await;
 
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         "alice-shared-to-team",
         None,
@@ -716,7 +735,7 @@ async fn list_team_scoped_resource_ids_excludes_own_team_shares() {
     .await
     .unwrap();
 
-    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+    let ids = list_team_scoped_resource_ids(&db_pool, &alice.principal_key(), "project")
         .await
         .unwrap();
     assert!(
@@ -738,17 +757,19 @@ async fn list_team_scoped_resource_ids_deduplicates_across_multiple_teams() {
     // test actually guards is: Alice has memberships in two teams,
     // Bob shares one project to team-x, and the query returns exactly
     // one row (not duplicated by the team-y membership JOIN path).
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = make_ctx("tid-a", "oid-alice");
     let bob = make_ctx("tid-a", "oid-bob");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
-    let team_x = seed_team_with_membership(&pool, &alice.principal_key(), "grp-x", "Team X").await;
-    let _team_y = seed_team_with_membership(&pool, &alice.principal_key(), "grp-y", "Team Y").await;
+    let team_x =
+        seed_team_with_membership(&pool, &db_pool, &alice.principal_key(), "grp-x", "Team X").await;
+    let _team_y =
+        seed_team_with_membership(&pool, &db_pool, &alice.principal_key(), "grp-y", "Team Y").await;
 
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         "shared-p",
         None,
@@ -759,7 +780,7 @@ async fn list_team_scoped_resource_ids_deduplicates_across_multiple_teams() {
     .await
     .unwrap();
 
-    let ids = list_team_scoped_resource_ids(&pool, &alice.principal_key(), "project")
+    let ids = list_team_scoped_resource_ids(&db_pool, &alice.principal_key(), "project")
         .await
         .unwrap();
     assert_eq!(ids, vec!["shared-p".to_string()]);

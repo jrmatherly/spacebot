@@ -24,6 +24,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use spacebot::notifications::{
     NewNotification, NotificationKind, NotificationSeverity, NotificationStore,
 };
@@ -48,7 +49,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// `ApiState::new_test_state_*` leaves `notification_store` unset
 /// (handlers return 503 without it).
 fn attach_notification_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_notification_store(Arc::new(NotificationStore::new(pool.clone())));
+    state.set_notification_store(Arc::new(NotificationStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_list_notifications_by_agent(agent_id: &str, bearer: &str) -> Request<Body> {
@@ -79,8 +82,8 @@ fn req_dismiss(id: &str, bearer: &str) -> Request<Body> {
 
 /// Seed a notification row via the store and register ownership against
 /// `owner`. Returns the new notification id.
-async fn seed_notification(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
-    let store = NotificationStore::new(pool.clone());
+async fn seed_notification(db_pool: &Arc<DbPool>, owner: &AuthContext) -> String {
+    let store = NotificationStore::new(db_pool.clone());
     let notification = store
         .insert(NewNotification {
             kind: NotificationKind::CortexObservation,
@@ -97,7 +100,7 @@ async fn seed_notification(pool: &sqlx::SqlitePool, owner: &AuthContext) -> Stri
         .unwrap()
         .expect("insert returned a row");
     set_ownership(
-        pool,
+        db_pool,
         "notification",
         &notification.id,
         None,
@@ -117,12 +120,13 @@ async fn non_owner_mark_read_notification_returns_404() {
     // Sibling write handler (dismiss_notification) shares the same
     // inline check_write block.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_notification_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let id = seed_notification(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let id = seed_notification(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -139,10 +143,11 @@ async fn non_owner_mark_read_notification_returns_404() {
 #[tokio::test]
 async fn owner_mark_read_notification_returns_204() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_notification_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let id = seed_notification(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let id = seed_notification(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -162,12 +167,13 @@ async fn admin_bypass_mark_read_notification() {
     // Regression guard against `is_admin` returning false on the
     // notifications handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_notification_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let id = seed_notification(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let id = seed_notification(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -187,12 +193,13 @@ async fn non_owner_dismiss_notification_returns_404() {
     // check_write block with mark_read; if a future refactor drops the
     // gate on dismiss specifically, this test fires.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_notification_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let id = seed_notification(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let id = seed_notification(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -214,15 +221,16 @@ async fn non_owner_list_notifications_by_agent_returns_404() {
     // enumerate another user's notifications by passing agent_id
     // directly.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_notification_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // Seed Alice as the owner of agent-a. Bob will attempt to list by
     // agent_id=agent-a.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,

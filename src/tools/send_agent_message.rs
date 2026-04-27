@@ -35,7 +35,7 @@ pub struct SendAgentMessageTool {
     task_store: Arc<TaskStore>,
     /// Per-agent conversation logger for writing link channel audit records.
     conversation_logger: ConversationLogger,
-    /// Instance-wide SQLite pool for resource_ownership + team_memberships
+    /// Instance-wide database pool for resource_ownership + team_memberships
     /// lookups in `can_link_channel`. Wired by Phase 4 PR 2 via the
     /// construction site; the `Option` remains because adapter paths and
     /// static-token flows still build this tool without a pool (boot
@@ -43,7 +43,10 @@ pub struct SendAgentMessageTool {
     /// is skipped with a `tracing::error!` +
     /// `spacebot_authz_skipped_total{handler="send_agent_message"}`
     /// increment so the gap is operationally visible.
-    instance_pool: Option<sqlx::SqlitePool>,
+    ///
+    /// PR 11.2: type widened from `sqlx::SqlitePool` to `Arc<DbPool>` so
+    /// the cross-agent link policy works on both backends.
+    instance_pool: Option<Arc<crate::db::DbPool>>,
     /// Per-turn skip flag. When set after delegation, the channel turn ends immediately.
     skip_flag: Option<SkipFlag>,
     /// The originating channel (conversation_id) where the user request came from.
@@ -75,7 +78,7 @@ impl SendAgentMessageTool {
         agent_names: Arc<HashMap<String, String>>,
         task_store: Arc<TaskStore>,
         conversation_logger: ConversationLogger,
-        instance_pool: Option<sqlx::SqlitePool>,
+        instance_pool: Option<Arc<crate::db::DbPool>>,
         auth_context: crate::auth::context::AuthContext,
     ) -> Self {
         Self {

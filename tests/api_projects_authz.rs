@@ -25,6 +25,7 @@ use spacebot::auth::repository::{
 };
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use spacebot::projects::ProjectStore;
 use spacebot::projects::store::CreateProjectInput;
 use std::sync::Arc;
@@ -47,7 +48,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// authz middleware reads. Required because `ApiState::new_test_state_*`
 /// leaves `project_store` unset (service returns 404 without it).
 fn attach_project_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_project_store(Arc::new(ProjectStore::new(pool.clone())));
+    state.set_project_store(Arc::new(ProjectStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_get_project(project_id: &str, bearer: &str) -> Request<Body> {
@@ -78,8 +81,8 @@ fn req_create_project(bearer: &str, name: &str, root_path: &str) -> Request<Body
 
 /// Create a project directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns the project's UUID.
-async fn seed_project(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
-    let store = ProjectStore::new(pool.clone());
+async fn seed_project(db_pool: &Arc<DbPool>, owner: &AuthContext) -> String {
+    let store = ProjectStore::new(db_pool.clone());
     let project = store
         .create_project(CreateProjectInput {
             name: "seeded".to_string(),
@@ -92,7 +95,7 @@ async fn seed_project(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
         .await
         .unwrap();
     set_ownership(
-        pool,
+        db_pool,
         "project",
         &project.id,
         None,
@@ -108,12 +111,13 @@ async fn seed_project(pool: &sqlx::SqlitePool, owner: &AuthContext) -> String {
 #[tokio::test]
 async fn non_owner_get_project_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let project_id = seed_project(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let project_id = seed_project(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -132,10 +136,11 @@ async fn non_owner_get_project_returns_404() {
 #[tokio::test]
 async fn owner_get_project_returns_200() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let project_id = seed_project(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let project_id = seed_project(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -158,12 +163,13 @@ async fn admin_bypass_project_read() {
     // Regression guard against `is_admin` returning false on the
     // projects handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let project_id = seed_project(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let project_id = seed_project(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -187,9 +193,10 @@ async fn create_project_assigns_ownership() {
     // races into a NotOwned 404. The proof is an ownership row present
     // synchronously after the POST completes.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -212,7 +219,7 @@ async fn create_project_assigns_ownership() {
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let project_id = parsed["id"].as_str().expect("project.id").to_string();
 
-    let own = get_ownership(&pool, "project", &project_id)
+    let own = get_ownership(&db_pool, "project", &project_id)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");
@@ -262,14 +269,15 @@ async fn list_projects_enriches_team_scoped_project_with_chip_fields() {
     // silent degradation. Mirrors
     // tests/api_wiki_authz.rs::list_pages_enriches_team_scoped_page_with_chip_fields.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     let project = {
-        let store = ProjectStore::new(pool.clone());
+        let store = ProjectStore::new(db_pool.clone());
         store
             .create_project(CreateProjectInput {
                 name: "Team Runbook".to_string(),
@@ -283,7 +291,7 @@ async fn list_projects_enriches_team_scoped_project_with_chip_fields() {
             .unwrap()
     };
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         &project.id,
         None,
@@ -335,12 +343,12 @@ async fn list_projects_enriches_team_scoped_project_with_chip_fields() {
 // no-scope, admin-bypass.
 
 async fn seed_owned_project(
-    pool: &sqlx::SqlitePool,
+    db_pool: &Arc<DbPool>,
     owner: &AuthContext,
     name: &str,
     root_path: &str,
 ) -> String {
-    let store = ProjectStore::new(pool.clone());
+    let store = ProjectStore::new(db_pool.clone());
     let project = store
         .create_project(CreateProjectInput {
             name: name.to_string(),
@@ -353,7 +361,7 @@ async fn seed_owned_project(
         .await
         .unwrap();
     set_ownership(
-        pool,
+        db_pool,
         "project",
         &project.id,
         None,
@@ -397,13 +405,14 @@ async fn fetch_projects(app: axum::Router, token: &str, scope_query: Option<&str
 #[tokio::test]
 async fn list_projects_scope_mine_returns_only_owned_projects() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let alice_proj = seed_owned_project(&pool, &alice, "alice-proj", "/tmp/alice-p").await;
-    let _bob_proj = seed_owned_project(&pool, &bob, "bob-proj", "/tmp/bob-p").await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let alice_proj = seed_owned_project(&db_pool, &alice, "alice-proj", "/tmp/alice-p").await;
+    let _bob_proj = seed_owned_project(&db_pool, &bob, "bob-proj", "/tmp/bob-p").await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -419,13 +428,14 @@ async fn list_projects_scope_mine_returns_only_owned_projects() {
 #[tokio::test]
 async fn list_projects_scope_team_returns_only_team_shared_projects() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
-    let team = upsert_team(&pool, "grp-x", "Team X").await.unwrap();
+    let team = upsert_team(&db_pool, "grp-x", "Team X").await.unwrap();
     sqlx::query(
         "INSERT INTO team_memberships (principal_key, team_id, source) \
          VALUES (?, ?, 'token_claim')",
@@ -437,7 +447,7 @@ async fn list_projects_scope_team_returns_only_team_shared_projects() {
     .unwrap();
 
     // Bob owns bob-shared, shared to team-x (Alice's team)
-    let store = ProjectStore::new(pool.clone());
+    let store = ProjectStore::new(db_pool.clone());
     let bob_shared = store
         .create_project(CreateProjectInput {
             name: "bob-shared".to_string(),
@@ -450,7 +460,7 @@ async fn list_projects_scope_team_returns_only_team_shared_projects() {
         .await
         .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "project",
         &bob_shared.id,
         None,
@@ -461,7 +471,7 @@ async fn list_projects_scope_team_returns_only_team_shared_projects() {
     .await
     .unwrap();
     // Alice owns her own personal project — must NOT appear in team scope
-    let _alice_own = seed_owned_project(&pool, &alice, "alice-own", "/tmp/alice-own").await;
+    let _alice_own = seed_owned_project(&db_pool, &alice, "alice-own", "/tmp/alice-own").await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -476,13 +486,14 @@ async fn list_projects_scope_team_returns_only_team_shared_projects() {
 #[tokio::test]
 async fn list_projects_scope_org_matches_unfiltered_for_non_admin() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let alice_proj = seed_owned_project(&pool, &alice, "alice-proj", "/tmp/alice-p").await;
-    let bob_proj = seed_owned_project(&pool, &bob, "bob-proj", "/tmp/bob-p").await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let alice_proj = seed_owned_project(&db_pool, &alice, "alice-proj", "/tmp/alice-p").await;
+    let bob_proj = seed_owned_project(&db_pool, &bob, "bob-proj", "/tmp/bob-p").await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -502,13 +513,14 @@ async fn list_projects_no_scope_param_preserves_legacy_unfiltered_behavior() {
     // refactor that accidentally applies a default scope. Existing SPA
     // callers (pre-PR-5) depend on this.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let alice_proj = seed_owned_project(&pool, &alice, "alice-proj", "/tmp/alice-p").await;
-    let bob_proj = seed_owned_project(&pool, &bob, "bob-proj", "/tmp/bob-p").await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let alice_proj = seed_owned_project(&db_pool, &alice, "alice-proj", "/tmp/alice-p").await;
+    let bob_proj = seed_owned_project(&db_pool, &bob, "bob-proj", "/tmp/bob-p").await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -524,12 +536,13 @@ async fn list_projects_scope_admin_bypass_returns_unfiltered_even_with_scope_min
     // Admin's scope=mine returns the full list: admin bypasses the
     // ownership filter, same as the per-row authz admin bypass.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let bob_proj = seed_owned_project(&pool, &bob, "bob-proj", "/tmp/bob-p").await;
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let bob_proj = seed_owned_project(&db_pool, &bob, "bob-proj", "/tmp/bob-p").await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -552,9 +565,10 @@ async fn list_projects_scope_mine_returns_500_when_scope_query_fails() {
     // built but before the request reaches the handler. The scope-filter
     // helper will see a closed pool and return Err.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_project_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     // Close the instance pool so the scope-filter sqlx query fails.
     // The pool reference on ApiState is an Arc<Option<SqlitePool>>; the

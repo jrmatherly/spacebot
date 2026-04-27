@@ -6,11 +6,12 @@
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-async fn instance_pool() -> sqlx::SqlitePool {
+async fn instance_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -20,7 +21,8 @@ async fn instance_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .unwrap();
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn alice_ctx() -> AuthContext {
@@ -63,11 +65,11 @@ async fn make_agent_db(tmp: &std::path::Path, agent_id: &str, memory_ids: &[&str
 
 #[tokio::test]
 async fn sweep_reports_resources_without_ownership_rows() {
-    let pool = instance_pool().await;
+    let (_pool, db_pool) = instance_pool().await;
     let alice = alice_ctx();
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-owned",
         None,
@@ -84,7 +86,7 @@ async fn sweep_reports_resources_without_ownership_rows() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let agent_db_path = make_agent_db(tmp.path(), "agent-test", &["m-owned", "m-orphan-1"]).await;
 
-    let orphans = spacebot::admin::sweep_orphans(&pool, &[agent_db_path])
+    let orphans = spacebot::admin::sweep_orphans(&db_pool, &[agent_db_path])
         .await
         .unwrap();
 
@@ -104,7 +106,7 @@ async fn sweep_tolerates_partially_initialized_agent_directory() {
     // An agent directory exists but `spacebot.db` is missing (partial
     // init or concurrent delete). Sweep must not crash; it must log
     // and proceed.
-    let pool = instance_pool().await;
+    let (_pool, db_pool) = instance_pool().await;
     let tmp = tempfile::tempdir().expect("tempdir");
     let stub_dir = tmp.path().join("agents").join("agent-half").join("data");
     std::fs::create_dir_all(&stub_dir).unwrap();
@@ -117,10 +119,10 @@ async fn sweep_tolerates_partially_initialized_agent_directory() {
     // A second, valid agent DB so we can confirm the sweep continues
     // past the broken one and still produces output.
     let alice = alice_ctx();
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     let valid_db = make_agent_db(tmp.path(), "agent-good", &["m-fresh"]).await;
 
-    let orphans = spacebot::admin::sweep_orphans(&pool, &[nonexistent_db, valid_db])
+    let orphans = spacebot::admin::sweep_orphans(&db_pool, &[nonexistent_db, valid_db])
         .await
         .expect("sweep must not error on partial-init agent");
 
@@ -138,9 +140,9 @@ async fn sweep_reports_stale_ownership_when_agent_db_is_gone() {
     // whose owning agent has no per-agent DB on disk. Without this
     // coverage the StaleOwnership branch in `src/admin.rs` would be
     // unverified despite being half the sweep's contract.
-    let pool = instance_pool().await;
+    let (pool, db_pool) = instance_pool().await;
     let alice = alice_ctx();
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let tmp = tempfile::tempdir().expect("tempdir");
     // SPACEBOT_DIR is the resolution root for Direction-2's reverse
@@ -172,7 +174,7 @@ async fn sweep_reports_stale_ownership_when_agent_db_is_gone() {
 
     // Direction-1 needs no agent DBs to scan; we're only exercising the
     // reverse-direction path resolution.
-    let orphans = spacebot::admin::sweep_orphans(&pool, &[]).await.unwrap();
+    let orphans = spacebot::admin::sweep_orphans(&db_pool, &[]).await.unwrap();
 
     assert!(
         orphans.iter().any(|o| o.resource_id() == "m-stale"
@@ -187,9 +189,9 @@ async fn sweep_rejects_path_traversal_in_owner_agent_id() {
     // "../../etc" must not redirect the sweep to read arbitrary files.
     // is_safe_agent_id rejects the value, so the sweep skips the row
     // entirely and produces no orphans for it.
-    let pool = instance_pool().await;
+    let (pool, db_pool) = instance_pool().await;
     let alice = alice_ctx();
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let tmp = tempfile::tempdir().expect("tempdir");
     unsafe {
@@ -210,7 +212,7 @@ async fn sweep_rejects_path_traversal_in_owner_agent_id() {
     .await
     .unwrap();
 
-    let orphans = spacebot::admin::sweep_orphans(&pool, &[]).await.unwrap();
+    let orphans = spacebot::admin::sweep_orphans(&db_pool, &[]).await.unwrap();
     // The traversal-attempt row must NOT produce a StaleOwnership entry
     // (because we never opened the bogus path); it's silently dropped
     // with a tracing::warn!. The audit-log surface still records the

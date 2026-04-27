@@ -18,6 +18,7 @@ use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::upsert_user_from_auth;
 use spacebot::auth::roles::ROLE_USER;
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -50,8 +51,9 @@ async fn read_json(res: axum::response::Response) -> Value {
 #[tokio::test]
 async fn returns_initials_when_photo_absent() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", Some("Alice Example"), vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -74,8 +76,9 @@ async fn returns_initials_when_photo_absent() {
 #[tokio::test]
 async fn returns_photo_data_url_when_cached() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", Some("Alice Example"), vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     // Seed the cached photo row. Mimics what the middleware's
     // fire-and-forget sync_user_photo_for_principal would write after
@@ -106,8 +109,9 @@ async fn returns_photo_data_url_when_cached() {
 #[tokio::test]
 async fn returns_roles_from_auth_context() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", Some("Alice"), vec![ROLE_USER, "SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -144,8 +148,9 @@ async fn photo_row_present_with_null_blob_falls_back_to_initials() {
     // the users row with display_photo_b64 = NULL (default). This
     // differentiates "row missing" from "row present with null blob".
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", Some("Alice Example"), vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     // Explicitly set display_photo_b64 = NULL + a fresh photo_updated_at
     // to simulate the state the photo-sync middleware leaves after
@@ -177,6 +182,7 @@ async fn service_principal_serializes_as_snake_case() {
     // gates this; a refactor that falls back to `format!("{:?}")`
     // would ship the wrong value.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let sp = AuthContext {
         principal_type: PrincipalType::ServicePrincipal,
         tid: Arc::from("tenant-1"),
@@ -187,7 +193,7 @@ async fn service_principal_serializes_as_snake_case() {
         display_email: None,
         display_name: Some(Arc::from("Builder Service")),
     };
-    upsert_user_from_auth(&pool, &sp).await.unwrap();
+    upsert_user_from_auth(&db_pool, &sp).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&sp);

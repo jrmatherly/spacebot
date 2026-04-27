@@ -13,6 +13,7 @@ use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::{upsert_team, upsert_user_from_auth};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -32,8 +33,9 @@ fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
 #[tokio::test]
 async fn non_admin_cannot_read_access_review() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     let app = build_test_router_entra(state);
     let req = Request::builder()
         .uri("/api/admin/access-review?format=csv")
@@ -50,11 +52,12 @@ async fn non_admin_cannot_read_access_review() {
 #[tokio::test]
 async fn admin_gets_csv_report() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let admin = user("admin", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let team = upsert_team(&pool, "grp-1", "Platform").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-1", "Platform").await.unwrap();
     sqlx::query(
         "INSERT INTO team_memberships (principal_key, team_id, source) VALUES (?, ?, 'token_claim')",
     )
@@ -122,8 +125,9 @@ async fn csv_escaping_handles_quotes_commas_and_formula_injection() {
     // display_name containing `=`, `,`, `"`, or a leading formula
     // prefix must not corrupt the CSV or get evaluated as a formula.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let admin = user("admin_csv", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     // Inject a hostile display_name post-upsert. Real-world equivalents
     // come from Entra preferred_username / displayName mutations.
@@ -137,7 +141,7 @@ async fn csv_escaping_handles_quotes_commas_and_formula_injection() {
     // Seed a second user whose name contains comma + quote so the
     // RFC 4180 path is exercised independently of the formula guard.
     let bob = user("bob", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     sqlx::query("UPDATE users SET display_name = ? WHERE principal_key = ?")
         .bind("Last, \"First\"")
         .bind(bob.principal_key())
@@ -187,11 +191,12 @@ async fn csv_escaping_handles_quotes_commas_and_formula_injection() {
 #[tokio::test]
 async fn admin_gets_json_report() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let admin = user("admin", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let team = upsert_team(&pool, "grp-2", "Security").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-2", "Security").await.unwrap();
     sqlx::query(
         "INSERT INTO team_memberships (principal_key, team_id, source) VALUES (?, ?, 'token_claim')",
     )

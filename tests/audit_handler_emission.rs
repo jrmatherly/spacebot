@@ -22,6 +22,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -55,12 +56,13 @@ async fn yield_for_spawned_append() {
 #[tokio::test]
 async fn admin_break_glass_read_persists_admin_read_row() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice-owner", vec![ROLE_USER]);
     let admin = user_ctx("admin-break-glass", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-break-glass",
         None,
@@ -112,12 +114,13 @@ async fn admin_break_glass_read_persists_admin_read_row() {
 #[tokio::test]
 async fn non_owner_denied_read_persists_authz_denied_row() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice-owner-2", vec![ROLE_USER]);
     let bob = user_ctx("bob-denied", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-denied-probe",
         None,

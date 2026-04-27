@@ -1811,12 +1811,9 @@ async fn run(
     )
     .await
     .context("failed to initialize instance database")?;
-    let instance_pool = instance_db
-        .as_sqlite()
-        .context(
-            "PR 11.1 instance pool requires SQLite backend; Postgres support lands in PR 11.2",
-        )?
-        .clone();
+    // PR 11.2: instance_db is Arc<DbPool>; both backends supported. The four
+    // global stores and the audit appender all take Arc<DbPool> directly.
+    let instance_pool: Arc<spacebot::db::DbPool> = instance_db.clone();
 
     // Migrate legacy per-agent tasks to the global database on first run.
     spacebot::tasks::migration::migrate_legacy_tasks(&config.instance_dir, &instance_pool)

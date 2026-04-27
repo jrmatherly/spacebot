@@ -8,10 +8,11 @@ use spacebot::auth::policy::can_link_channel;
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -21,7 +22,8 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .expect("run global migrations");
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
@@ -39,11 +41,11 @@ fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
 
 #[tokio::test]
 async fn owner_of_both_agents_can_link() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -54,7 +56,7 @@ async fn owner_of_both_agents_can_link() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -65,7 +67,7 @@ async fn owner_of_both_agents_can_link() {
     .await
     .unwrap();
 
-    let allowed = can_link_channel(&pool, &alice, "agent-a", "agent-b")
+    let allowed = can_link_channel(&db_pool, &alice, "agent-a", "agent-b")
         .await
         .unwrap();
     assert!(allowed, "owner of both agents can link");
@@ -73,13 +75,13 @@ async fn owner_of_both_agents_can_link() {
 
 #[tokio::test]
 async fn cannot_link_agents_owned_by_others() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER]);
     let bob = user("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -90,7 +92,7 @@ async fn cannot_link_agents_owned_by_others() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -101,7 +103,7 @@ async fn cannot_link_agents_owned_by_others() {
     .await
     .unwrap();
 
-    let allowed = can_link_channel(&pool, &alice, "agent-a", "agent-b")
+    let allowed = can_link_channel(&db_pool, &alice, "agent-a", "agent-b")
         .await
         .unwrap();
     assert!(!allowed, "alice must not link to bob's personal agent");
@@ -109,13 +111,13 @@ async fn cannot_link_agents_owned_by_others() {
 
 #[tokio::test]
 async fn org_visible_agents_link_freely() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER]);
     let bob = user("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -126,7 +128,7 @@ async fn org_visible_agents_link_freely() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -137,7 +139,7 @@ async fn org_visible_agents_link_freely() {
     .await
     .unwrap();
 
-    let allowed = can_link_channel(&pool, &alice, "agent-a", "agent-b")
+    let allowed = can_link_channel(&db_pool, &alice, "agent-a", "agent-b")
         .await
         .unwrap();
     assert!(allowed, "org-visible target is linkable");
@@ -145,15 +147,15 @@ async fn org_visible_agents_link_freely() {
 
 #[tokio::test]
 async fn admin_can_link_anything() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER]);
     let bob = user("bob", vec![ROLE_USER]);
     let carol = user("carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &carol).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -164,7 +166,7 @@ async fn admin_can_link_anything() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -175,7 +177,7 @@ async fn admin_can_link_anything() {
     .await
     .unwrap();
 
-    let allowed = can_link_channel(&pool, &carol, "agent-a", "agent-b")
+    let allowed = can_link_channel(&db_pool, &carol, "agent-a", "agent-b")
         .await
         .unwrap();
     assert!(

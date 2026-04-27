@@ -25,6 +25,7 @@ use spacebot::auth::repository::{
 };
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use spacebot::tasks::TaskStore;
 use std::sync::Arc;
 use tower::ServiceExt as _;
@@ -46,7 +47,9 @@ fn user_ctx(oid: &str, roles: Vec<&str>) -> AuthContext {
 /// authz middleware reads. Required because `ApiState::new_test_state_*`
 /// leaves `task_store` unset (service returns 503 without it).
 fn attach_task_store(state: &ApiState, pool: &sqlx::SqlitePool) {
-    state.set_task_store(Arc::new(TaskStore::new(pool.clone())));
+    state.set_task_store(Arc::new(TaskStore::new(Arc::new(
+        spacebot::db::DbPool::Sqlite(pool.clone()),
+    ))));
 }
 
 fn req_get_task(number: i64, bearer: &str) -> Request<Body> {
@@ -84,8 +87,8 @@ fn req_create_task(bearer: &str, owner_agent_id: &str) -> Request<Body> {
 
 /// Create a task directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns `(task_number, task_id)`.
-async fn seed_task(pool: &sqlx::SqlitePool, owner: &AuthContext) -> (i64, String) {
-    let store = TaskStore::new(pool.clone());
+async fn seed_task(db_pool: &Arc<DbPool>, owner: &AuthContext) -> (i64, String) {
+    let store = TaskStore::new(db_pool.clone());
     let task = store
         .create(spacebot::tasks::CreateTaskInput {
             owner_agent_id: "agent-a".to_string(),
@@ -102,7 +105,7 @@ async fn seed_task(pool: &sqlx::SqlitePool, owner: &AuthContext) -> (i64, String
         .await
         .unwrap();
     set_ownership(
-        pool,
+        db_pool,
         "task",
         &task.id,
         None,
@@ -118,12 +121,13 @@ async fn seed_task(pool: &sqlx::SqlitePool, owner: &AuthContext) -> (i64, String
 #[tokio::test]
 async fn non_owner_get_task_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let (number, _id) = seed_task(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let (number, _id) = seed_task(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -139,10 +143,11 @@ async fn non_owner_get_task_returns_404() {
 #[tokio::test]
 async fn owner_get_task_returns_200() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let (number, _id) = seed_task(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let (number, _id) = seed_task(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -162,12 +167,13 @@ async fn admin_get_task_returns_200() {
     // Regression guard against `is_admin` returning false on the tasks
     // handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let (number, _id) = seed_task(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let (number, _id) = seed_task(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -187,12 +193,13 @@ async fn non_owner_update_task_returns_404() {
     // the write gate fires on update_task; sibling write handlers
     // (delete/approve/execute/assign) share the same `check_write` block.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let (number, _id) = seed_task(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let (number, _id) = seed_task(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -217,9 +224,10 @@ async fn create_task_assigns_ownership() {
     // NotOwned 404. The proof is an ownership row present synchronously
     // after the POST completes.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -235,7 +243,7 @@ async fn create_task_assigns_ownership() {
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let task_id = parsed["task"]["id"].as_str().expect("task.id").to_string();
 
-    let own = get_ownership(&pool, "task", &task_id)
+    let own = get_ownership(&db_pool, "task", &task_id)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");
@@ -270,12 +278,13 @@ async fn non_owner_delete_task_returns_404() {
     // check_write block with update/approve/execute/assign; if a future
     // refactor drops the gate on delete specifically, this test fires.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let (number, task_id) = seed_task(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let (number, task_id) = seed_task(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -288,7 +297,7 @@ async fn non_owner_delete_task_returns_404() {
     );
     // Ownership row must still exist — denied delete must not have
     // touched the row.
-    let row = get_ownership(&pool, "task", &task_id).await.unwrap();
+    let row = get_ownership(&db_pool, "task", &task_id).await.unwrap();
     assert!(
         row.is_some(),
         "ownership row must remain after denied delete"
@@ -304,15 +313,16 @@ async fn non_owner_list_tasks_by_owner_returns_404() {
     // the agent_id gate. The fix gates on the first agent-scoped filter
     // present (agent_id -> owner_agent_id -> assigned_agent_id).
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // Seed Alice as the owner of agent-a. Bob will attempt to list by
     // owner_agent_id=agent-a.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -376,16 +386,17 @@ async fn list_tasks_enriches_team_scoped_task_with_chip_fields() {
     // (PR 5 Commit 3). Backfill commit closing the D104 asymmetry flagged
     // in PR 4's plan review S1.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_task_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
 
     // Own the parent agent (so the authz gate passes on scope=agent_id).
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -397,7 +408,7 @@ async fn list_tasks_enriches_team_scoped_task_with_chip_fields() {
     .unwrap();
 
     // Seed a single team-scoped task under agent-a.
-    let store = TaskStore::new(pool.clone());
+    let store = TaskStore::new(db_pool.clone());
     let task = store
         .create(spacebot::tasks::CreateTaskInput {
             owner_agent_id: "agent-a".to_string(),
@@ -414,7 +425,7 @@ async fn list_tasks_enriches_team_scoped_task_with_chip_fields() {
         .await
         .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "task",
         &task.id,
         None,

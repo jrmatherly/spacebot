@@ -34,6 +34,7 @@ use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -53,11 +54,12 @@ fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
 #[tokio::test]
 async fn owner_can_change_visibility_personal_to_team() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-1", "Platform").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-1", "Platform").await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-1",
         None,
@@ -86,12 +88,13 @@ async fn owner_can_change_visibility_personal_to_team() {
 #[tokio::test]
 async fn non_owner_cannot_change_visibility() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let bob = user("bob", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-1",
         None,
@@ -125,12 +128,13 @@ async fn non_owner_cannot_change_visibility() {
 #[tokio::test]
 async fn admin_can_change_any_visibility() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let carol = user("carol", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &carol).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-2",
         None,
@@ -161,10 +165,11 @@ async fn admin_can_change_any_visibility() {
 #[tokio::test]
 async fn team_visibility_without_team_id_rejected() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-3",
         None,
@@ -205,10 +210,11 @@ async fn rotation_preserves_owner_agent_id() {
     // This test seeds a row with owner_agent_id = Some("agent-x"),
     // rotates visibility, and asserts the agent link survives.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-agent-owned",
         Some("agent-x"),
@@ -235,7 +241,7 @@ async fn rotation_preserves_owner_agent_id() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // The agent link MUST still be there.
-    let own = spacebot::auth::repository::get_ownership(&pool, "memory", "m-agent-owned")
+    let own = spacebot::auth::repository::get_ownership(&db_pool, "memory", "m-agent-owned")
         .await
         .unwrap()
         .expect("row still exists");
@@ -258,12 +264,13 @@ async fn owner_can_rebind_team_id() {
     // shared_with_team_id. Pre-fix this was covered only indirectly;
     // this asserts the UPDATE path preserves the rebind result.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team_a = upsert_team(&pool, "grp-a", "Alpha").await.unwrap();
-    let team_b = upsert_team(&pool, "grp-b", "Beta").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team_a = upsert_team(&db_pool, "grp-a", "Alpha").await.unwrap();
+    let team_b = upsert_team(&db_pool, "grp-b", "Beta").await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-rebind",
         None,
@@ -293,7 +300,7 @@ async fn owner_can_rebind_team_id() {
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let own = spacebot::auth::repository::get_ownership(&pool, "memory", "m-rebind")
+    let own = spacebot::auth::repository::get_ownership(&db_pool, "memory", "m-rebind")
         .await
         .unwrap()
         .expect("row exists");
@@ -332,10 +339,11 @@ async fn unauthenticated_returns_401() {
 #[tokio::test]
 async fn invalid_visibility_value_rejected() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m-4",
         None,

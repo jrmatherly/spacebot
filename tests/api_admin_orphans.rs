@@ -9,6 +9,7 @@ use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::upsert_user_from_auth;
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -28,8 +29,9 @@ fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
 #[tokio::test]
 async fn non_admin_cannot_list_orphans() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     let app = build_test_router_entra(state);
     let req = Request::builder()
         .uri("/api/admin/orphans")
@@ -50,8 +52,9 @@ async fn admin_lists_orphans_and_audit_event_landed() {
     // test fixture), but the audit row must still be persisted so
     // SOC 2 evidence reflects every cross-agent scan attempt.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let admin = user("admin_orphans", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     // SAFETY: discover_agent_db_paths reads SPACEBOT_DIR; clear it so
     // the test result doesn't depend on the host's environment.

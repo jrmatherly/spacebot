@@ -21,6 +21,7 @@ use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::{upsert_team, upsert_user_from_auth};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -66,12 +67,13 @@ fn service_principal(oid: &str, roles: Vec<&str>) -> AuthContext {
 #[tokio::test]
 async fn authenticated_user_gets_active_teams_sorted_by_display_name() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // Create in non-sorted order to confirm the endpoint orders by display_name.
-    upsert_team(&pool, "grp-z", "Zephyr").await.unwrap();
-    upsert_team(&pool, "grp-a", "Atlas").await.unwrap();
-    upsert_team(&pool, "grp-m", "Meridian").await.unwrap();
+    upsert_team(&db_pool, "grp-z", "Zephyr").await.unwrap();
+    upsert_team(&db_pool, "grp-a", "Atlas").await.unwrap();
+    upsert_team(&db_pool, "grp-m", "Meridian").await.unwrap();
     let app = build_test_router_entra(state);
 
     let token = mint_mock_token(&alice);
@@ -134,12 +136,13 @@ async fn unauthenticated_returns_401() {
 #[tokio::test]
 async fn archived_teams_are_filtered() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let active = upsert_team(&pool, "grp-active", "Active Team")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let active = upsert_team(&db_pool, "grp-active", "Active Team")
         .await
         .unwrap();
-    let archived = upsert_team(&pool, "grp-archived", "Archived Team")
+    let archived = upsert_team(&db_pool, "grp-archived", "Archived Team")
         .await
         .unwrap();
     // Archive one team directly. The CHECK constraint on `teams.status`
@@ -182,8 +185,9 @@ async fn archived_teams_are_filtered() {
 #[tokio::test]
 async fn empty_teams_table_returns_empty_array() {
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     let app = build_test_router_entra(state);
 
     let req = Request::builder()
@@ -211,8 +215,9 @@ async fn user_without_spacebot_user_role_is_forbidden() {
     // role must be denied with 403. Prevents a future refactor from
     // silently removing the `require_role` call.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let bob = user_with_roles("bob", vec![]);
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     let app = build_test_router_entra(state);
 
     let req = Request::builder()
@@ -238,8 +243,9 @@ async fn service_principal_without_spacebot_user_role_is_forbidden() {
     // enumerate team names. If an M2M caller genuinely needs the list,
     // it should hold `SpacebotUser` as well.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let svc = service_principal("svc", vec!["SpacebotService"]);
-    upsert_user_from_auth(&pool, &svc).await.unwrap();
+    upsert_user_from_auth(&db_pool, &svc).await.unwrap();
     let app = build_test_router_entra(state);
 
     let req = Request::builder()
@@ -266,12 +272,13 @@ async fn same_display_name_sort_is_stable_by_id() {
     // name). The ORDER BY clause adds `id` as tiebreaker so SQLite
     // returns the rows in a deterministic order across restarts.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // Two teams with identical display_name; tiebreaker is `id`,
     // which `upsert_team` builds from `external_id`.
-    upsert_team(&pool, "grp-b", "Platform").await.unwrap();
-    upsert_team(&pool, "grp-a", "Platform").await.unwrap();
+    upsert_team(&db_pool, "grp-b", "Platform").await.unwrap();
+    upsert_team(&db_pool, "grp-a", "Platform").await.unwrap();
     let app = build_test_router_entra(state);
 
     let req = Request::builder()
@@ -305,8 +312,9 @@ async fn admin_with_spacebot_user_role_grants_access() {
     // SpacebotAdmin would be blocked. That matches the existing
     // `require_role` contract in `src/auth/roles.rs`.
     let (state, pool) = spacebot::api::ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let admin = user_with_roles("admin", vec!["SpacebotUser", "SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     let app = build_test_router_entra(state);
 
     let req = Request::builder()

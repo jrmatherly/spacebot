@@ -11,11 +11,12 @@ use mock_entra::{
 };
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::graph::{GraphClient, GraphConfig};
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use std::sync::Arc;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -25,7 +26,8 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .expect("run global migrations");
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn make_ctx(tid: &str, oid: &str, groups: Vec<&str>, overage: bool) -> AuthContext {
@@ -67,9 +69,9 @@ async fn resolves_transitive_groups_on_overage() {
     )
     .await;
 
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(&tenant.tenant_id, "oid-overage", vec![], true);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -81,7 +83,7 @@ async fn resolves_transitive_groups_on_overage() {
     .expect("graph client");
 
     spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-user-token",
@@ -105,14 +107,14 @@ async fn resolves_transitive_groups_on_overage() {
 /// the correct behaviour when membership cannot be determined.
 #[tokio::test]
 async fn fail_closed_when_graph_unreachable() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(
         "00000000-0000-0000-0000-000000000001",
         "oid-dead",
         vec![],
         true,
     );
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -124,7 +126,7 @@ async fn fail_closed_when_graph_unreachable() {
     .expect("graph client");
 
     let result = spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-token",
@@ -150,12 +152,12 @@ async fn fail_closed_when_graph_unreachable() {
 /// Graph at a dead port to prove no HTTP request happens.
 #[tokio::test]
 async fn respects_cache_ttl_and_skips_graph() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx("tid-1", "oid-cached", vec!["grp-cached"], false);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
-    spacebot::auth::repository::upsert_team(&pool, "grp-cached", "Cached")
+    spacebot::auth::repository::upsert_team(&db_pool, "grp-cached", "Cached")
         .await
         .expect("upsert team");
 
@@ -178,7 +180,7 @@ async fn respects_cache_ttl_and_skips_graph() {
     .expect("graph client");
 
     let result = spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-token",
@@ -200,9 +202,9 @@ async fn syncs_user_photo_on_first_fetch() {
     let photo_bytes: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F'];
     mount_photo_stub(&tenant.server, Some(photo_bytes.clone())).await;
 
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(&tenant.tenant_id, "oid-with-photo", vec![], false);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -213,7 +215,7 @@ async fn syncs_user_photo_on_first_fetch() {
     ))
     .expect("graph client");
 
-    spacebot::auth::middleware::sync_user_photo_for_principal(&pool, &graph, &ctx, "fake-token")
+    spacebot::auth::middleware::sync_user_photo_for_principal(&db_pool, &graph, &ctx, "fake-token")
         .await
         .expect("photo sync");
 
@@ -237,9 +239,9 @@ async fn records_absent_photo_with_timestamp() {
     mount_obo_stub(&tenant.server).await;
     mount_photo_stub(&tenant.server, None).await;
 
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(&tenant.tenant_id, "oid-no-photo", vec![], false);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -250,7 +252,7 @@ async fn records_absent_photo_with_timestamp() {
     ))
     .expect("graph client");
 
-    spacebot::auth::middleware::sync_user_photo_for_principal(&pool, &graph, &ctx, "fake-token")
+    spacebot::auth::middleware::sync_user_photo_for_principal(&db_pool, &graph, &ctx, "fake-token")
         .await
         .expect("photo sync");
 
@@ -284,13 +286,13 @@ async fn stale_cache_triggers_refetch() {
     )
     .await;
 
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(&tenant.tenant_id, "oid-stale", vec![], true);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
     // Seed a 'stale' membership that should be replaced by the sync.
-    spacebot::auth::repository::upsert_team(&pool, "grp-stale", "Stale")
+    spacebot::auth::repository::upsert_team(&db_pool, "grp-stale", "Stale")
         .await
         .expect("upsert team");
     sqlx::query(
@@ -313,7 +315,7 @@ async fn stale_cache_triggers_refetch() {
 
     // TTL of 60s; seeded row is 1h old -> age (~3600s) > 60s -> refetch.
     spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-user-token",
@@ -344,14 +346,14 @@ async fn stale_cache_triggers_refetch() {
 /// error.
 #[tokio::test]
 async fn token_claim_path_skips_graph() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(
         "tid-token-claim",
         "oid-has-groups",
         vec!["grp-a", "grp-b"],
         false, // NOT overage
     );
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -364,7 +366,7 @@ async fn token_claim_path_skips_graph() {
     .expect("graph client");
 
     spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-user-token",
@@ -404,9 +406,9 @@ async fn obo_failure_propagates_and_persists_nothing() {
     )
     .await;
 
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let ctx = make_ctx(&tenant.tenant_id, "oid-obo-fail", vec![], true);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &ctx)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &ctx)
         .await
         .expect("upsert user");
 
@@ -418,7 +420,7 @@ async fn obo_failure_propagates_and_persists_nothing() {
     .expect("graph client");
 
     let result = spacebot::auth::middleware::sync_groups_for_principal(
-        &pool,
+        &db_pool,
         &graph,
         &ctx,
         "fake-user-token",

@@ -77,25 +77,46 @@ pub(super) async fn access_review(
         .cloned()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let rows: Vec<Row> = sqlx::query_as(
-        r#"
-        SELECT
-            u.principal_key,
-            u.display_name,
-            u.display_email,
-            u.principal_type,
-            u.status,
-            u.last_seen_at,
-            GROUP_CONCAT(t.display_name, '; ') AS team_names
-        FROM users u
-        LEFT JOIN team_memberships tm ON tm.principal_key = u.principal_key
-        LEFT JOIN teams t ON t.id = tm.team_id
-        GROUP BY u.principal_key
-        ORDER BY u.display_name, u.principal_key
-        "#,
-    )
-    .fetch_all(&pool)
-    .await
+    let rows: Vec<Row> = match &*pool {
+        crate::db::DbPool::Sqlite(p) => sqlx::query_as(
+            r#"
+            SELECT
+                u.principal_key,
+                u.display_name,
+                u.display_email,
+                u.principal_type,
+                u.status,
+                u.last_seen_at,
+                GROUP_CONCAT(t.display_name, '; ') AS team_names
+            FROM users u
+            LEFT JOIN team_memberships tm ON tm.principal_key = u.principal_key
+            LEFT JOIN teams t ON t.id = tm.team_id
+            GROUP BY u.principal_key
+            ORDER BY u.display_name, u.principal_key
+            "#,
+        )
+        .fetch_all(p)
+        .await,
+        crate::db::DbPool::Postgres(p) => sqlx::query_as(
+            r#"
+            SELECT
+                u.principal_key,
+                u.display_name,
+                u.display_email,
+                u.principal_type,
+                u.status,
+                to_char(u.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_seen_at,
+                string_agg(t.display_name, '; ' ORDER BY t.display_name) AS team_names
+            FROM users u
+            LEFT JOIN team_memberships tm ON tm.principal_key = u.principal_key
+            LEFT JOIN teams t ON t.id = tm.team_id
+            GROUP BY u.principal_key, u.display_name, u.display_email, u.principal_type, u.status, u.last_seen_at
+            ORDER BY u.display_name, u.principal_key
+            "#,
+        )
+        .fetch_all(p)
+        .await,
+    }
     .map_err(|error| {
         tracing::error!(%error, "access_review: query failed");
         StatusCode::INTERNAL_SERVER_ERROR

@@ -38,6 +38,7 @@ use spacebot::auth::repository::{
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use spacebot::cron::{CronConfig, CronStore};
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -98,7 +99,7 @@ async fn attach_cron_store(state: &ApiState, agent_id: &str) -> Arc<CronStore> {
 /// the instance pool keyed by `("cron_job", cron_id)` with the given owner.
 async fn seed_cron(
     store: &CronStore,
-    pool: &sqlx::SqlitePool,
+    db_pool: &Arc<DbPool>,
     agent_id: &str,
     cron_id: &str,
     owner: &AuthContext,
@@ -119,7 +120,7 @@ async fn seed_cron(
         .await
         .expect("save cron config");
     set_ownership(
-        pool,
+        db_pool,
         "cron_job",
         cron_id,
         Some(agent_id),
@@ -161,13 +162,14 @@ async fn non_owner_get_cron_returns_404_or_403() {
     // `cron_executions` is agent-scoped read; seeding ownership on Alice's
     // agent makes Bob's read surface as 404 (NotYours hide-existence).
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // Agent-scoped read: gate on the agent ownership row.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -198,10 +200,11 @@ async fn owner_can_read_cron() {
     // read gate, then hits the cron_stores map and returns 200 with the
     // seeded empty execution list.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -213,7 +216,7 @@ async fn owner_can_read_cron() {
     .unwrap();
 
     let store = attach_cron_store(&state, "agent-alice-1").await;
-    seed_cron(&store, &pool, "agent-alice-1", "cron-1", &alice).await;
+    seed_cron(&store, &db_pool, "agent-alice-1", "cron-1", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -236,12 +239,13 @@ async fn admin_bypass_cron_read() {
     // Regression guard against `is_admin` returning false for the cron
     // handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -253,7 +257,7 @@ async fn admin_bypass_cron_read() {
     .unwrap();
 
     let store = attach_cron_store(&state, "agent-alice-1").await;
-    seed_cron(&store, &pool, "agent-alice-1", "cron-1", &alice).await;
+    seed_cron(&store, &db_pool, "agent-alice-1", "cron-1", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -276,13 +280,14 @@ async fn non_owner_trigger_cron_returns_denied() {
     // gate fires on `trigger_cron`; sibling write handlers (delete, toggle,
     // create_or_update on existing) share the same `check_write` block.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // Seed the cron ownership row: the write gate keys on ("cron_job", id).
     set_ownership(
-        &pool,
+        &db_pool,
         "cron_job",
         "cron-1",
         Some("agent-alice-1"),
@@ -320,6 +325,7 @@ async fn system_bypasses_ownership_for_scheduled_run() {
     // narrows `is_admin` to exclude System, this test fires and prevents
     // silent breakage of scheduled execution.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     // The plan suggests skipping Alice's user row to simulate
     // disabled/missing state, but `resource_ownership.owner_principal_key`
@@ -329,9 +335,9 @@ async fn system_bypasses_ownership_for_scheduled_run() {
     // closest we can get is an active user row; the test still proves
     // the System bypass because the enforcement branch the test exercises
     // (is_admin → early Allowed) does not consult `users.status` at all.
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -343,7 +349,7 @@ async fn system_bypasses_ownership_for_scheduled_run() {
     .unwrap();
 
     let store = attach_cron_store(&state, "agent-alice-1").await;
-    seed_cron(&store, &pool, "agent-alice-1", "cron-1", &alice).await;
+    seed_cron(&store, &db_pool, "agent-alice-1", "cron-1", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&system_ctx());
@@ -377,8 +383,9 @@ async fn create_cron_assigns_ownership() {
     // update branch is covered by `non_owner_trigger_cron_returns_denied`
     // (same `check_write` block).
     let (_state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     // Replicate the new-cron handler sequence.
     let (_agent_pool, store) = per_agent_cron_pool().await;
@@ -398,7 +405,7 @@ async fn create_cron_assigns_ownership() {
         .await
         .expect("save cron config");
     set_ownership(
-        &pool,
+        &db_pool,
         "cron_job",
         "cron-new",
         Some("agent-alice-1"),
@@ -409,7 +416,7 @@ async fn create_cron_assigns_ownership() {
     .await
     .expect("set ownership");
 
-    let own = get_ownership(&pool, "cron_job", "cron-new")
+    let own = get_ownership(&db_pool, "cron_job", "cron-new")
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after set_ownership");
@@ -482,13 +489,14 @@ async fn cron_enrichment_keys_on_cron_job_resource_type() {
     // doc on `create_cron_assigns_ownership` for the same reasoning).
     // Testing the function boundary is the tightest available seam.
     let (_state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "cron_job",
         "cron-team-1",
         Some("agent-alice-1"),
@@ -502,7 +510,7 @@ async fn cron_enrichment_keys_on_cron_job_resource_type() {
     let ids = vec!["cron-team-1".to_string()];
 
     // Correct key: the string the live handler uses post-fix.
-    let map_correct = list_ownerships_by_ids(&pool, "cron_job", &ids)
+    let map_correct = list_ownerships_by_ids(&db_pool, "cron_job", &ids)
         .await
         .expect("list_ownerships_by_ids succeeds");
     let row = map_correct
@@ -513,7 +521,7 @@ async fn cron_enrichment_keys_on_cron_job_resource_type() {
 
     // Old buggy key: the pre-fix string. Must return empty because
     // the ownership row was keyed on "cron_job", not "cron".
-    let map_buggy = list_ownerships_by_ids(&pool, "cron", &ids)
+    let map_buggy = list_ownerships_by_ids(&db_pool, "cron", &ids)
         .await
         .expect("list_ownerships_by_ids succeeds");
     assert!(
