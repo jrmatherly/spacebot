@@ -1126,8 +1126,8 @@ impl ApiState {
     ///
     /// PR 11.2: signature widened from `sqlx::SqlitePool` to `Arc<DbPool>`.
     /// Test fixtures wrap a fresh `SqlitePool` into `Arc::new(DbPool::Sqlite(...))`
-    /// at the call site (no Option Fixture-A bridge here anymore — the bridge
-    /// served PR 11.2 Tasks 6-12; this widening retires it).
+    /// at the call site. The Option Fixture-A bridge that served PR 11.2
+    /// Tasks 6-12 has been retired by this widening.
     pub fn set_instance_pool(&self, pool: Arc<crate::db::DbPool>) {
         // A-13: the AuditAppender singleton is constructed here, the only
         // call-site where both ApiState and a pool are in scope. The
@@ -1138,7 +1138,7 @@ impl ApiState {
         // appender is attached BEFORE the outer `instance_pool` store so a
         // racing observer that reads instance_pool=Some is guaranteed to
         // see audit=Some too. The reverse window (audit=Some,
-        // instance_pool=None) is brief and benign — the appender owns its
+        // instance_pool=None) is brief and benign. The appender owns its
         // own Arc clone of the pool, so audit writes succeed independently.
         // Callers that read `state.instance_pool` directly (non-audit
         // paths) see None and no-op as designed.

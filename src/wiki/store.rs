@@ -17,10 +17,6 @@ use sqlx::Row as _;
 
 use std::sync::Arc;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, utoipa::ToSchema,
 )]
@@ -732,7 +728,7 @@ impl WikiStore {
     /// own `MATCH` operator) joined to `wiki_pages` on rowid; user input runs
     /// through `sanitize_fts_query` which strips operators and emits prefix
     /// tokens. Postgres uses the `search_tsv` STORED generated column on
-    /// `wiki_pages` directly with `websearch_to_tsquery('english', $1)` — the
+    /// `wiki_pages` directly with `websearch_to_tsquery('english', $1)`. The
     /// `websearch_to_tsquery` parser handles user input safely without the
     /// FTS5-style escaping that SQLite needs. GIN index `wiki_pages_search_tsv`
     /// backs the lookup.
@@ -788,8 +784,8 @@ impl WikiStore {
                     .collect()
             }
             DbPool::Postgres(p) => {
-                // Postgres path skips sanitize_fts_query — websearch_to_tsquery
-                // parses user input safely (it accepts double-quoted phrases
+                // Postgres path skips sanitize_fts_query because
+                // websearch_to_tsquery parses user input safely (it accepts double-quoted phrases
                 // and AND/OR/- operators with sane fallbacks for malformed
                 // queries). Empty input still short-circuits.
                 if query.trim().is_empty() {

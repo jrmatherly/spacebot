@@ -873,7 +873,7 @@ fn parse_metadata(value: &str) -> Value {
     serde_json::from_str(value).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
 }
 
-/// Internal control-flow tag for `create()`'s per-backend dispatch — keeps
+/// Internal control-flow tag for `create()`'s per-backend dispatch. Keeps
 /// the retry-on-collision contract identical across SQLite and Postgres
 /// while letting each arm match on its native error code.
 enum CreateOutcome {

@@ -19,10 +19,6 @@ use sqlx::Row as _;
 
 use std::sync::Arc;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 /// The class of event that triggered the notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

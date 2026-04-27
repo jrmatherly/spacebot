@@ -182,13 +182,16 @@ impl DbPool {
     }
 
     /// Borrow the SQLite pool. Returns Err if backend is Postgres.
-    /// Stores not yet migrated to dual-backend dispatch use this accessor
-    /// to keep their `&SqlitePool` parameter type during PR 11.1.
+    /// Per-agent stores still take `&SqlitePool` and use this accessor as a
+    /// transitional bridge. The instance-tier sweep (PR 11.2) is shipped, so
+    /// the only remaining legitimate caller is `AgentDeps.sqlite_pool` until
+    /// PR 11.3 widens the per-agent surface to `Arc<DbPool>`.
     pub fn as_sqlite(&self) -> Result<&SqlitePool> {
         match self {
             DbPool::Sqlite(p) => Ok(p),
             DbPool::Postgres(_) => Err(DbError::Query(
-                "store requires SQLite backend; Postgres dispatch lands in PR 11.2/11.3".into(),
+                "store requires SQLite backend; per-agent Postgres dispatch lands in PR 11.3"
+                    .into(),
             )
             .into()),
         }
@@ -242,8 +245,9 @@ impl Db {
     }
 
     /// Borrow the underlying SQLite pool. Returns Err if backend is Postgres.
-    /// PR 11.1 stores remain on `&SqlitePool` parameter type and use this
-    /// accessor; PR 11.2/11.3 migrate stores to take `Arc<DbPool>` directly.
+    /// PR 11.2 widened instance-tier stores to `Arc<DbPool>`. The remaining
+    /// caller is `AgentDeps.sqlite_pool` on the per-agent path; PR 11.3
+    /// retires this accessor by widening that surface to `Arc<DbPool>`.
     pub fn sqlite_pool(&self) -> Result<&SqlitePool> {
         self.pool.as_sqlite()
     }
@@ -635,7 +639,7 @@ mod tests {
     /// when `connect_instance_db` is the entry point. We can't actually
     /// connect to a real Postgres in unit-test scope (testcontainers is
     /// reserved for `tests/instance_postgres.rs`), so the contract verified
-    /// here is: the error must NOT be the PR 11.3 fail-fast message — the
+    /// here is: the error must NOT be the PR 11.3 fail-fast message. The
     /// dispatch must reach the connect / migration-loading step downstream.
     #[tokio::test(flavor = "multi_thread")]
     async fn connect_instance_db_with_postgres_url_attempts_connect() {
@@ -651,8 +655,16 @@ mod tests {
             "instance-tier Postgres should no longer fail-fast on PR 11.3 message; got: {msg}"
         );
         assert!(
-            msg.contains("Postgres") || msg.contains("connection") || msg.contains("migrations"),
-            "expected connect/migration-related error, got: {msg}"
+            msg.contains("failed to connect to Postgres:"),
+            "expected the Postgres connect path's error message, got: {msg}"
+        );
+        // Proves redact_url() ran on the URL (the test URL has an `@` so
+        // redact_url emits the `***:***@` sentinel). This is the only
+        // invariant that distinguishes the connect path from a hypothetical
+        // migrations-loading or scheme-classification error.
+        assert!(
+            msg.contains("***:***@"),
+            "expected redact_url(...) sentinel proving the connect path was entered, got: {msg}"
         );
     }
 

@@ -16,8 +16,6 @@ use sqlx::Row as _;
 use std::path::Path;
 use std::sync::Arc;
 
-// Enums
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectStatus {
@@ -48,7 +46,7 @@ impl std::fmt::Display for ProjectStatus {
     }
 }
 
-/// Per-project settings overrides. Each field is optional — `None` means
+/// Per-project settings overrides. Each field is optional: `None` means
 /// "inherit from the agent-level `ProjectsConfig`". Stored as JSON in the
 /// `settings` column of the `projects` table.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -915,9 +913,9 @@ impl ProjectStore {
     }
 }
 
-// Row mapping helpers — split per backend because the schema diverges:
-// SQLite uses DATETIME columns (read as String directly), Postgres uses
-// TIMESTAMPTZ columns (read as chrono::DateTime<Utc>, formatted to RFC-3339).
+// Row mapping helpers split per backend because the schema diverges.
+// SQLite uses DATETIME columns, read as String directly. Postgres uses
+// TIMESTAMPTZ columns, read as chrono::DateTime<Utc> and formatted to RFC-3339.
 
 fn row_to_project_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<Project> {
     let tags_raw: String = row.try_get("tags").context("missing tags")?;

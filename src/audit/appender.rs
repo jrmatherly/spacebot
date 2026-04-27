@@ -1,4 +1,4 @@
-//! `AuditAppender` — the only production writer to `audit_events`. Holds
+//! `AuditAppender` is the only production writer to `audit_events`. It holds
 //! a Tokio mutex so chained writes are serialized. The transaction is
 //! narrow (SELECT prior row + INSERT new row + commit) so contention is
 //! proportional to audit volume, not request volume.
@@ -50,12 +50,14 @@ impl AuditAppender {
     /// `pub`. `#[doc(hidden)]` keeps it out of rendered rustdoc so the
     /// surface still LOOKS internal, but integration tests can call it.
     ///
-    /// Option Fixture-A bridge: accepts the legacy `SqlitePool` parameter
-    /// and wraps it into `Arc<DbPool::Sqlite(...))` internally so the 14
-    /// audit-domain test files (tests/audit_chain.rs, audit_export.rs,
-    /// audit_scrubbing.rs, api_admin_audit.rs, etc.) keep working without
-    /// per-call-site edits. The full Phase 11.2 widen-to-Arc<DbPool> on the
-    /// test surface lands when ApiState.instance_pool widens (Task 13).
+    /// Test fixture: accepts a `SqlitePool` and wraps it into
+    /// `Arc<DbPool::Sqlite(...))` internally so the 14 audit-domain test
+    /// files (tests/audit_chain.rs, audit_export.rs, audit_scrubbing.rs,
+    /// api_admin_audit.rs, etc.) keep working without per-call-site edits.
+    /// Retained on the SQLite-only test surface; Postgres-arm chain coverage
+    /// lands via `tests/instance_postgres.rs` (Task 16/17) which constructs
+    /// the appender via the production `set_instance_pool` path against a
+    /// testcontainers Postgres pool.
     #[doc(hidden)]
     pub fn new_for_tests(pool: SqlitePool) -> Self {
         Self::new(Arc::new(DbPool::Sqlite(pool)))
