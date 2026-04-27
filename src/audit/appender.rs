@@ -54,13 +54,21 @@ impl AuditAppender {
     /// `Arc<DbPool::Sqlite(...))` internally so the 14 audit-domain test
     /// files (tests/audit_chain.rs, audit_export.rs, audit_scrubbing.rs,
     /// api_admin_audit.rs, etc.) keep working without per-call-site edits.
-    /// Retained on the SQLite-only test surface; Postgres-arm chain coverage
-    /// lands via `tests/instance_postgres.rs` (Task 16/17) which constructs
-    /// the appender via the production `set_instance_pool` path against a
-    /// testcontainers Postgres pool.
+    /// Postgres-arm chain coverage uses `new_for_tests_pg` below.
     #[doc(hidden)]
     pub fn new_for_tests(pool: SqlitePool) -> Self {
         Self::new(Arc::new(DbPool::Sqlite(pool)))
+    }
+
+    /// Test-only constructor for the Postgres arm. Mirrors `new_for_tests`
+    /// shape for the testcontainers integration test in
+    /// `tests/instance_postgres.rs` (Task 16/17). The integration test
+    /// owns the `Arc<DbPool::Postgres(pg_pool))` wrap because the same
+    /// pool is also passed to `TaskStore::new`, `WikiStore::new`, etc.
+    /// in the same test scope.
+    #[doc(hidden)]
+    pub fn new_for_tests_pg(pool: Arc<DbPool>) -> Self {
+        Self::new(pool)
     }
 
     pub async fn append(&self, event: AuditEvent) -> sqlx::Result<AuditRow> {
