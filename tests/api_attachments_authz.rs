@@ -22,6 +22,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -87,7 +88,7 @@ async fn attach_agent_pool_and_workspace(
 /// attachment UUID.
 async fn seed_attachment(
     agent_pool: &sqlx::SqlitePool,
-    instance_pool: &sqlx::SqlitePool,
+    instance_pool: &Arc<DbPool>,
     channel_id: &str,
     owner: &AuthContext,
     saved_dir: &std::path::Path,
@@ -187,11 +188,12 @@ async fn non_owner_get_attachment_returns_404() {
     // documents that parent-resource relationships don't broaden access:
     // only the per-attachment ownership row matters.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let (agent_pool, _tmp) = attach_agent_pool_and_workspace(&state, "agent-a", "chan-1").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
     let saved_dir = state
         .agent_workspaces
@@ -199,7 +201,7 @@ async fn non_owner_get_attachment_returns_404() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &db_pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -221,9 +223,10 @@ async fn owner_get_attachment_returns_200() {
     // gate, the handler reads the row from the agent pool and the bytes
     // from the temp workspace, and returns 200.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let (agent_pool, _tmp) = attach_agent_pool_and_workspace(&state, "agent-a", "chan-1").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let saved_dir = state
         .agent_workspaces
@@ -231,7 +234,7 @@ async fn owner_get_attachment_returns_200() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &db_pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -254,11 +257,12 @@ async fn admin_bypass_attachment_read() {
     // Regression guard against `is_admin` returning false on the
     // serve_attachment gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let (agent_pool, _tmp) = attach_agent_pool_and_workspace(&state, "agent-a", "chan-1").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     let saved_dir = state
         .agent_workspaces
@@ -266,7 +270,7 @@ async fn admin_bypass_attachment_read() {
         .get("agent-a")
         .expect("workspace attached")
         .join("saved");
-    let attachment_id = seed_attachment(&agent_pool, &pool, "chan-1", &alice, &saved_dir).await;
+    let attachment_id = seed_attachment(&agent_pool, &db_pool, "chan-1", &alice, &saved_dir).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -292,11 +296,12 @@ async fn create_attachment_assigns_ownership() {
     // The upload's pre-check rides the agent ownership row, so seed
     // alice as the owner of agent-a first.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let (_agent_pool, _tmp) = attach_agent_pool_and_workspace(&state, "agent-a", "chan-1").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -335,7 +340,7 @@ async fn create_attachment_assigns_ownership() {
         .expect("attachment id in response")
         .to_string();
 
-    let own = get_ownership(&pool, "saved_attachment", &attachment_id)
+    let own = get_ownership(&db_pool, "saved_attachment", &attachment_id)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");

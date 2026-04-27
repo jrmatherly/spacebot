@@ -25,6 +25,7 @@ use spacebot::auth::repository::{
 };
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use spacebot::wiki::{CreateWikiPageInput, WikiPage, WikiPageType, WikiStore};
 use std::sync::Arc;
 use tower::ServiceExt as _;
@@ -87,8 +88,8 @@ fn req_create_page(bearer: &str, title: &str) -> Request<Body> {
 
 /// Create a wiki page directly via the store (bypassing the handler) and
 /// register ownership against `owner`. Returns the created page.
-async fn seed_page(pool: &sqlx::SqlitePool, owner: &AuthContext) -> WikiPage {
-    let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
+async fn seed_page(db_pool: &Arc<DbPool>, owner: &AuthContext) -> WikiPage {
+    let store = WikiStore::new(db_pool.clone());
     let page = store
         .create(CreateWikiPageInput {
             title: "Seed Page".to_string(),
@@ -102,7 +103,7 @@ async fn seed_page(pool: &sqlx::SqlitePool, owner: &AuthContext) -> WikiPage {
         .await
         .unwrap();
     set_ownership(
-        pool,
+        db_pool,
         "wiki_page",
         &page.id,
         None,
@@ -118,12 +119,13 @@ async fn seed_page(pool: &sqlx::SqlitePool, owner: &AuthContext) -> WikiPage {
 #[tokio::test]
 async fn non_owner_get_page_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let page = seed_page(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let page = seed_page(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -139,10 +141,11 @@ async fn non_owner_get_page_returns_404() {
 #[tokio::test]
 async fn owner_get_page_returns_200() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let page = seed_page(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let page = seed_page(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -162,12 +165,13 @@ async fn admin_get_page_returns_200() {
     // Regression guard against `is_admin` returning false on the wiki
     // handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    let page = seed_page(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    let page = seed_page(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -187,12 +191,13 @@ async fn non_owner_edit_page_returns_404() {
     // the write gate fires on edit_page; sibling write handlers
     // (restore_version, archive_page) share the same `check_write` block.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let page = seed_page(&pool, &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let page = seed_page(&db_pool, &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -217,9 +222,10 @@ async fn create_page_assigns_ownership() {
     // NotOwned 404. The proof is an ownership row present synchronously
     // after the POST completes.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -235,7 +241,7 @@ async fn create_page_assigns_ownership() {
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let page_id = parsed["page"]["id"].as_str().expect("page.id").to_string();
 
-    let own = get_ownership(&pool, "wiki_page", &page_id)
+    let own = get_ownership(&db_pool, "wiki_page", &page_id)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");
@@ -283,14 +289,15 @@ async fn list_pages_enriches_team_scoped_page_with_chip_fields() {
     // `Vec<WikiPageSummary>` (chip absent) trips CI before the SPA
     // notices a silent degradation.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     let page = {
-        let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
+        let store = WikiStore::new(db_pool.clone());
         store
             .create(CreateWikiPageInput {
                 title: "Team Runbook".to_string(),
@@ -305,7 +312,7 @@ async fn list_pages_enriches_team_scoped_page_with_chip_fields() {
             .unwrap()
     };
     set_ownership(
-        &pool,
+        &db_pool,
         "wiki_page",
         &page.id,
         None,
@@ -357,14 +364,15 @@ async fn search_pages_enriches_team_scoped_page_with_chip_fields() {
     // both `list_pages` and `search_pages`; without this the search
     // branch could regress to `Vec<WikiPageSummary>` silently.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     attach_wiki_store(&state, &pool);
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     let page = {
-        let store = WikiStore::new(Arc::new(spacebot::db::DbPool::Sqlite(pool.clone())));
+        let store = WikiStore::new(db_pool.clone());
         store
             .create(CreateWikiPageInput {
                 title: "Team Runbook".to_string(),
@@ -379,7 +387,7 @@ async fn search_pages_enriches_team_scoped_page_with_chip_fields() {
             .unwrap()
     };
     set_ownership(
-        &pool,
+        &db_pool,
         "wiki_page",
         &page.id,
         None,

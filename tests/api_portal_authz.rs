@@ -33,6 +33,7 @@ use spacebot::auth::repository::{
 };
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -117,14 +118,15 @@ async fn non_owner_portal_history_returns_404() {
     // Bob reading Alice's personal portal_conversation must see 404 (hide
     // existence), not 403. Guards the read gate on portal_history.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     let session_id = "portal-chat-session-alice-1";
     set_ownership(
-        &pool,
+        &db_pool,
         "portal_conversation",
         session_id,
         None,
@@ -155,12 +157,13 @@ async fn owner_can_read_portal_history() {
     // Downstream success depends on the per-agent pool being attached
     // (it is) — a 200 or any non-401/403 means the gate allowed through.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     let session_id = "portal-chat-session-alice-1";
     set_ownership(
-        &pool,
+        &db_pool,
         "portal_conversation",
         session_id,
         None,
@@ -201,14 +204,15 @@ async fn admin_bypass_portal_read() {
     // Regression guard against `is_admin` returning false on the portal
     // handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     let session_id = "portal-chat-session-alice-1";
     set_ownership(
-        &pool,
+        &db_pool,
         "portal_conversation",
         session_id,
         None,
@@ -250,14 +254,15 @@ async fn non_owner_update_portal_conversation_denied() {
     // fires on update_portal_conversation; delete shares the same
     // check_write block and covers by extension.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     let session_id = "portal-chat-session-alice-1";
     set_ownership(
-        &pool,
+        &db_pool,
         "portal_conversation",
         session_id,
         None,
@@ -281,7 +286,7 @@ async fn non_owner_update_portal_conversation_denied() {
         "non-owner PUT on personal portal_conversation must see 404 per NotYours mapping"
     );
     // Ownership row is untouched by the denied write.
-    let row = get_ownership(&pool, "portal_conversation", session_id)
+    let row = get_ownership(&db_pool, "portal_conversation", session_id)
         .await
         .unwrap()
         .expect("ownership row survives denied update");
@@ -305,13 +310,14 @@ async fn create_portal_conversation_assigns_personal_ownership() {
     //   4. The row's `visibility` is EXACTLY "personal", not "org" or
     //      "team". Flipping this default is a tenant-wide data leak.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // Alice owns agent-a so the agent-scoped check_write gate added to
     // create_portal_conversation lets her create conversations under it.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -343,7 +349,7 @@ async fn create_portal_conversation_assigns_personal_ownership() {
         .expect("conversation.id in response")
         .to_string();
 
-    let own = get_ownership(&pool, "portal_conversation", &conversation_id)
+    let own = get_ownership(&db_pool, "portal_conversation", &conversation_id)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");
@@ -370,15 +376,16 @@ async fn non_agent_owner_create_portal_conversation_returns_404() {
     // sees 404 (hide existence) rather than the conversation being
     // created out from under the real owner.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // Alice owns agent-a. Bob should not be able to create conversations
     // under it.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -454,15 +461,16 @@ async fn list_portal_conversations_enriches_team_scoped_conversation_with_chip_f
     // before the SPA notices. Resource_type is "portal_conversation" at
     // all three code paths (set_ownership, check_write, enrich).
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let agent_pool = attach_agent_pool(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     // Alice owns agent-a so the agent-scoped read gate on list passes.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -485,7 +493,7 @@ async fn list_portal_conversations_enriches_team_scoped_conversation_with_chip_f
     // upsert on (resource_type, resource_id), so this overrides any
     // Personal default a future auto-create path might introduce.
     set_ownership(
-        &pool,
+        &db_pool,
         "portal_conversation",
         &convo.id,
         Some("agent-a"),

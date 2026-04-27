@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use spacebot::audit::types::{AuditAction, AuditEvent};
 use spacebot::audit::{
     AuditAppender,
     export::{ExportConfig, ExportMode, export_audit},
 };
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -15,12 +18,13 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .unwrap();
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 #[tokio::test]
 async fn filesystem_export_writes_ndjson_and_manifest() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let appender = AuditAppender::new_for_tests(pool.clone());
     for i in 0..3 {
         appender
@@ -45,7 +49,7 @@ async fn filesystem_export_writes_ndjson_and_manifest() {
         },
         enabled: true,
     };
-    let result = export_audit(&pool, &cfg).await.unwrap();
+    let result = export_audit(&db_pool, &cfg).await.unwrap();
     assert_eq!(result.rows_exported, 3);
 
     let entries: Vec<_> = std::fs::read_dir(tmp.path())
@@ -66,7 +70,7 @@ async fn filesystem_export_writes_ndjson_and_manifest() {
 
 #[tokio::test]
 async fn export_skipped_when_disabled() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let tmp = tempfile::tempdir().unwrap();
     let cfg = ExportConfig {
         mode: ExportMode::Filesystem {
@@ -74,7 +78,7 @@ async fn export_skipped_when_disabled() {
         },
         enabled: false,
     };
-    let result = export_audit(&pool, &cfg).await.unwrap();
+    let result = export_audit(&db_pool, &cfg).await.unwrap();
     assert_eq!(result.rows_exported, 0);
     let entries: Vec<_> = std::fs::read_dir(tmp.path())
         .unwrap()
@@ -91,7 +95,7 @@ async fn export_skipped_when_disabled() {
 /// "incremental" claim in the src/audit/export.rs module doc.
 #[tokio::test]
 async fn incremental_cursor_skips_already_exported_rows() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let appender = AuditAppender::new_for_tests(pool.clone());
     for i in 0..3 {
         appender
@@ -117,13 +121,13 @@ async fn incremental_cursor_skips_already_exported_rows() {
         },
     };
 
-    let first = export_audit(&pool, &cfg).await.unwrap();
+    let first = export_audit(&db_pool, &cfg).await.unwrap();
     assert_eq!(first.rows_exported, 3, "first run exports all seeded rows");
     assert_eq!(first.first_seq, Some(1));
     assert_eq!(first.last_seq, Some(3));
 
     // Second run on the same data: cursor already at seq=3, no new rows.
-    let second = export_audit(&pool, &cfg).await.unwrap();
+    let second = export_audit(&db_pool, &cfg).await.unwrap();
     assert_eq!(
         second.rows_exported, 0,
         "second run must skip already-exported rows; cursor advance regression"
@@ -146,7 +150,7 @@ async fn incremental_cursor_skips_already_exported_rows() {
         })
         .await
         .unwrap();
-    let third = export_audit(&pool, &cfg).await.unwrap();
+    let third = export_audit(&db_pool, &cfg).await.unwrap();
     assert_eq!(third.rows_exported, 1, "third run exports only the new row");
     assert_eq!(third.first_seq, Some(4));
     assert_eq!(third.last_seq, Some(4));

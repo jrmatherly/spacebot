@@ -11,6 +11,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::ROLE_USER;
 use spacebot::conversation::history::ConversationLogger;
+use spacebot::db::DbPool;
 use spacebot::links::{AgentLink, LinkDirection, LinkKind};
 use spacebot::tasks::TaskStore;
 use spacebot::tools::{SendAgentMessageArgs, SendAgentMessageTool};
@@ -18,7 +19,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -28,7 +29,8 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .expect("run global migrations");
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn user(oid: &str) -> AuthContext {
@@ -69,15 +71,15 @@ fn link(from: &str, to: &str) -> Arc<ArcSwap<Vec<AgentLink>>> {
 
 #[tokio::test]
 async fn send_agent_message_denies_when_can_link_channel_denies() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = user("alice");
     let bob = user("bob");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     // agent-a is Alice's personal, agent-b is Bob's personal. Alice has
     // no path to agent-b, so `can_link_channel` returns false.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -88,7 +90,7 @@ async fn send_agent_message_denies_when_can_link_channel_denies() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -103,11 +105,9 @@ async fn send_agent_message_denies_when_can_link_channel_denies() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
-            pool.clone(),
-        )))),
+        Arc::new(TaskStore::new(db_pool.clone())),
         ConversationLogger::new(pool.clone()),
-        Some(pool.clone()),
+        Some(db_pool.clone()),
         alice,
     );
 
@@ -131,15 +131,13 @@ async fn send_agent_message_skips_policy_when_pool_none() {
     // past the policy gate. The link-lookup step downstream will fail for
     // its own reasons (we've only seeded an agent-c link, not the requested
     // agent-b), but the error must NOT be "denied by policy".
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
 
     let tool = SendAgentMessageTool::new(
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
-            pool.clone(),
-        )))),
+        Arc::new(TaskStore::new(db_pool.clone())),
         ConversationLogger::new(pool.clone()),
         None,
         AuthContext::legacy_static(),
@@ -185,11 +183,11 @@ async fn send_agent_message_owner_of_both_agents_passes_policy_gate() {
     // assert full success here because the downstream path requires a
     // live messaging stack we do not build in this integration test.
     // The assertion is that the error, if any, is a non-policy error.
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = user("alice");
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -200,7 +198,7 @@ async fn send_agent_message_owner_of_both_agents_passes_policy_gate() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-b",
         None,
@@ -215,11 +213,9 @@ async fn send_agent_message_owner_of_both_agents_passes_policy_gate() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
-            pool.clone(),
-        )))),
+        Arc::new(TaskStore::new(db_pool.clone())),
         ConversationLogger::new(pool.clone()),
-        Some(pool.clone()),
+        Some(db_pool.clone()),
         alice,
     );
 
@@ -250,7 +246,7 @@ async fn send_agent_message_system_principal_bypasses_policy() {
     // ownership rows on either agent. Cortex retriggers and internal
     // adapters build `AuthContext::system()`-style contexts, and this
     // path must traverse link policy without surfacing "denied by policy".
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     // Deliberately no ownership rows seeded: System bypass should not
     // depend on them.
 
@@ -258,11 +254,9 @@ async fn send_agent_message_system_principal_bypasses_policy() {
         Arc::from("agent-a"),
         link("agent-a", "agent-b"),
         agent_names(&[("agent-a", "Alpha"), ("agent-b", "Beta")]),
-        Arc::new(TaskStore::new(Arc::new(spacebot::db::DbPool::Sqlite(
-            pool.clone(),
-        )))),
+        Arc::new(TaskStore::new(db_pool.clone())),
         ConversationLogger::new(pool.clone()),
-        Some(pool.clone()),
+        Some(db_pool.clone()),
         system_ctx(),
     );
 

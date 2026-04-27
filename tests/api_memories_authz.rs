@@ -39,6 +39,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -98,12 +99,13 @@ fn req_memory_graph_neighbors(agent_id: &str, bearer: &str) -> Request<Body> {
 #[tokio::test]
 async fn non_owner_reading_personal_agent_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -131,12 +133,13 @@ async fn non_owner_reading_personal_agent_returns_404() {
 #[tokio::test]
 async fn admin_role_bypasses_ownership_on_agent_read() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -177,10 +180,11 @@ async fn admin_role_bypasses_ownership_on_agent_read() {
 #[tokio::test]
 async fn owner_passes_authz_gate_on_own_agent() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -243,15 +247,16 @@ async fn team_member_reads_team_visible_agent_memories() {
     // was called with the correct resource_type + resource_id" assertion.
     // Covers PR #104 review test-coverage Nit 5.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &alice)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &alice)
         .await
         .unwrap();
-    spacebot::auth::repository::upsert_user_from_auth(&pool, &bob)
+    spacebot::auth::repository::upsert_user_from_auth(&db_pool, &bob)
         .await
         .unwrap();
-    let team = spacebot::auth::repository::upsert_team(&pool, "grp-platform", "Platform")
+    let team = spacebot::auth::repository::upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
     sqlx::query(
@@ -264,7 +269,7 @@ async fn team_member_reads_team_visible_agent_memories() {
     .await
     .unwrap();
     spacebot::auth::repository::set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-shared",
         None,
@@ -331,8 +336,9 @@ async fn list_memories_no_ops_when_instance_pool_absent() {
 #[tokio::test]
 async fn missing_ownership_row_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // NO set_ownership call: the agent has no ownership row.
 
     let app = build_test_router_entra(state);
@@ -361,12 +367,13 @@ async fn missing_ownership_row_returns_404() {
 #[tokio::test]
 async fn non_owner_search_memories_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -394,12 +401,13 @@ async fn non_owner_search_memories_returns_404() {
 #[tokio::test]
 async fn non_owner_memory_graph_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -427,12 +435,13 @@ async fn non_owner_memory_graph_returns_404() {
 #[tokio::test]
 async fn non_owner_memory_graph_neighbors_returns_404() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -518,15 +527,16 @@ async fn list_memories_enriches_team_scoped_memory_with_chip_fields() {
     use std::collections::HashMap;
 
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    let team = upsert_team(&pool, "grp-platform", "Platform")
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-platform", "Platform")
         .await
         .unwrap();
 
     // Own the parent agent (authz gate passes on scope=agent_id).
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-alice-1",
         None,
@@ -575,7 +585,7 @@ async fn list_memories_enriches_team_scoped_memory_with_chip_fields() {
 
     // Mark the memory row as team-scoped, shared to "Platform".
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         &memory_id,
         None,

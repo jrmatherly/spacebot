@@ -11,6 +11,7 @@ use spacebot::api::test_support::build_test_router_entra;
 use spacebot::auth::context::{AuthContext, PrincipalType};
 use spacebot::auth::repository::upsert_user_from_auth;
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -30,8 +31,9 @@ fn user(oid: &str, roles: Vec<&str>) -> AuthContext {
 #[tokio::test]
 async fn non_admin_cannot_claim() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
     let app = build_test_router_entra(state);
     let body = serde_json::json!({
@@ -56,10 +58,11 @@ async fn non_admin_cannot_claim() {
 #[tokio::test]
 async fn admin_can_claim() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user("alice", vec!["SpacebotUser"]);
     let admin = user("admin", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     let app = build_test_router_entra(state);
     let alice_key = alice.principal_key();
@@ -135,10 +138,11 @@ async fn admin_can_claim_non_memory_resource_type() {
     // exercise a non-`memory` type to pin that the role gate and ownership
     // write don't accidentally couple to a specific resource_type string.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let bob = user("bob", vec!["SpacebotUser"]);
     let admin = user("admin2", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     let app = build_test_router_entra(state);
     let body = serde_json::json!({
@@ -178,8 +182,9 @@ async fn rejects_unknown_field_in_request_body() {
     // field deserialization 422s rather than silently dropping. Pins
     // the contract so a future refactor can't regress to silent-drop.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let admin = user("admin3", vec!["SpacebotAdmin"]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
 
     let app = build_test_router_entra(state);
     // `team_id` is the misspelling; the field is `shared_with_team_id`.

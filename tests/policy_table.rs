@@ -8,10 +8,11 @@ use spacebot::auth::policy::{Access, DenyReason, check_read, check_read_with_aud
 use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{set_ownership, upsert_team, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 
-async fn setup_pool() -> sqlx::SqlitePool {
+async fn setup_pool() -> (sqlx::SqlitePool, Arc<DbPool>) {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite::memory:")
@@ -21,7 +22,8 @@ async fn setup_pool() -> sqlx::SqlitePool {
         .run(&pool)
         .await
         .expect("run global migrations");
-    pool
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
+    (pool, db_pool)
 }
 
 fn user(oid: &str, roles: Vec<&str>, groups: Vec<&str>) -> AuthContext {
@@ -39,11 +41,11 @@ fn user(oid: &str, roles: Vec<&str>, groups: Vec<&str>) -> AuthContext {
 
 #[tokio::test]
 async fn owner_can_read_personal_memory() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -54,7 +56,7 @@ async fn owner_can_read_personal_memory() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &alice, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &alice, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Allowed),
         "owner should read own personal memory: got {decision:?}"
@@ -63,13 +65,13 @@ async fn owner_can_read_personal_memory() {
 
 #[tokio::test]
 async fn non_owner_cannot_read_personal_memory() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -80,7 +82,7 @@ async fn non_owner_cannot_read_personal_memory() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Denied(DenyReason::NotYours)),
         "non-owner must be denied on personal memory: got {decision:?}"
@@ -89,12 +91,12 @@ async fn non_owner_cannot_read_personal_memory() {
 
 #[tokio::test]
 async fn team_member_can_read_team_memory() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let team = upsert_team(&pool, "grp-plat", "Platform").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-plat", "Platform").await.unwrap();
     // Bob is a team member; alice owns the resource and shares with the team.
     sqlx::query(
         r#"
@@ -108,7 +110,7 @@ async fn team_member_can_read_team_memory() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -119,7 +121,7 @@ async fn team_member_can_read_team_memory() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Allowed),
         "team member should read team memory: got {decision:?}"
@@ -128,14 +130,14 @@ async fn team_member_can_read_team_memory() {
 
 #[tokio::test]
 async fn non_team_member_cannot_read_team_memory() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]); // not in the team
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let team = upsert_team(&pool, "grp-plat", "Platform").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-plat", "Platform").await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -146,7 +148,7 @@ async fn non_team_member_cannot_read_team_memory() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Denied(DenyReason::NotYours)),
         "non-team-member must be denied on team memory"
@@ -155,13 +157,13 @@ async fn non_team_member_cannot_read_team_memory() {
 
 #[tokio::test]
 async fn anyone_can_read_org_memory() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -172,7 +174,7 @@ async fn anyone_can_read_org_memory() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Allowed),
         "org visibility must allow all principals"
@@ -181,13 +183,13 @@ async fn anyone_can_read_org_memory() {
 
 #[tokio::test]
 async fn admin_bypasses_personal_scoping() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let carol = user("carol", vec![ROLE_ADMIN], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &carol).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -198,7 +200,7 @@ async fn admin_bypasses_personal_scoping() {
     .await
     .unwrap();
 
-    let decision = check_read(&pool, &carol, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &carol, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Allowed),
         "admin must bypass personal scoping"
@@ -207,12 +209,12 @@ async fn admin_bypasses_personal_scoping() {
 
 #[tokio::test]
 async fn not_owned_returns_not_owned_reason() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // No set_ownership call; the resource has no row.
 
-    let decision = check_read(&pool, &alice, "memory", "m-orphan")
+    let decision = check_read(&db_pool, &alice, "memory", "m-orphan")
         .await
         .unwrap();
     assert!(
@@ -223,12 +225,12 @@ async fn not_owned_returns_not_owned_reason() {
 
 #[tokio::test]
 async fn write_requires_ownership_even_for_team_visibility() {
-    let pool = setup_pool().await;
+    let (pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    let team = upsert_team(&pool, "grp-plat", "Platform").await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    let team = upsert_team(&db_pool, "grp-plat", "Platform").await.unwrap();
     sqlx::query(
         r#"
         INSERT INTO team_memberships (principal_key, team_id, source)
@@ -241,7 +243,7 @@ async fn write_requires_ownership_even_for_team_visibility() {
     .await
     .unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -253,9 +255,9 @@ async fn write_requires_ownership_even_for_team_visibility() {
     .unwrap();
 
     // Bob can READ (he's a team member) but cannot WRITE.
-    let read = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let read = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(matches!(read, Access::Allowed));
-    let write = check_write(&pool, &bob, "memory", "m1").await.unwrap();
+    let write = check_write(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(write, Access::Denied(DenyReason::NotYours)),
         "team members can read but only the owner can write: got {write:?}"
@@ -264,13 +266,13 @@ async fn write_requires_ownership_even_for_team_visibility() {
 
 #[tokio::test]
 async fn admin_read_sets_audit_flag_on_decision() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let carol = user("carol", vec![ROLE_ADMIN], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &carol).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &carol).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -281,7 +283,7 @@ async fn admin_read_sets_audit_flag_on_decision() {
     .await
     .unwrap();
 
-    let (decision, admin_override) = check_read_with_audit(&pool, &carol, "memory", "m1")
+    let (decision, admin_override) = check_read_with_audit(&db_pool, &carol, "memory", "m1")
         .await
         .unwrap();
     assert!(matches!(decision, Access::Allowed));
@@ -293,11 +295,11 @@ async fn admin_read_sets_audit_flag_on_decision() {
 
 #[tokio::test]
 async fn owner_read_does_not_set_audit_flag() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -308,7 +310,7 @@ async fn owner_read_does_not_set_audit_flag() {
     .await
     .unwrap();
 
-    let (_decision, admin_override) = check_read_with_audit(&pool, &alice, "memory", "m1")
+    let (_decision, admin_override) = check_read_with_audit(&db_pool, &alice, "memory", "m1")
         .await
         .unwrap();
     assert!(!admin_override, "owner access is not break-glass");
@@ -332,13 +334,13 @@ async fn valid_personal_ownership_non_owner_read_sees_not_yours() {
     // branches to return anyhow::Err. The assertion guards against a
     // regression where the integrity refactor accidentally broke the
     // primary path.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
     let bob = user("bob", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -349,7 +351,7 @@ async fn valid_personal_ownership_non_owner_read_sees_not_yours() {
     .await
     .unwrap();
 
-    let result = check_read(&pool, &bob, "memory", "m1").await.unwrap();
+    let result = check_read(&db_pool, &bob, "memory", "m1").await.unwrap();
     assert!(
         matches!(result, Access::Denied(DenyReason::NotYours)),
         "Valid Personal row: non-owner must see NotYours (not an integrity error)"
@@ -363,11 +365,11 @@ async fn legacy_static_read_does_not_set_audit_flag() {
     // otherwise trip admin_override and pollute the quarterly access
     // review. admin_override must be gated on the SpacebotAdmin role, not
     // on is_admin(). Regression guard for the Phase 4 PR #104 review.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -379,7 +381,7 @@ async fn legacy_static_read_does_not_set_audit_flag() {
     .unwrap();
 
     let legacy = AuthContext::legacy_static();
-    let (decision, admin_override) = check_read_with_audit(&pool, &legacy, "memory", "m1")
+    let (decision, admin_override) = check_read_with_audit(&db_pool, &legacy, "memory", "m1")
         .await
         .unwrap();
     assert!(matches!(decision, Access::Allowed));
@@ -392,11 +394,11 @@ async fn legacy_static_read_does_not_set_audit_flag() {
 #[tokio::test]
 async fn system_read_does_not_set_audit_flag() {
     // Same invariant for System (Cortex-initiated). Non-admin bypass path.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -417,7 +419,7 @@ async fn system_read_does_not_set_audit_flag() {
         display_email: None,
         display_name: None,
     };
-    let (decision, admin_override) = check_read_with_audit(&pool, &system, "memory", "m1")
+    let (decision, admin_override) = check_read_with_audit(&db_pool, &system, "memory", "m1")
         .await
         .unwrap();
     assert!(matches!(decision, Access::Allowed));
@@ -431,12 +433,12 @@ async fn admin_read_of_missing_resource_does_not_set_override() {
     // Nothing exists to break into, so no audit event should fire.
     // Regression guard: Phase 5's audit contract keys off admin_override
     // for the admin_read vs read event discriminator.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let admin = user("admin-carol", vec![ROLE_ADMIN], vec![]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     // NO set_ownership call: the resource has no row.
 
-    let (decision, admin_override) = check_read_with_audit(&pool, &admin, "memory", "m-ghost")
+    let (decision, admin_override) = check_read_with_audit(&db_pool, &admin, "memory", "m-ghost")
         .await
         .unwrap();
     assert!(matches!(decision, Access::Denied(DenyReason::NotOwned)));
@@ -456,13 +458,13 @@ async fn admin_reading_other_admin_resource_sets_override() {
     // admin-reads-user-resource; this test fills the remaining gap so a
     // future narrowing of `admin_override` (e.g. "skip audit when owner
     // is also admin") would trip this explicit regression guard.
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let carol = user("carol", vec![ROLE_ADMIN], vec![]);
     let dave = user("dave", vec![ROLE_ADMIN], vec![]);
-    upsert_user_from_auth(&pool, &carol).await.unwrap();
-    upsert_user_from_auth(&pool, &dave).await.unwrap();
+    upsert_user_from_auth(&db_pool, &carol).await.unwrap();
+    upsert_user_from_auth(&db_pool, &dave).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -473,7 +475,7 @@ async fn admin_reading_other_admin_resource_sets_override() {
     .await
     .unwrap();
 
-    let (decision, admin_override) = check_read_with_audit(&pool, &carol, "memory", "m1")
+    let (decision, admin_override) = check_read_with_audit(&db_pool, &carol, "memory", "m1")
         .await
         .unwrap();
     assert!(
@@ -488,11 +490,11 @@ async fn admin_reading_other_admin_resource_sets_override() {
 
 #[tokio::test]
 async fn legacy_static_bypasses_all_checks() {
-    let pool = setup_pool().await;
+    let (_pool, db_pool) = setup_pool().await;
     let alice = user("alice", vec![ROLE_USER], vec![]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "memory",
         "m1",
         None,
@@ -504,7 +506,7 @@ async fn legacy_static_bypasses_all_checks() {
     .unwrap();
 
     let legacy = AuthContext::legacy_static();
-    let decision = check_read(&pool, &legacy, "memory", "m1").await.unwrap();
+    let decision = check_read(&db_pool, &legacy, "memory", "m1").await.unwrap();
     assert!(
         matches!(decision, Access::Allowed),
         "legacy static principal must bypass. It represents pre-Entra CI / scripts"

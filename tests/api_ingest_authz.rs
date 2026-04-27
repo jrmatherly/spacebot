@@ -27,6 +27,7 @@ use spacebot::auth::principals::Visibility;
 use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_auth};
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
+use spacebot::db::DbPool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -123,13 +124,14 @@ async fn non_owner_get_ingest_file_returns_404() {
     // gate fires before the per-agent pool is reached, so Bob sees 404
     // (hide existence) per DenyReason::NotYours.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _fixture = attach_agent_pool_and_workspace(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -160,11 +162,12 @@ async fn owner_get_ingest_file_returns_200() {
     // attached so the handler reaches the happy path after passing the
     // gate. An empty ingestion_files table returns an empty list.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _fixture = attach_agent_pool_and_workspace(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -197,13 +200,14 @@ async fn admin_bypass_ingest_read() {
     // handler gate. The downstream 200 path requires agent_pools +
     // workspaces so the handler can reach the store after the gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _fixture = attach_agent_pool_and_workspace(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -237,13 +241,14 @@ async fn create_ingest_file_assigns_ownership() {
     // an ownership row keyed on the deterministic content_hash present
     // synchronously after the POST completes.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let _fixture = attach_agent_pool_and_workspace(&state, "agent-a").await;
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     // Upload writes through the agent-write gate; Alice must own the
     // agent for the upload to succeed.
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-a",
         None,
@@ -273,7 +278,7 @@ async fn create_ingest_file_assigns_ownership() {
         res.status()
     );
 
-    let own = get_ownership(&pool, "ingestion_file", &expected_hash)
+    let own = get_ownership(&db_pool, "ingestion_file", &expected_hash)
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after POST");

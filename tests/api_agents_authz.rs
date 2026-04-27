@@ -31,6 +31,7 @@ use spacebot::auth::repository::{get_ownership, set_ownership, upsert_user_from_
 use spacebot::auth::roles::{ROLE_ADMIN, ROLE_USER};
 use spacebot::auth::testing::mint_mock_token;
 use spacebot::config::AgentConfig;
+use spacebot::db::DbPool;
 use std::sync::Arc;
 use tower::ServiceExt as _;
 
@@ -71,9 +72,9 @@ fn req_update_agent(bearer: &str, body_json: &str) -> Request<Body> {
 /// the single owner_get_agent_overview_returns_200 test. Tests that
 /// only assert denial (404) do not need an attached pool because the
 /// gate fires before the handler touches the pool.
-async fn seed_agent_ownership(pool: &sqlx::SqlitePool, agent_id: &str, owner: &AuthContext) {
+async fn seed_agent_ownership(db_pool: &Arc<DbPool>, agent_id: &str, owner: &AuthContext) {
     set_ownership(
-        pool,
+        db_pool,
         "agent",
         agent_id,
         None,
@@ -91,11 +92,12 @@ async fn non_owner_get_agent_overview_returns_404() {
     // not 403. The fetch of agent_pools happens AFTER the gate, so a
     // missing pool cannot leak existence via a different status.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    seed_agent_ownership(&pool, "agent-a", &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-a", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -120,9 +122,10 @@ async fn owner_get_agent_overview_passes_gate() {
     // Pools-not-attached is a separate operational concern outside the
     // authz surface.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    seed_agent_ownership(&pool, "agent-a", &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-a", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&alice);
@@ -149,11 +152,12 @@ async fn admin_bypass_agent_overview() {
     // Regression guard against `is_admin` returning false on the agents
     // handler gate.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    seed_agent_ownership(&pool, "agent-a", &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-a", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&admin);
@@ -183,11 +187,12 @@ async fn non_owner_update_agent_returns_404() {
     // `to_status` maps to 404 (same hide-existence policy as read).
     // Proves the write gate fires on update_agent.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    seed_agent_ownership(&pool, "agent-a", &alice).await;
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-a", &alice).await;
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -209,14 +214,15 @@ async fn register_agent_ownership_helper_inserts_personal_row() {
     // at startup call this helper; a fire-and-forget `tokio::spawn`
     // would race the creator's immediate follow-up GET.
     let (_state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
 
-    spacebot::api::agents::register_agent_ownership(&pool, &alice, "agent-new")
+    spacebot::api::agents::register_agent_ownership(&db_pool, &alice, "agent-new")
         .await
         .expect("register_agent_ownership should succeed");
 
-    let row = get_ownership(&pool, "agent", "agent-new")
+    let row = get_ownership(&db_pool, "agent", "agent-new")
         .await
         .unwrap()
         .expect("ownership row must be present synchronously after helper returns");
@@ -232,6 +238,7 @@ async fn toml_reconciliation_assigns_legacy_static_ownership() {
     // principal_key and sits in the admin-bypass set so pre-Entra CLI
     // callers retain access until an admin re-claims.
     let (_state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
 
     let agents = vec![
         AgentConfig {
@@ -298,7 +305,7 @@ async fn toml_reconciliation_assigns_legacy_static_ownership() {
         },
     ];
 
-    let reconciled = spacebot::config::reconcile_toml_agents_with_ownership(&pool, &agents)
+    let reconciled = spacebot::config::reconcile_toml_agents_with_ownership(&db_pool, &agents)
         .await
         .expect("reconcile_toml_agents_with_ownership should succeed");
     assert_eq!(
@@ -307,7 +314,7 @@ async fn toml_reconciliation_assigns_legacy_static_ownership() {
     );
 
     for id in ["agent-legacy-1", "agent-legacy-2"] {
-        let row = get_ownership(&pool, "agent", id)
+        let row = get_ownership(&db_pool, "agent", id)
             .await
             .unwrap()
             .unwrap_or_else(|| panic!("ownership row for {id} must be present"));
@@ -319,9 +326,10 @@ async fn toml_reconciliation_assigns_legacy_static_ownership() {
     }
 
     // Idempotent: second invocation reconciles 0 (rows already present).
-    let reconciled_again = spacebot::config::reconcile_toml_agents_with_ownership(&pool, &agents)
-        .await
-        .expect("second call should be idempotent");
+    let reconciled_again =
+        spacebot::config::reconcile_toml_agents_with_ownership(&db_pool, &agents)
+            .await
+            .expect("second call should be idempotent");
     assert_eq!(
         reconciled_again, 0,
         "existing ownership rows must be left untouched"
@@ -383,8 +391,9 @@ async fn trigger_warmup_user_role_unfiltered_is_403() {
     // every agent-id-specific test would still pass; this test is the
     // only coverage of the unfiltered branch.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
     let app = build_test_router_entra(state);
     let token = mint_mock_token(&bob);
@@ -461,13 +470,14 @@ fn agent_ids(body: &serde_json::Value) -> Vec<String> {
 #[tokio::test]
 async fn list_agents_scope_mine_returns_only_owned_agents() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    seed_agent_ownership(&pool, "agent-alice", &alice).await;
-    seed_agent_ownership(&pool, "agent-bob", &bob).await;
-    seed_agent_ownership(&pool, "agent-unowned", &bob).await; // not Alice's
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-alice", &alice).await;
+    seed_agent_ownership(&db_pool, "agent-bob", &bob).await;
+    seed_agent_ownership(&db_pool, "agent-unowned", &bob).await; // not Alice's
 
     state.set_agent_configs(vec![
         make_agent_info("agent-alice"),
@@ -491,12 +501,13 @@ async fn list_agents_scope_mine_returns_only_owned_agents() {
 #[tokio::test]
 async fn list_agents_scope_team_returns_only_team_shared_agents() {
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
 
-    let team = spacebot::auth::repository::upsert_team(&pool, "grp-x", "Team X")
+    let team = spacebot::auth::repository::upsert_team(&db_pool, "grp-x", "Team X")
         .await
         .unwrap();
     sqlx::query(
@@ -511,7 +522,7 @@ async fn list_agents_scope_team_returns_only_team_shared_agents() {
 
     // Bob owns agent-shared, shared to team-x (Alice's team)
     set_ownership(
-        &pool,
+        &db_pool,
         "agent",
         "agent-shared",
         None,
@@ -522,7 +533,7 @@ async fn list_agents_scope_team_returns_only_team_shared_agents() {
     .await
     .unwrap();
     // Alice owns her own agent (personal) — must NOT appear in team scope
-    seed_agent_ownership(&pool, "agent-alice-own", &alice).await;
+    seed_agent_ownership(&db_pool, "agent-alice-own", &alice).await;
 
     state.set_agent_configs(vec![
         make_agent_info("agent-shared"),
@@ -547,8 +558,9 @@ async fn list_agents_scope_org_matches_unfiltered_for_non_admin() {
     // This test confirms Org is not accidentally empty for a user with
     // no ownerships — it pins the decision that Org == unfiltered today.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     state.set_agent_configs(vec![
         make_agent_info("agent-a"),
         make_agent_info("agent-b"),
@@ -578,8 +590,9 @@ async fn list_agents_no_scope_param_preserves_legacy_unfiltered_behavior() {
     // refactor that accidentally applies a default scope. Admins, CLI
     // scripts, and pre-PR-5 clients depend on this.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     state.set_agent_configs(vec![make_agent_info("agent-a"), make_agent_info("agent-b")]);
 
     let app = build_test_router_entra(state);
@@ -602,11 +615,12 @@ async fn list_agents_scope_admin_bypass_returns_unfiltered_even_with_scope_mine(
     // bypass). Distinguishes "admin with scope=mine" from "user with
     // scope=mine" — admin sees everything.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let admin = user_ctx("admin-carol", vec![ROLE_ADMIN]);
     let bob = user_ctx("bob", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &admin).await.unwrap();
-    upsert_user_from_auth(&pool, &bob).await.unwrap();
-    seed_agent_ownership(&pool, "agent-bob", &bob).await; // admin does NOT own
+    upsert_user_from_auth(&db_pool, &admin).await.unwrap();
+    upsert_user_from_auth(&db_pool, &bob).await.unwrap();
+    seed_agent_ownership(&db_pool, "agent-bob", &bob).await; // admin does NOT own
 
     state.set_agent_configs(vec![
         make_agent_info("agent-bob"),
@@ -634,8 +648,9 @@ async fn list_agents_scope_mine_returns_500_when_scope_query_fails() {
     // empty with no indication anything broke, and the user's agent
     // falls through to Org with no warning.
     let (state, pool) = ApiState::new_test_state_with_mock_entra().await;
+    let db_pool = Arc::new(DbPool::Sqlite(pool.clone()));
     let alice = user_ctx("alice", vec![ROLE_USER]);
-    upsert_user_from_auth(&pool, &alice).await.unwrap();
+    upsert_user_from_auth(&db_pool, &alice).await.unwrap();
     state.set_agent_configs(vec![make_agent_info("agent-a")]);
 
     // Close the instance pool so the scope-filter sqlx query fails.
