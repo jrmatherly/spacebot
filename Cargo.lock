@@ -1333,7 +1333,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "pin-project-lite",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1364,7 +1364,7 @@ checksum = "edd2cc8c9431726edce9f5ceb3ca1b711dde0f818cd6fb34808a00556ce73135"
 dependencies = [
  "anyhow",
  "directories",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -7456,9 +7456,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -7529,7 +7529,7 @@ dependencies = [
  "nanoid",
  "ordered-float",
  "pin-project-lite",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "rig-derive",
  "schemars 1.2.1",
  "serde",
@@ -7585,7 +7585,7 @@ dependencies = [
  "pastey 0.2.2",
  "pin-project-lite",
  "process-wrap",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "rmcp-macros",
  "schemars 1.2.1",
  "serde",
@@ -8168,7 +8168,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "ref-cast",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "serde_cow",
  "serde_json",
@@ -8528,7 +8528,7 @@ dependencies = [
  "rand 0.10.1",
  "redb",
  "regex",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "rig-core",
  "rmcp",
  "rsa",
@@ -10001,7 +10001,7 @@ dependencies = [
  "either",
  "enum_dispatch",
  "futures-util",
- "reqwest 0.13.2",
+ "reqwest 0.13.3",
  "serde",
  "smallvec",
  "thiserror 2.0.18",
