@@ -230,7 +230,7 @@ jobs:
         # from source every run (observed ~2m 50s on ubuntu-24.04 per run
         # 24634503767); taiki-e/install-action fetches a pinned release asset
         # in seconds.
-        uses: taiki-e/install-action@cf525cb33f51aca27cd6fa02034117ab963ff9f1 # v2.75.22
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
         with:
           # Pin tool version explicitly so upstream cargo-audit releases cannot
           # silently change audit output between CI runs.
